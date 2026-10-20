@@ -1,0 +1,31 @@
+{
+  "name": "moovn",
+  "private": true,
+  "version": "0.1.0",
+  "description": "MooVN 视觉小说编辑器 — 工作流式可视化编辑 + 代码双模式，基于 Tauri 2 + Pixi.js + YAML",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "tauri": "tauri",
+    "assets:audio": "node scripts/gen-audio.mjs"
+  },
+  "dependencies": {
+    "@codemirror/lang-javascript": "^6.2.2",
+    "@codemirror/lang-python": "^6.1.6",
+    "@codemirror/legacy-modes": "^6.4.2",
+    "@codemirror/theme-one-dark": "^6.1.2",
+    "codemirror": "^6.0.1",
+    "jszip": "^3.10.1",
+    "pixi.js": "^8.6.6",
+    "wasmoon": "^1.16.0",
+    "yaml": "^2.6.1"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.1.0",
+    "typescript": "^5.6.3",
+    "vite": "^6.0.3"
+  }
+}

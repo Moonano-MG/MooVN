@@ -1,0 +1,39 @@
+# 结局：晴天之约（Good End）
+format: moovn-scene
+version: 1
+id: ch2-good
+chapter: ch2
+title: 晴天之约
+background: assets/bg/park.jpg
+bgm: assets/audio/bgm-theme.wav
+characters:
+  - ref: yuki
+    position: center
+next: null
+flow:
+  - id: g1
+    type: start
+    x: 120
+    y: 240
+    next: g2
+  - id: g2
+    type: dialogue
+    x: 360
+    y: 200
+    character: yuki
+    text: "所以，下次下雨……不对。下次晴天，也一起回家吧。"
+    next: g3
+  - id: g3
+    type: narration
+    x: 600
+    y: 320
+    text: 云的缝隙里漏下光来。这次，先伸手的人是她。
+    next: g4
+  - id: g4
+    type: ending
+    x: 840
+    y: 260
+    endingId: good-end
+    endingTitle: 晴天之约
+    endingKind: good
+    next: null

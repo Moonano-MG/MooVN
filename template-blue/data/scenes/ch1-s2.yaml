@@ -1,0 +1,79 @@
+# 第一章 场景2：便利店屋檐
+format: moovn-scene
+version: 1
+id: ch1-s2
+chapter: ch1
+title: 便利店屋檐
+background: assets/bg/rain-street.jpg
+bgm: assets/audio/bgm-rain.wav
+characters:
+  - ref: yuki
+    position: left
+  - ref: kaori
+    position: right
+next: ch1-s3
+flow:
+  - id: m1
+    type: start
+    x: 120
+    y: 240
+    next: m2
+  - id: m2
+    type: narration
+    x: 340
+    y: 140
+    text: 便利店的屋檐下，另一个身影抱着纸箱躲雨。
+    next: m3
+  - id: m3
+    type: dialogue
+    x: 560
+    y: 140
+    character: kaori
+    text: "呀——同学！帮个忙！箱子要掉了！"
+    next: m4
+  - id: m4
+    type: choice
+    x: 800
+    y: 240
+    options:
+      - text: 冲过去接住箱子
+        next: m5
+        effects:
+          kaori.affection: 1
+      - text: 装作没看见
+        next: m7
+    next: null
+  - id: m5
+    type: dialogue
+    x: 1050
+    y: 140
+    character: kaori
+    text: "好险好险！你人真好！我叫香织，戏剧社的！"
+    next: m6
+  - id: m6
+    type: dialogue
+    x: 1050
+    y: 300
+    character: yuki
+    text: "……吵死了。"
+    next: m9
+  - id: m7
+    type: narration
+    x: 1050
+    y: 440
+    text: 纸箱哗啦一声散在地上。罐装咖啡滚到了马路中央。
+    next: m8
+  - id: m8
+    type: dialogue
+    x: 1050
+    y: 560
+    character: kaori
+    text: "呜……没事，我自己来就好。"
+    next: m9
+  - id: m9
+    type: dialogue
+    x: 1290
+    y: 300
+    character: yuki
+    text: "……雨，好像要停了。"
+    next: null

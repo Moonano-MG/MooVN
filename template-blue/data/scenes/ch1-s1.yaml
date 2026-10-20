@@ -1,0 +1,90 @@
+# 第一章 场景1：雨夜站台
+format: moovn-scene
+version: 1
+id: ch1-s1
+chapter: ch1
+title: 雨夜站台
+background: assets/bg/rain-street.jpg
+bgm: assets/audio/bgm-rain.wav
+characters:
+  - ref: yuki
+    position: left
+    visible: false
+next: ch1-s2
+flow:
+  - id: n1
+    type: start
+    x: 120
+    y: 220
+    next: n2
+  - id: n2
+    type: narration
+    x: 340
+    y: 120
+    text: 七月的雨，下得没有一点预兆。
+    next: n3
+  - id: n3
+    type: narration
+    x: 340
+    y: 250
+    text: 末班车，还有六分钟。
+    next: n4
+  - id: n4
+    type: character
+    x: 340
+    y: 380
+    action: show
+    ref: yuki
+    position: left
+    next: n5
+  - id: n5
+    type: dialogue
+    x: 580
+    y: 300
+    character: yuki
+    text: "……你也在等末班车吗？"
+    next: n6
+  - id: n6
+    type: choice
+    x: 820
+    y: 200
+    options:
+      - text: 撑伞过去搭话
+        next: n7
+        effects:
+          yuki.affection: 1
+      - text: 默默站在原地
+        next: n9
+    next: null
+  - id: n7
+    type: dialogue
+    x: 1080
+    y: 120
+    character: yuki
+    text: "哇，谢谢。……你的伞，好像比我的还要旧。"
+    next: n8
+  - id: n8
+    type: narration
+    x: 1080
+    y: 260
+    text: 她笑了。雨声好像变小了一点。
+    next: n11
+  - id: n9
+    type: narration
+    x: 1080
+    y: 400
+    text: 你摇了摇头。她也没有再说话。
+    next: n10
+  - id: n10
+    type: dialogue
+    x: 1300
+    y: 400
+    character: yuki
+    text: "……嗯。"
+    next: n11
+  - id: n11
+    type: sfx
+    x: 1080
+    y: 560
+    asset: assets/audio/sfx-confirm.wav
+    next: null   # flow 结束 → 场景 next: ch1-s2

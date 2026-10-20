@@ -1,0 +1,57 @@
+# 第一章 场景4：天台回忆（回忆线，好感度≥1 触发）
+format: moovn-scene
+version: 1
+id: ch1-s4
+chapter: ch1
+title: 天台回忆
+background: assets/bg/classroom.jpg
+bgm: assets/audio/bgm-theme.wav
+characters:
+  - ref: yuki
+    position: right
+    y: -0.01
+next: ch2-s1
+flow:
+  - id: r1
+    type: start
+    x: 120
+    y: 240
+    next: r2
+  - id: r2
+    type: narration
+    x: 340
+    y: 160
+    text: 雨停之前的便利店屋檐下，她讲起了小学的天台。
+    next: r3
+  - id: r3
+    type: dialogue
+    x: 560
+    y: 160
+    character: yuki
+    text: "那时候我总是一个人在天台吃午饭。直到有一天，有人把同一把旧伞塞给了我。"
+    next: r4
+  - id: r4
+    type: script
+    x: 800
+    y: 300
+    lang: javascript
+    code: |
+      // 脚本节点：JavaScript 直接运行，可读写 moovn.vars
+      moovn.vars['flag.rooftopStory'] = true;
+      moovn.log('天台回忆 flag 已写入');
+    next: r5
+  - id: r5
+    type: setvar
+    x: 1020
+    y: 300
+    target: yuki.affection
+    op: add
+    value: 1
+    next: r6
+  - id: r6
+    type: dialogue
+    x: 1240
+    y: 300
+    character: yuki
+    text: "……你不会已经忘了吧？"
+    next: null

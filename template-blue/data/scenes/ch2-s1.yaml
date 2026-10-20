@@ -1,0 +1,79 @@
+# 第二章 场景1：第二天的教室
+format: moovn-scene
+version: 1
+id: ch2-s1
+chapter: ch2
+title: 第二天的教室
+background: assets/bg/classroom.jpg
+bgm: assets/audio/bgm-theme.wav
+characters:
+  - ref: kaori
+    position: left
+  - ref: yuki
+    position: right
+next: ch2-s2
+flow:
+  - id: c1
+    type: start
+    x: 120
+    y: 240
+    next: c2
+  - id: c2
+    type: narration
+    x: 340
+    y: 160
+    text: 第二天。窗外的天空蓝得像什么都没发生过。
+    next: c3
+  - id: c3
+    type: dialogue
+    x: 560
+    y: 140
+    character: kaori
+    text: "昨天那位雨中绅士！原来和雪乃是同班啊！"
+    next: c4
+  - id: c4
+    type: dialogue
+    x: 560
+    y: 320
+    character: yuki
+    text: "……别理她。"
+    next: c5
+  - id: c5
+    type: choice
+    x: 820
+    y: 240
+    options:
+      - text: "放学后，一起回去吧"
+        next: c6
+        effects:
+          yuki.affection: 1
+      - text: 今天要先去社团
+        next: c8
+    next: null
+  - id: c6
+    type: dialogue
+    x: 1080
+    y: 160
+    character: yuki
+    text: "……嗯。"
+    next: c7
+  - id: c7
+    type: narration
+    x: 1080
+    y: 320
+    text: 她把脸转向窗外。耳朵尖有一点红。
+    next: null
+  - id: c8
+    type: dialogue
+    x: 1080
+    y: 460
+    character: kaori
+    text: "欸——真无情！雪乃，我们走吧！"
+    next: c9
+  - id: c9
+    type: dialogue
+    x: 1300
+    y: 460
+    character: yuki
+    text: "……嗯。反正，也不是每天都顺路。"
+    next: null

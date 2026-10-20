@@ -1,0 +1,39 @@
+# 第二章 场景2：放学路上（结局分支）
+format: moovn-scene
+version: 1
+id: ch2-s2
+chapter: ch2
+title: 放学路上
+background: assets/bg/park.jpg
+bgm: assets/audio/bgm-theme.wav
+characters:
+  - ref: yuki
+    position: center
+next: null
+flow:
+  - id: p1
+    type: start
+    x: 120
+    y: 240
+    next: p2
+  - id: p2
+    type: narration
+    x: 340
+    y: 160
+    text: 樱花早就不开了，但这条路还是老样子。
+    next: p3
+  - id: p3
+    type: dialogue
+    x: 560
+    y: 200
+    character: yuki
+    text: "那把伞，我洗干净了。……下次下雨，再借你。"
+    next: p4
+  - id: p4
+    type: branch
+    x: 820
+    y: 260
+    condition: "yuki.affection >= 2"
+    true: "scene:ch2-good"
+    false: "scene:ch2-normal"
+    next: null

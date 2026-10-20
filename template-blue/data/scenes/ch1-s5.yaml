@@ -1,0 +1,38 @@
+# 第一章 场景5：车站告别（默认线）
+format: moovn-scene
+version: 1
+id: ch1-s5
+chapter: ch1
+title: 车站告别
+background: assets/bg/bridge.jpg
+bgm: assets/audio/bgm-rain.wav
+characters:
+  - ref: yuki
+    position: center
+    dim: true
+next: ch2-s1
+flow:
+  - id: s1
+    type: start
+    x: 120
+    y: 240
+    next: s2
+  - id: s2
+    type: narration
+    x: 340
+    y: 160
+    text: 首班车进站的声音，比想象中要轻。
+    next: s3
+  - id: s3
+    type: dialogue
+    x: 560
+    y: 200
+    character: yuki
+    text: "我要走了。……今天，谢谢你的伞。"
+    next: s4
+  - id: s4
+    type: narration
+    x: 800
+    y: 320
+    text: 她鞠了一躬，消失在检票口。雨伞上的水，滴了很久。
+    next: null

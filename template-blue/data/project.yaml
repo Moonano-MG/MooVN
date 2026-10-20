@@ -1,0 +1,57 @@
+# MooVN 蓝色模板示例项目 —— 《雨夜之约》
+format: moovn-project
+version: 1
+id: blue-template-demo
+title: 雨夜之约
+author: Moonano
+template: blue
+assetsRoot: assets
+startScene: ch1-s1
+
+characters:
+  - id: yuki
+    name: 雪乃
+    color: "#9ecfff"
+    sprite: characters/yuki.jpg
+    attributes:
+      - key: affection
+        label: 好感度
+        type: number
+        default: 0
+  - id: kaori
+    name: 香织
+    color: "#ffc9a3"
+    sprite: characters/kaori.jpg
+    attributes:
+      - key: affection
+        label: 好感度
+        type: number
+        default: 0
+
+chapters:
+  - id: ch1
+    title: 第一章 雨夜
+    scenes: [ch1-s1, ch1-s2, ch1-s3, ch1-s4, ch1-s5]
+  - id: ch2
+    title: 第二章 教室
+    scenes: [ch2-s1, ch2-s2, ch2-good, ch2-normal]
+
+settings:
+  textSpeed: 28
+  autoSpeed: 900
+  bgmVolume: 0.6
+  sfxVolume: 0.8
+
+scripts:
+  - id: global-utils
+    name: 全局工具（JavaScript）
+    lang: javascript
+    code: |
+      // 全局脚本在游戏启动时可用（示例：定义一个工具函数）
+      moovn.log('MooVN 蓝色模板启动');
+  - id: global-lua
+    name: 全局脚本（Lua）
+    lang: lua
+    code: |
+      -- Lua 示例：可在任意 Lua 脚本节点中访问 moovn.vars / moovn.state
+      moovn.log('Lua runtime ready')

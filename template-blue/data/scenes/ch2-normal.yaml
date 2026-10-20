@@ -1,0 +1,40 @@
+# 结局：雨还会停（Normal End）
+format: moovn-scene
+version: 1
+id: ch2-normal
+chapter: ch2
+title: 雨还会停
+background: assets/bg/bridge.jpg
+bgm: assets/audio/bgm-rain.wav
+characters:
+  - ref: yuki
+    position: right
+    dim: true
+next: null
+flow:
+  - id: m1
+    type: start
+    x: 120
+    y: 240
+    next: m2
+  - id: m2
+    type: narration
+    x: 360
+    y: 200
+    text: '"谢谢你的伞"这句话，最终还是没有说出口。'
+    next: m3
+  - id: m3
+    type: dialogue
+    x: 600
+    y: 280
+    character: yuki
+    text: "……明天见。"
+    next: m4
+  - id: m4
+    type: ending
+    x: 840
+    y: 260
+    endingId: normal-end
+    endingTitle: 雨还会停
+    endingKind: normal
+    next: null

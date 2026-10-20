@@ -1,0 +1,9 @@
+/* 游戏页基础壳样式（蓝色模板自身样式见 template-blue/blue.css） */
+html, body, #game {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background: #020617;
+  overflow: hidden;
+}
