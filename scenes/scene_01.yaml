@@ -1,0 +1,50 @@
+moovn_schema: "1.0"
+engine: "MooVN (TypeScript + Tauri 2 + Pixi.js + YAML)"
+chapter:
+  id: chap_1
+  number: 1
+  title: 第一章：雨夜终电与蔚蓝怀表
+scene:
+  id: scene_01
+  global_number: 1
+  title: 场景 1：序幕·雨夜潮汐站
+  storyline_id: line_main_blue
+  background:
+    preset_id: rainy_station
+    custom_url: null
+    weather: rain
+    tint: "#0d2240"
+    blur: 0
+    is_animated: true
+  audio:
+    bgm_id: rain_echo
+    bgm_volume: 75
+    sfx_id: rain_ambience
+  characters:
+    - character_id: char_shizuki
+      expression: normal
+      position:
+        x: 50
+        y: 56
+      scale: 1
+      alpha: 1
+      flip_x: false
+      z_index: 2
+      animation: fade_in
+      speaking_highlight: true
+  dialogue:
+    speaker_id: char_shizuki
+    speaker_name: 汐月
+    text: 「终于找到你了……在这座被雨水浸透的潮汐车站。你看，怀表上的指针已经停在 23:59 整整七个小时了。」
+    affection_delta:
+      characterId: char_shizuki
+      delta: 2
+  choices: []
+  next_scene_id: scene_02
+  ending_id: null
+  script_binding:
+    language: lua
+    code: |
+      moovn.bg("rainy_station", { weather = "rain", animated = true })
+      moovn.char("char_shizuki", { expr = "normal", x = 50, y = 56 })
+      moovn.say("汐月", "终于找到你了……在这座被雨水浸透的潮汐车站。")
