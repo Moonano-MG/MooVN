@@ -5,15 +5,20 @@ import type {
   ChoiceOption,
   DialogueLine,
   EdgeRef,
+  FadeConfig,
   NodeType,
   Project,
+  ScratchBlock,
+  ScratchBlockKind,
+  ScreenTextItem,
   StageCharacterPlacement,
   StoryNode,
 } from "../types";
 import { defaultProject } from "../data/defaultProject";
+import { DEFAULT_MOOVN_AI_SPEC } from "../data/aiSpec";
 import { CHARACTER_COLORS } from "../data/assets";
 import { loadLocal, persistLocal } from "../lib/tauriBridge";
-import { nodeById, uid } from "../lib/projectUtils";
+import { compileNodeToTypeScript, nodeById, uid } from "../lib/projectUtils";
 
 function clone<T>(v: T): T {
   return JSON.parse(JSON.stringify(v)) as T;
@@ -28,6 +33,7 @@ export function blankProject(): Project {
     author: "",
     version: "0.1.0",
     startNodeId: startId,
+    aiSpecContent: DEFAULT_MOOVN_AI_SPEC,
     chapters: [{ id: chapId, title: "第一章 · 序幕", order: 1 }],
     characters: [
       {
@@ -50,10 +56,14 @@ export function blankProject(): Project {
         x: 100,
         y: 180,
         backgroundId: "bg-classroom",
+        backgroundMediaKind: "static",
         stageCharacters: [],
+        screenTexts: [],
+        blocks: [],
         lines: [{ id: uid("line"), characterId: null, text: "故事，从这里开始。" }],
         choices: [],
         nextNodeId: null,
+        scriptLang: "typescript",
       },
     ],
     updatedAt: new Date().toISOString(),
@@ -63,17 +73,63 @@ export function blankProject(): Project {
 const NODE_DEFAULT_TITLES: Record<NodeType, string> = {
   dialogue: "新对话场景",
   choice: "新分支选择",
-  character: "角色登场节点",
-  background: "场景背景切换",
-  audio: "音效与音乐节点",
-  script: "自定义脚本节点",
+  fade: "淡入淡出节点",
+  screen_text: "屏幕文字节点",
+  character: "角色动作节点",
+  background: "场景切换节点",
+  audio: "音乐音效节点",
+  script: "TS脚本桥接节点",
   end: "新结局",
 };
+
+export function createDefaultBlock(kind: ScratchBlockKind): ScratchBlock {
+  const id = uid("blk");
+  switch (kind) {
+    case "say":
+      return { id, kind, params: { speaker: "苏雨晴", text: "输入台词内容…" } };
+    case "bg":
+      return { id, kind, params: { backgroundId: "bg-rooftop", mediaKind: "tween", fps: 6 } };
+    case "char":
+      return { id, kind, params: { characterId: "c-yuki", x: 50, y: 54, scale: 1, tween: "breathe" } };
+    case "fade":
+      return {
+        id,
+        kind,
+        params: { target: "character", characterId: "c-yuki", direction: "out", durationMs: 600, targetOpacity: 0 },
+      };
+    case "screen_text":
+      return {
+        id,
+        kind,
+        params: { text: "—— 屏幕自由文字 ——", x: 50, y: 24, fontSize: 28, color: "#e0f2fe" },
+      };
+    case "animate":
+      return {
+        id,
+        kind,
+        params: { targetId: "c-yuki", kind: "frame_sequence", tween: "bounce", fps: 8 },
+      };
+    case "affection":
+      return { id, kind, params: { characterId: "c-yuki", delta: 10 } };
+    case "ts_code":
+      return { id, kind, params: { code: `await moovn.say("旁白", "执行原生 TypeScript 逻辑");` } };
+    case "bridge_call":
+      return {
+        id,
+        kind,
+        params: { bridgeLang: "lua", code: `local bonus = 10\nreturn bonus` },
+      };
+  }
+}
 
 export function useEditor() {
   const [project, setProjectState] = useState<Project>(() => {
     const saved = loadLocal();
-    return saved ?? clone(defaultProject);
+    if (saved) {
+      if (!saved.aiSpecContent) saved.aiSpecContent = DEFAULT_MOOVN_AI_SPEC;
+      return saved;
+    }
+    return clone(defaultProject);
   });
   const projectRef = useRef(project);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(project.startNodeId || null);
@@ -123,7 +179,7 @@ export function useEditor() {
       persistLocal(projectRef.current);
       setLastSavedAt(new Date());
       setDirty(false);
-    }, 900);
+    }, 800);
     return () => clearTimeout(t);
   }, [project]);
 
@@ -215,11 +271,48 @@ export function useEditor() {
   /* ---------------- 节点 / 场景管理 ---------------- */
   const addNode = useCallback(
     (type: NodeType, x: number, y: number, chapterId?: string): string => {
-      const id = uid("n");
+      const id = uid("s");
       update((p) => {
         const activeNode = p.nodes.find((n) => n.id === selectedNodeId);
         const targetChapterId = chapterId || activeNode?.chapterId || p.chapters[0]?.id || "ch-1";
         const sceneNum = p.nodes.length + 1;
+        const initialBlocks: ScratchBlock[] = [];
+        let fadeConfig: FadeConfig | null = null;
+        const screenTexts: ScreenTextItem[] = [];
+
+        if (type === "fade") {
+          fadeConfig = {
+            target: "character",
+            characterId: p.characters.find((c) => c.spriteId)?.id ?? null,
+            direction: "out",
+            durationMs: 600,
+            targetOpacity: 0,
+          };
+          initialBlocks.push({
+            id: uid("blk"),
+            kind: "fade",
+            params: { ...fadeConfig },
+          });
+        } else if (type === "screen_text") {
+          const item: ScreenTextItem = {
+            id: uid("st"),
+            text: "在此输入屏幕显示文字",
+            x: 50,
+            y: 25,
+            fontSize: 28,
+            color: "#ffffff",
+            fontWeight: "bold",
+            align: "center",
+            fadeDurationMs: 600,
+          };
+          screenTexts.push(item);
+          initialBlocks.push({
+            id: uid("blk"),
+            kind: "screen_text",
+            params: { text: item.text, x: item.x, y: item.y, fontSize: item.fontSize, color: item.color },
+          });
+        }
+
         const node: StoryNode = {
           id,
           chapterId: targetChapterId,
@@ -228,13 +321,30 @@ export function useEditor() {
           x: Math.round(x),
           y: Math.round(y),
           backgroundId: activeNode?.backgroundId ?? "bg-classroom",
+          backgroundMediaKind: activeNode?.backgroundMediaKind ?? "static",
           bgmId: activeNode?.bgmId ?? null,
           sfxId: null,
           stageCharacters: activeNode ? clone(activeNode.stageCharacters) : [],
+          fadeConfig,
+          screenTexts,
+          blocks: initialBlocks,
           lines:
             type === "end"
               ? []
-              : [{ id: uid("line"), characterId: null, text: type === "choice" ? "作出你的选择：" : "在这里输入场景台词……" }],
+              : [
+                  {
+                    id: uid("line"),
+                    characterId: null,
+                    text:
+                      type === "choice"
+                        ? "作出你的选择："
+                        : type === "fade"
+                          ? "画面与人物渐渐淡去……"
+                          : type === "screen_text"
+                            ? "屏幕中央浮现出一段文字。"
+                            : "在这里输入场景台词……",
+                  },
+                ],
           choices:
             type === "choice"
               ? [
@@ -245,9 +355,9 @@ export function useEditor() {
           nextNodeId: null,
           endingKind: type === "end" ? "normal" : undefined,
           endingDescription: type === "end" ? "" : undefined,
-          scriptLang: "lua",
-          scriptCode: `-- 场景 ${sceneNum} 脚本\nmoovn.say("旁白", "新场景已就绪")`,
+          scriptLang: "typescript",
         };
+        node.scriptCode = compileNodeToTypeScript(p, node);
         p.nodes.push(node);
         if (p.nodes.length === 1) p.startNodeId = id;
         return p;
@@ -263,7 +373,12 @@ export function useEditor() {
     (id: string, patch: Partial<StoryNode>) => {
       update((p) => {
         const n = p.nodes.find((node) => node.id === id);
-        if (n) Object.assign(n, patch);
+        if (n) {
+          Object.assign(n, patch);
+          if (!patch.scriptCode) {
+            n.scriptCode = compileNodeToTypeScript(p, n);
+          }
+        }
         return p;
       });
     },
@@ -308,11 +423,13 @@ export function useEditor() {
       const src = nodeById(projectRef.current, id);
       if (!src) return;
       const copy = clone(src);
-      copy.id = uid("n");
+      copy.id = uid("s");
       copy.title = `${src.title}（续）`;
       copy.x += 280;
       copy.lines = copy.lines.map((l) => ({ ...l, id: uid("line") }));
       copy.choices = copy.choices.map((c) => ({ ...c, id: uid("choice") }));
+      copy.blocks = (copy.blocks ?? []).map((b) => ({ ...b, id: uid("blk") }));
+      copy.screenTexts = (copy.screenTexts ?? []).map((st) => ({ ...st, id: uid("st") }));
       update((p) => {
         const orig = p.nodes.find((n) => n.id === id);
         if (orig && !orig.nextNodeId && orig.type !== "choice" && orig.type !== "end") {
@@ -337,7 +454,152 @@ export function useEditor() {
     [update],
   );
 
-  /* ---------------- 舞台角色位置操作 ---------------- */
+  /* ---------------- Scratch 积木块操作（Dify + Scratch 融合） ---------------- */
+  const addBlockToNode = useCallback(
+    (nodeId: string, kindOrBlock: ScratchBlockKind | ScratchBlock) => {
+      update((p) => {
+        const n = p.nodes.find((node) => node.id === nodeId);
+        if (!n) return p;
+        if (!Array.isArray(n.blocks)) n.blocks = [];
+        const blk =
+          typeof kindOrBlock === "string" ? createDefaultBlock(kindOrBlock) : kindOrBlock;
+        n.blocks.push(blk);
+
+        // 同步积木的视觉效果到舞台数据
+        if (blk.kind === "fade") {
+          n.fadeConfig = {
+            target: blk.params.target || "character",
+            characterId: blk.params.characterId ?? null,
+            direction: blk.params.direction || "out",
+            durationMs: Number(blk.params.durationMs ?? 600),
+            targetOpacity: Number(blk.params.targetOpacity ?? 0),
+          };
+        } else if (blk.kind === "screen_text") {
+          if (!Array.isArray(n.screenTexts)) n.screenTexts = [];
+          n.screenTexts.push({
+            id: uid("st"),
+            text: String(blk.params.text || "屏幕自由文字"),
+            x: Number(blk.params.x ?? 50),
+            y: Number(blk.params.y ?? 24),
+            fontSize: Number(blk.params.fontSize ?? 28),
+            color: String(blk.params.color ?? "#e0f2fe"),
+            align: "center",
+          });
+        }
+        n.scriptCode = compileNodeToTypeScript(p, n);
+        return p;
+      }, true);
+    },
+    [update],
+  );
+
+  const updateBlockInNode = useCallback(
+    (nodeId: string, blockId: string, paramsPatch: Record<string, any>) => {
+      update((p) => {
+        const n = p.nodes.find((node) => node.id === nodeId);
+        const blk = n?.blocks?.find((b) => b.id === blockId);
+        if (!n || !blk) return p;
+        blk.params = { ...blk.params, ...paramsPatch };
+        if (blk.kind === "fade") {
+          n.fadeConfig = {
+            target: blk.params.target || "character",
+            characterId: blk.params.characterId ?? null,
+            direction: blk.params.direction || "out",
+            durationMs: Number(blk.params.durationMs ?? 600),
+            targetOpacity: Number(blk.params.targetOpacity ?? 0),
+          };
+        }
+        n.scriptCode = compileNodeToTypeScript(p, n);
+        return p;
+      });
+    },
+    [update],
+  );
+
+  const removeBlockFromNode = useCallback(
+    (nodeId: string, blockId: string) => {
+      update((p) => {
+        const n = p.nodes.find((node) => node.id === nodeId);
+        if (!n || !n.blocks) return p;
+        n.blocks = n.blocks.filter((b) => b.id !== blockId);
+        n.scriptCode = compileNodeToTypeScript(p, n);
+        return p;
+      }, true);
+    },
+    [update],
+  );
+
+  const moveBlockInNode = useCallback(
+    (nodeId: string, blockId: string, dir: -1 | 1) => {
+      update((p) => {
+        const n = p.nodes.find((node) => node.id === nodeId);
+        if (!n || !n.blocks) return p;
+        const idx = n.blocks.findIndex((b) => b.id === blockId);
+        const swap = idx + dir;
+        if (idx < 0 || swap < 0 || swap >= n.blocks.length) return p;
+        [n.blocks[idx], n.blocks[swap]] = [n.blocks[swap], n.blocks[idx]];
+        n.scriptCode = compileNodeToTypeScript(p, n);
+        return p;
+      }, true);
+    },
+    [update],
+  );
+
+  /* ---------------- 屏幕自由文字与淡入淡出操作 ---------------- */
+  const addScreenText = useCallback(
+    (nodeId: string, partial?: Partial<ScreenTextItem>) => {
+      update((p) => {
+        const n = p.nodes.find((node) => node.id === nodeId);
+        if (!n) return p;
+        if (!Array.isArray(n.screenTexts)) n.screenTexts = [];
+        n.screenTexts.push({
+          id: uid("st"),
+          text: partial?.text ?? "在此输入屏幕文字",
+          x: partial?.x ?? 50,
+          y: partial?.y ?? 25,
+          fontSize: partial?.fontSize ?? 28,
+          color: partial?.color ?? "#ffffff",
+          fontWeight: partial?.fontWeight ?? "bold",
+          align: partial?.align ?? "center",
+          fadeDurationMs: partial?.fadeDurationMs ?? 600,
+        });
+        n.scriptCode = compileNodeToTypeScript(p, n);
+        return p;
+      }, true);
+    },
+    [update],
+  );
+
+  const updateScreenText = useCallback(
+    (nodeId: string, textId: string, patch: Partial<ScreenTextItem>) => {
+      update((p) => {
+        const n = p.nodes.find((node) => node.id === nodeId);
+        const item = n?.screenTexts?.find((st) => st.id === textId);
+        if (n && item) {
+          Object.assign(item, patch);
+          n.scriptCode = compileNodeToTypeScript(p, n);
+        }
+        return p;
+      });
+    },
+    [update],
+  );
+
+  const removeScreenText = useCallback(
+    (nodeId: string, textId: string) => {
+      update((p) => {
+        const n = p.nodes.find((node) => node.id === nodeId);
+        if (n && n.screenTexts) {
+          n.screenTexts = n.screenTexts.filter((st) => st.id !== textId);
+          n.scriptCode = compileNodeToTypeScript(p, n);
+        }
+        return p;
+      }, true);
+    },
+    [update],
+  );
+
+  /* ---------------- 舞台角色位置与动画操作 ---------------- */
   const upsertStageCharacter = useCallback(
     (nodeId: string, characterId: string, patch: Partial<StageCharacterPlacement>) => {
       update((p) => {
@@ -350,12 +612,15 @@ export function useEditor() {
           n.stageCharacters.push({
             characterId,
             x: patch.x ?? 50,
-            y: patch.y ?? 50,
+            y: patch.y ?? 54,
             scale: patch.scale ?? 1,
             opacity: patch.opacity ?? 1,
             flipX: patch.flipX ?? false,
+            mediaKind: patch.mediaKind ?? "tween",
+            tween: patch.tween ?? "breathe",
           });
         }
+        n.scriptCode = compileNodeToTypeScript(p, n);
         return p;
       });
     },
@@ -368,6 +633,7 @@ export function useEditor() {
         const n = p.nodes.find((node) => node.id === nodeId);
         if (n) {
           n.stageCharacters = n.stageCharacters.filter((sc) => sc.characterId !== characterId);
+          n.scriptCode = compileNodeToTypeScript(p, n);
         }
         return p;
       }, true);
@@ -583,6 +849,13 @@ export function useEditor() {
     deleteNode,
     duplicateNode,
     setStartNode,
+    addBlockToNode,
+    updateBlockInNode,
+    removeBlockFromNode,
+    moveBlockInNode,
+    addScreenText,
+    updateScreenText,
+    removeScreenText,
     upsertStageCharacter,
     removeStageCharacter,
     connect,

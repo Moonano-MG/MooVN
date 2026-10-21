@@ -45,6 +45,43 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* 角色补间动画 (Tween Animations) */
+@keyframes vn-breathe {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-4px) scale(1.012); }
+}
+@keyframes vn-bounce {
+  0%, 100% { transform: translateY(0); }
+  40% { transform: translateY(-16px); }
+  70% { transform: translateY(-6px); }
+}
+@keyframes vn-float {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-10px) rotate(0.6deg); }
+}
+@keyframes vn-shake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-6px); }
+  40%, 80% { transform: translateX(6px); }
+}
+.animate-vn-breathe { animation: vn-breathe 3.6s ease-in-out infinite; }
+.animate-vn-bounce { animation: vn-bounce 1.2s ease-in-out infinite; }
+.animate-vn-float { animation: vn-float 4.2s ease-in-out infinite; }
+.animate-vn-shake { animation: vn-shake 0.55s ease-in-out infinite; }
+
+/* 隐藏 UI 后：等待片刻慢慢显示一次，随后平滑淡出消失 */
+@keyframes hide-hint-once {
+  0% { opacity: 0; transform: translate(-50%, 6px); }
+  18% { opacity: 0; transform: translate(-50%, 6px); }
+  42% { opacity: 0.92; transform: translate(-50%, 0); }
+  75% { opacity: 0.92; transform: translate(-50%, 0); }
+  100% { opacity: 0; transform: translate(-50%, -4px); }
+}
+.animate-hide-hint-once {
+  opacity: 0;
+  animation: hide-hint-once 3.4s ease-in-out forwards;
+}
+
 html,
 body,
 #root {

@@ -2,10 +2,10 @@ import YAML from "yaml";
 import type {
   Character,
   Project,
+  ScratchBlock,
   ScriptLang,
   StoryNode,
   ValidationIssue,
-  VisualBlock,
 } from "../types";
 import { backgroundById, audioById } from "../data/assets";
 
@@ -33,11 +33,13 @@ export function countWords(project: Project): number {
     for (const l of n.lines) total += l.text.length;
     for (const c of n.choices) total += c.text.length;
     if (n.endingDescription) total += n.endingDescription.length;
+    if (n.screenTexts) {
+      for (const st of n.screenTexts) total += st.text.length;
+    }
   }
   return total;
 }
 
-/** 从起点 BFS 求所有可达节点 */
 export function reachableNodeIds(project: Project): Set<string> {
   const visited = new Set<string>();
   const start = nodeById(project, project.startNodeId);
@@ -66,290 +68,419 @@ export function validateProject(project: Project): ValidationIssue[] {
   const reachable = reachableNodeIds(project);
 
   if (!nodeById(project, project.startNodeId)) {
-    issues.push({ id: "no-start", nodeId: null, level: "error", message: "尚未设置有效的故事起点" });
+    issues.push({ id: "no-start", nodeId: null, level: "error", message: "尚未设置故事起点场景" });
   }
 
   for (const node of project.nodes) {
-    if (node.type === "dialogue") {
-      if (node.lines.length === 0) {
-        issues.push({ id: `${node.id}-empty`, nodeId: node.id, level: "warning", message: `「${node.title}」没有任何台词` });
-      }
-      if (!node.nextNodeId) {
-        issues.push({ id: `${node.id}-nonext`, nodeId: node.id, level: "error", message: `「${node.title}」未连接下一场景` });
-      }
+    if (node.type !== "choice" && node.type !== "end" && !node.nextNodeId) {
+      issues.push({
+        id: `${node.id}-nonext`,
+        nodeId: node.id,
+        level: "error",
+        message: `「${node.title}」未连接下一场景`,
+      });
     }
     if (node.type === "choice") {
-      if (node.choices.length < 2) {
-        issues.push({ id: `${node.id}-few`, nodeId: node.id, level: "warning", message: `「${node.title}」的选项少于 2 个` });
-      }
       node.choices.forEach((c, i) => {
         if (!c.targetNodeId) {
-          issues.push({ id: `${node.id}-c${i}`, nodeId: node.id, level: "error", message: `「${node.title}」的选项 ${i + 1} 未连接目标场景` });
+          issues.push({
+            id: `${node.id}-c${i}`,
+            nodeId: node.id,
+            level: "error",
+            message: `「${node.title}」的选项 ${i + 1} 未连接目标场景`,
+          });
         }
       });
     }
     if (!reachable.has(node.id) && node.id !== project.startNodeId) {
-      issues.push({ id: `${node.id}-unreached`, nodeId: node.id, level: "warning", message: `「${node.title}」从起点不可达` });
+      issues.push({
+        id: `${node.id}-unreached`,
+        nodeId: node.id,
+        level: "warning",
+        message: `「${node.title}」从起点不可达`,
+      });
     }
   }
   return issues;
 }
 
 /* ------------------------------------------------------------------ */
-/* 场景 YAML 序列化与反序列化                                           */
+/* 章节级 YAML 序列化（一个章节一个 YAML，包含该章节全部场景）             */
 /* ------------------------------------------------------------------ */
 
-export function nodeToYaml(project: Project, node: StoryNode): string {
-  const chapter = project.chapters.find((c) => c.id === node.chapterId);
-  const obj = {
-    scene: {
-      id: node.id,
-      title: node.title,
-      chapter: chapter ? { id: chapter.id, title: chapter.title } : node.chapterId,
-      type: node.type,
-      storyline: node.storyline || "主线",
-      background: node.backgroundId || null,
-      audio: {
-        bgm: node.bgmId || null,
-        sfx: node.sfxId || null,
-      },
-      stage_characters: node.stageCharacters.map((sc) => {
-        const ch = characterById(project, sc.characterId);
-        return {
-          character_id: sc.characterId,
-          name: ch?.name || sc.characterId,
-          position: { x: sc.x, y: sc.y },
-          scale: sc.scale,
-          opacity: sc.opacity,
-          flip_x: Boolean(sc.flipX),
-        };
-      }),
-      dialogue: node.lines.map((l) => {
-        const ch = characterById(project, l.characterId);
-        return {
-          speaker_id: l.characterId,
-          speaker: ch ? ch.name : "旁白",
-          text: l.text,
-        };
-      }),
-      choices: node.choices.map((c) => ({
-        text: c.text,
-        target_scene: c.targetNodeId,
-        affection_change: c.affectionCharacterId
-          ? { character_id: c.affectionCharacterId, delta: c.affectionDelta ?? 0 }
-          : null,
-      })),
-      next_scene: node.nextNodeId,
-      ending:
-        node.type === "end"
-          ? { kind: node.endingKind || "normal", description: node.endingDescription || "" }
-          : null,
+function serializeSceneForYaml(project: Project, node: StoryNode) {
+  return {
+    id: node.id,
+    title: node.title,
+    type: node.type,
+    position: { x: node.x, y: node.y },
+    background: {
+      id: node.backgroundId || null,
+      media_kind: node.backgroundMediaKind || "static",
+      fps: node.backgroundFps || 6,
     },
+    audio: {
+      bgm: node.bgmId || null,
+      sfx: node.sfxId || null,
+    },
+    stage_characters: node.stageCharacters.map((sc) => {
+      const ch = characterById(project, sc.characterId);
+      return {
+        character_id: sc.characterId,
+        name: ch?.name || sc.characterId,
+        position: { x: sc.x, y: sc.y },
+        scale: sc.scale,
+        opacity: sc.opacity,
+        flip_x: Boolean(sc.flipX),
+        media_kind: sc.mediaKind || "static",
+        tween: sc.tween || "none",
+      };
+    }),
+    fade: node.fadeConfig
+      ? {
+          target: node.fadeConfig.target,
+          character_id: node.fadeConfig.characterId || null,
+          direction: node.fadeConfig.direction,
+          duration_ms: node.fadeConfig.durationMs,
+          target_opacity: node.fadeConfig.targetOpacity,
+        }
+      : null,
+    screen_texts: (node.screenTexts ?? []).map((st) => ({
+      id: st.id,
+      text: st.text,
+      x: st.x,
+      y: st.y,
+      font_size: st.fontSize,
+      color: st.color,
+      align: st.align || "center",
+    })),
+    blocks: (node.blocks ?? []).map((b) => ({
+      id: b.id,
+      kind: b.kind,
+      params: b.params,
+    })),
+    dialogue: node.lines.map((l) => {
+      const ch = characterById(project, l.characterId);
+      return {
+        speaker_id: l.characterId,
+        speaker: ch ? ch.name : "旁白",
+        text: l.text,
+      };
+    }),
+    choices: node.choices.map((c) => ({
+      text: c.text,
+      target_scene: c.targetNodeId,
+      affection_change: c.affectionCharacterId
+        ? { character_id: c.affectionCharacterId, delta: c.affectionDelta ?? 0 }
+        : null,
+    })),
+    next_scene: node.nextNodeId,
+    ending:
+      node.type === "end"
+        ? { kind: node.endingKind || "normal", description: node.endingDescription || "" }
+        : null,
   };
-  return YAML.stringify(obj, { indent: 2 });
 }
 
-export function yamlToNodePatch(project: Project, yamlStr: string): Partial<StoryNode> | null {
+/** 生成指定章节的完整 YAML（包含该章节下全部场景） */
+export function chapterToYaml(project: Project, chapterId: string): string {
+  const chapter = project.chapters.find((c) => c.id === chapterId) ?? project.chapters[0];
+  if (!chapter) return "";
+  const scenes = project.nodes
+    .filter((n) => n.chapterId === chapter.id)
+    .map((n) => serializeSceneForYaml(project, n));
+
+  return YAML.stringify(
+    {
+      chapter: {
+        id: chapter.id,
+        title: chapter.title,
+        order: chapter.order,
+        scene_count: scenes.length,
+        scenes,
+      },
+    },
+    { indent: 2 },
+  );
+}
+
+/** 将章节 YAML 应用回工程中对应章节的所有场景 */
+export function applyChapterYamlToProject(
+  project: Project,
+  chapterId: string,
+  yamlStr: string,
+): Project | null {
   try {
     const parsed = YAML.parse(yamlStr);
-    const s = parsed?.scene ?? parsed;
-    if (!s || typeof s !== "object") return null;
-    const patch: Partial<StoryNode> = {};
-    if (typeof s.title === "string") patch.title = s.title;
-    if (s.background !== undefined) patch.backgroundId = s.background;
-    if (s.audio?.bgm !== undefined) patch.bgmId = s.audio.bgm;
-    if (s.audio?.sfx !== undefined) patch.sfxId = s.audio.sfx;
-    if (s.next_scene !== undefined) patch.nextNodeId = s.next_scene;
-    if (Array.isArray(s.stage_characters)) {
-      patch.stageCharacters = s.stage_characters.map((sc: any) => ({
-        characterId: String(sc.character_id ?? project.characters[0]?.id ?? "c-yuki"),
-        x: Number(sc.position?.x ?? sc.x ?? 50),
-        y: Number(sc.position?.y ?? sc.y ?? 50),
-        scale: Number(sc.scale ?? 1),
-        opacity: Number(sc.opacity ?? 1),
-        flipX: Boolean(sc.flip_x),
-      }));
+    const chData = parsed?.chapter ?? parsed;
+    if (!chData || !Array.isArray(chData.scenes)) return null;
+
+    const nextProject: Project = JSON.parse(JSON.stringify(project));
+    const chap = nextProject.chapters.find((c) => c.id === chapterId);
+    if (chap && typeof chData.title === "string") {
+      chap.title = chData.title;
     }
-    if (Array.isArray(s.dialogue)) {
-      patch.lines = s.dialogue.map((d: any) => ({
-        id: uid("line"),
-        characterId: d.speaker_id ?? null,
-        text: String(d.text ?? ""),
-      }));
-    }
-    return patch;
+
+    const updatedChapterScenes: StoryNode[] = chData.scenes.map((s: any, idx: number) => {
+      const existing = nextProject.nodes.find((n) => n.id === s.id);
+      return {
+        id: String(s.id || existing?.id || uid("s")),
+        chapterId,
+        type: s.type || existing?.type || "dialogue",
+        title: String(s.title || existing?.title || `场景 ${idx + 1}`),
+        x: Number(s.position?.x ?? existing?.x ?? 100 + idx * 280),
+        y: Number(s.position?.y ?? existing?.y ?? 180),
+        backgroundId:
+          typeof s.background === "object"
+            ? (s.background?.id ?? null)
+            : (s.background ?? existing?.backgroundId ?? "bg-classroom"),
+        backgroundMediaKind: s.background?.media_kind ?? existing?.backgroundMediaKind ?? "static",
+        backgroundFps: Number(s.background?.fps ?? existing?.backgroundFps ?? 6),
+        bgmId: s.audio?.bgm !== undefined ? s.audio.bgm : existing?.bgmId,
+        sfxId: s.audio?.sfx !== undefined ? s.audio.sfx : existing?.sfxId,
+        stageCharacters: Array.isArray(s.stage_characters)
+          ? s.stage_characters.map((sc: any) => ({
+              characterId: String(sc.character_id ?? "c-yuki"),
+              x: Number(sc.position?.x ?? sc.x ?? 50),
+              y: Number(sc.position?.y ?? sc.y ?? 54),
+              scale: Number(sc.scale ?? 1),
+              opacity: Number(sc.opacity ?? 1),
+              flipX: Boolean(sc.flip_x),
+              mediaKind: sc.media_kind ?? "static",
+              tween: sc.tween ?? "none",
+            }))
+          : (existing?.stageCharacters ?? []),
+        fadeConfig: s.fade
+          ? {
+              target: s.fade.target ?? "character",
+              characterId: s.fade.character_id ?? null,
+              direction: s.fade.direction ?? "out",
+              durationMs: Number(s.fade.duration_ms ?? 600),
+              targetOpacity: Number(s.fade.target_opacity ?? 0),
+            }
+          : (existing?.fadeConfig ?? null),
+        screenTexts: Array.isArray(s.screen_texts)
+          ? s.screen_texts.map((st: any) => ({
+              id: String(st.id || uid("st")),
+              text: String(st.text ?? ""),
+              x: Number(st.x ?? 50),
+              y: Number(st.y ?? 25),
+              fontSize: Number(st.font_size ?? 26),
+              color: String(st.color ?? "#ffffff"),
+              align: st.align ?? "center",
+            }))
+          : (existing?.screenTexts ?? []),
+        blocks: Array.isArray(s.blocks)
+          ? s.blocks.map((b: any) => ({
+              id: String(b.id || uid("b")),
+              kind: b.kind || "say",
+              params: b.params || {},
+            }))
+          : (existing?.blocks ?? []),
+        lines: Array.isArray(s.dialogue)
+          ? s.dialogue.map((d: any, i: number) => ({
+              id: existing?.lines[i]?.id ?? uid("line"),
+              characterId: d.speaker_id ?? null,
+              text: String(d.text ?? ""),
+            }))
+          : (existing?.lines ?? []),
+        choices: Array.isArray(s.choices)
+          ? s.choices.map((c: any, i: number) => ({
+              id: existing?.choices[i]?.id ?? uid("choice"),
+              text: String(c.text ?? ""),
+              targetNodeId: c.target_scene ?? null,
+              affectionCharacterId: c.affection_change?.character_id ?? null,
+              affectionDelta: Number(c.affection_change?.delta ?? 0),
+            }))
+          : (existing?.choices ?? []),
+        nextNodeId: s.next_scene !== undefined ? s.next_scene : (existing?.nextNodeId ?? null),
+        endingKind: s.ending?.kind ?? existing?.endingKind,
+        endingDescription: s.ending?.description ?? existing?.endingDescription,
+        scriptLang: existing?.scriptLang ?? "typescript",
+        scriptCode: existing?.scriptCode,
+      };
+    });
+
+    const otherNodes = nextProject.nodes.filter((n) => n.chapterId !== chapterId);
+    nextProject.nodes = [...otherNodes, ...updatedChapterScenes];
+    return nextProject;
   } catch {
     return null;
   }
 }
 
-export function projectToYaml(project: Project): string {
-  return YAML.stringify(
-    {
-      project: {
-        id: project.id,
-        name: project.name,
-        author: project.author,
-        version: project.version,
-        start_scene: project.startNodeId,
-      },
-      characters: project.characters.map((c) => ({
-        id: c.id,
-        name: c.name,
-        color: c.color,
-        sprite_id: c.spriteId,
-        initial_affection: c.initialAffection,
-        affection: c.affection,
-        attributes: c.attributes,
-      })),
-      chapters: project.chapters.map((ch) => ({
-        id: ch.id,
-        title: ch.title,
-        scenes: project.nodes
-          .filter((n) => n.chapterId === ch.id)
-          .map((n) => YAML.parse(nodeToYaml(project, n)).scene),
-      })),
-    },
-    { indent: 2 }
-  );
-}
-
 /* ------------------------------------------------------------------ */
-/* 多语言脚本生成 (Lua / Teal / Python / TypeScript)                    */
+/* Scratch 积木块 -> TypeScript/JavaScript 编译与跨语言桥接代码生成       */
 /* ------------------------------------------------------------------ */
 
-export interface ScriptLine {
-  text: string;
-  nodeId: string | null;
-  kind: "comment" | "label" | "scene" | "say" | "narrate" | "menu" | "choice" | "jump" | "ending" | "blank";
-}
-
-export function generateScript(project: Project, lang: ScriptLang = "lua"): ScriptLine[] {
-  const out: ScriptLine[] = [];
-  const cmt = lang === "python" ? "#" : lang === "typescript" ? "//" : "--";
-
-  out.push({ text: `${cmt} 《${project.name}》 — ${lang.toUpperCase()} 脚本`, nodeId: null, kind: "comment" });
-  out.push({ text: `${cmt} 作者：${project.author || "佚名"} · 版本：${project.version}`, nodeId: null, kind: "comment" });
-  out.push({ text: "", nodeId: null, kind: "blank" });
-
-  if (lang === "teal") {
-    out.push({ text: `local record SceneContext`, nodeId: null, kind: "label" });
-    out.push({ text: `  scene_id: string`, nodeId: null, kind: "scene" });
-    out.push({ text: `  affection: {string: integer}`, nodeId: null, kind: "scene" });
-    out.push({ text: `end`, nodeId: null, kind: "label" });
-    out.push({ text: "", nodeId: null, kind: "blank" });
-  } else if (lang === "python") {
-    out.push({ text: `import moovn`, nodeId: null, kind: "label" });
-    out.push({ text: "", nodeId: null, kind: "blank" });
-  } else if (lang === "typescript") {
-    out.push({ text: `import { moovn } from "@moovn/runtime";`, nodeId: null, kind: "label" });
-    out.push({ text: "", nodeId: null, kind: "blank" });
-  }
-
-  for (const ch of project.chapters) {
-    out.push({ text: `${cmt} ==================== ${ch.title} ====================`, nodeId: null, kind: "comment" });
-    const chNodes = project.nodes.filter((n) => n.chapterId === ch.id);
-
-    for (const node of chNodes) {
-      const fnName = node.id.replace(/[^a-zA-Z0-9_]/g, "_");
-      if (lang === "lua") {
-        out.push({ text: `function scene_${fnName}() -- ${node.title}`, nodeId: node.id, kind: "label" });
-      } else if (lang === "teal") {
-        out.push({ text: `local function scene_${fnName}(ctx: SceneContext) -- ${node.title}`, nodeId: node.id, kind: "label" });
-      } else if (lang === "python") {
-        out.push({ text: `def scene_${fnName}():  # ${node.title}`, nodeId: node.id, kind: "label" });
-      } else {
-        out.push({ text: `export function scene_${fnName}(): void { // ${node.title}`, nodeId: node.id, kind: "label" });
-      }
-
-      if (node.backgroundId) {
-        const bg = backgroundById(node.backgroundId);
-        out.push({
-          text: `    moovn.bg("${node.backgroundId}") ${cmt} ${bg?.name ?? ""}`,
-          nodeId: node.id,
-          kind: "scene",
-        });
-      }
-      if (node.bgmId) {
-        const audio = audioById(node.bgmId);
-        out.push({
-          text: `    moovn.bgm("${node.bgmId}") ${cmt} ${audio?.name ?? ""}`,
-          nodeId: node.id,
-          kind: "scene",
-        });
-      }
-      for (const sc of node.stageCharacters) {
-        const charObj = characterById(project, sc.characterId);
-        out.push({
-          text: `    moovn.char("${sc.characterId}", { x = ${sc.x}, y = ${sc.y}, scale = ${sc.scale} }) ${cmt} ${charObj?.name ?? ""}`,
-          nodeId: node.id,
-          kind: "scene",
-        });
-      }
-
-      for (const line of node.lines) {
-        const chObj = characterById(project, line.characterId);
-        if (!chObj) {
-          out.push({ text: `    moovn.narrate("${line.text}")`, nodeId: node.id, kind: "narrate" });
-        } else {
-          out.push({ text: `    moovn.say("${chObj.name}", "${line.text}")`, nodeId: node.id, kind: "say" });
-        }
-      }
-
-      if (node.type === "choice") {
-        for (const c of node.choices) {
-          const affNote = c.affectionCharacterId ? `, affection_delta = ${c.affectionDelta ?? 0}` : "";
-          out.push({
-            text: `    moovn.choice("${c.text}", { target = "${c.targetNodeId ?? ""}"${affNote} })`,
-            nodeId: node.id,
-            kind: "choice",
-          });
-        }
-      } else if (node.type === "end") {
-        out.push({
-          text: `    moovn.ending("${node.endingKind ?? "normal"}", "${node.endingDescription ?? ""}")`,
-          nodeId: node.id,
-          kind: "ending",
-        });
-      } else if (node.nextNodeId) {
-        out.push({ text: `    moovn.jump("${node.nextNodeId}")`, nodeId: node.id, kind: "jump" });
-      }
-
-      if (lang === "lua" || lang === "teal") {
-        out.push({ text: `end`, nodeId: node.id, kind: "label" });
-      } else if (lang === "typescript") {
-        out.push({ text: `}`, nodeId: node.id, kind: "label" });
-      }
-      out.push({ text: "", nodeId: node.id, kind: "blank" });
+export function scratchBlockToTsLine(block: ScratchBlock): string {
+  const p = block.params || {};
+  switch (block.kind) {
+    case "say":
+      return `await moovn.say(${JSON.stringify(p.speaker || "旁白")}, ${JSON.stringify(p.text || "")});`;
+    case "bg":
+      return `await moovn.bg(${JSON.stringify(p.backgroundId || "bg-classroom")}, { mediaKind: ${JSON.stringify(p.mediaKind || "static")}, fps: ${Number(p.fps || 6)} });`;
+    case "char":
+      return `await moovn.char(${JSON.stringify(p.characterId || "c-yuki")}, { x: ${Number(p.x ?? 50)}, y: ${Number(p.y ?? 54)}, scale: ${Number(p.scale ?? 1)}, tween: ${JSON.stringify(p.tween || "breathe")} });`;
+    case "fade":
+      return `await moovn.fade({ target: ${JSON.stringify(p.target || "character")}, characterId: ${JSON.stringify(p.characterId || null)}, direction: ${JSON.stringify(p.direction || "out")}, durationMs: ${Number(p.durationMs ?? 600)}, targetOpacity: ${Number(p.targetOpacity ?? 0)} });`;
+    case "screen_text":
+      return `await moovn.screenText({ text: ${JSON.stringify(p.text || "屏幕文字")}, x: ${Number(p.x ?? 50)}, y: ${Number(p.y ?? 25)}, fontSize: ${Number(p.fontSize ?? 28)}, color: ${JSON.stringify(p.color || "#ffffff")} });`;
+    case "animate":
+      return `await moovn.animate({ targetId: ${JSON.stringify(p.targetId || "c-yuki")}, kind: ${JSON.stringify(p.kind || "frame_sequence")}, tween: ${JSON.stringify(p.tween || "breathe")}, fps: ${Number(p.fps ?? 6)} });`;
+    case "affection":
+      return `await moovn.addAffection(${JSON.stringify(p.characterId || "c-yuki")}, ${Number(p.delta ?? 10)});`;
+    case "ts_code":
+      return String(p.code || "// 自定义 TypeScript 逻辑");
+    case "bridge_call": {
+      const lang = p.bridgeLang || "lua";
+      const fn =
+        lang === "python" ? "runPython" : lang === "teal" ? "runTeal" : "runLua";
+      return `await moovn.bridge.${fn}(${JSON.stringify(p.code || "return true")});`;
     }
+    default:
+      return `// 未知积木块`;
   }
-
-  return out;
 }
 
-export function scriptToText(lines: ScriptLine[]): string {
-  return lines.map((l) => l.text).join("\n");
-}
+export function compileNodeToTypeScript(project: Project, node: StoryNode): string {
+  const fnName = node.id.replace(/[^a-zA-Z0-9_]/g, "_");
+  const lines: string[] = [];
+  lines.push(`export async function scene_${fnName}() { // ${node.title}`);
 
-export function generateProjectScript(project: Project, lang: ScriptLang = "lua"): string {
-  return scriptToText(generateScript(project, lang));
-}
-
-export function visualBlocksToCode(blocks: VisualBlock[], lang: ScriptLang): string {
-  const cmt = lang === "python" ? "#" : lang === "typescript" ? "//" : "--";
-  const lines = [`${cmt} 可视化代码块生成 (${lang.toUpperCase()})`];
-  for (const b of blocks) {
-    if (b.action === "bg") {
-      lines.push(lang === "typescript" ? `moovn.bg("${b.param1}");` : `moovn.bg("${b.param1}")`);
-    } else if (b.action === "bgm") {
-      lines.push(lang === "typescript" ? `moovn.bgm("${b.param1}", ${b.param2 || 80});` : `moovn.bgm("${b.param1}", ${b.param2 || 80})`);
-    } else if (b.action === "char") {
-      lines.push(lang === "typescript" ? `moovn.char("${b.param1}", ${b.param2 || 50});` : `moovn.char("${b.param1}", ${b.param2 || 50})`);
-    } else if (b.action === "affection") {
-      lines.push(lang === "typescript" ? `moovn.addAffection("${b.param1}", ${b.param2 || 10});` : `moovn.add_affection("${b.param1}", ${b.param2 || 10})`);
-    } else {
-      lines.push(lang === "typescript" ? `moovn.say("${b.param1}", "${b.param2}");` : `moovn.say("${b.param1}", "${b.param2}")`);
+  if (node.backgroundId) {
+    const bg = backgroundById(node.backgroundId);
+    lines.push(
+      `  await moovn.bg("${node.backgroundId}", { mediaKind: "${node.backgroundMediaKind || bg?.mediaKind || "static"}", fps: ${node.backgroundFps || bg?.fps || 6} });`,
+    );
+  }
+  if (node.bgmId) {
+    const audio = audioById(node.bgmId);
+    lines.push(`  await moovn.bgm("${node.bgmId}"); // ${audio?.name ?? ""}`);
+  }
+  if (node.fadeConfig) {
+    lines.push(
+      `  await moovn.fade({ target: "${node.fadeConfig.target}", characterId: ${JSON.stringify(node.fadeConfig.characterId ?? null)}, direction: "${node.fadeConfig.direction}", durationMs: ${node.fadeConfig.durationMs}, targetOpacity: ${node.fadeConfig.targetOpacity} });`,
+    );
+  }
+  for (const sc of node.stageCharacters) {
+    lines.push(
+      `  await moovn.char("${sc.characterId}", { x: ${sc.x}, y: ${sc.y}, scale: ${sc.scale}, opacity: ${sc.opacity}, tween: "${sc.tween || "none"}" });`,
+    );
+  }
+  for (const st of node.screenTexts ?? []) {
+    lines.push(
+      `  await moovn.screenText({ text: ${JSON.stringify(st.text)}, x: ${st.x}, y: ${st.y}, fontSize: ${st.fontSize}, color: "${st.color}" });`,
+    );
+  }
+  for (const b of node.blocks ?? []) {
+    lines.push(`  ${scratchBlockToTsLine(b)}`);
+  }
+  for (const l of node.lines) {
+    const ch = characterById(project, l.characterId);
+    lines.push(`  await moovn.say(${JSON.stringify(ch ? ch.name : "旁白")}, ${JSON.stringify(l.text)});`);
+  }
+  if (node.type === "choice") {
+    for (const c of node.choices) {
+      lines.push(
+        `  moovn.choice(${JSON.stringify(c.text)}, { target: ${JSON.stringify(c.targetNodeId)}, affectionDelta: ${c.affectionDelta ?? 0} });`,
+      );
     }
+  } else if (node.type === "end") {
+    lines.push(
+      `  await moovn.ending("${node.endingKind ?? "normal"}", ${JSON.stringify(node.endingDescription ?? "")});`,
+    );
+  } else if (node.nextNodeId) {
+    lines.push(`  await moovn.jump("${node.nextNodeId}");`);
   }
+
+  lines.push(`}`);
   return lines.join("\n");
+}
+
+/**
+ * 生成工程脚本代码：
+ * - TypeScript / JavaScript 为原生主语言，直接调用 `@moovn/sdk`
+ * - Lua / Teal / Python 通过 TypeScript Bridge (`moovn.bridge`) 作为桥梁接入
+ */
+export function generateProjectScript(project: Project, lang: ScriptLang = "typescript"): string {
+  if (lang === "typescript" || lang === "javascript") {
+    const isTs = lang === "typescript";
+    const out: string[] = [
+      `/**`,
+      ` * 《${project.name}》 — MooVN ${isTs ? "TypeScript" : "JavaScript"} 核心脚本`,
+      ` * 所有可视化节点与 Scratch 积木块均直接编译为 @moovn/sdk 原生 API 调用`,
+      ` */`,
+      isTs
+        ? `import { moovn, type SceneContext } from "@moovn/sdk";`
+        : `import { moovn } from "@moovn/sdk";`,
+      ``,
+    ];
+
+    for (const ch of project.chapters) {
+      out.push(`// ==================== ${ch.title} ====================`);
+      const scenes = project.nodes.filter((n) => n.chapterId === ch.id);
+      for (const s of scenes) {
+        out.push(compileNodeToTypeScript(project, s));
+        out.push(``);
+      }
+    }
+    return out.join("\n");
+  }
+
+  // 其他语言（Lua / Teal / Python）：以 TypeScript/JavaScript 作为桥梁 (Bridge)
+  const bridgeFn =
+    lang === "python" ? "runPython" : lang === "teal" ? "runTeal" : "runLua";
+
+  const foreignLines: string[] = [];
+  if (lang === "python") {
+    foreignLines.push(`# Python 扩展脚本（由 TypeScript moovn.bridge.runPython 桥接执行）`);
+    for (const s of project.nodes) {
+      foreignLines.push(`def on_${s.id.replace(/[^a-zA-Z0-9_]/g, "_")}(ctx):`);
+      foreignLines.push(`    ctx.log("执行场景: ${s.title}")`);
+      if (s.fadeConfig) {
+        foreignLines.push(`    ctx.fade("${s.fadeConfig.target}", "${s.fadeConfig.direction}", ${s.fadeConfig.durationMs})`);
+      }
+      for (const l of s.lines) {
+        foreignLines.push(`    ctx.say("${characterById(project, l.characterId)?.name ?? "旁白"}", "${l.text}")`);
+      }
+    }
+  } else if (lang === "teal") {
+    foreignLines.push(`-- Teal 强类型脚本（由 TypeScript moovn.bridge.runTeal 桥接执行）`);
+    foreignLines.push(`local record BridgeCtx`);
+    foreignLines.push(`  scene_id: string`);
+    foreignLines.push(`  say: function(string, string)`);
+    foreignLines.push(`  fade: function(string, string, integer)`);
+    foreignLines.push(`end`);
+    for (const s of project.nodes) {
+      foreignLines.push(`local function on_${s.id.replace(/[^a-zA-Z0-9_]/g, "_")}(ctx: BridgeCtx)`);
+      for (const l of s.lines) {
+        foreignLines.push(`  ctx.say("${characterById(project, l.characterId)?.name ?? "旁白"}", "${l.text}")`);
+      }
+      foreignLines.push(`end`);
+    }
+  } else {
+    foreignLines.push(`-- Lua 扩展脚本（由 TypeScript moovn.bridge.runLua 桥接执行）`);
+    for (const s of project.nodes) {
+      foreignLines.push(`function on_${s.id.replace(/[^a-zA-Z0-9_]/g, "_")}(ctx)`);
+      for (const l of s.lines) {
+        foreignLines.push(`  ctx.say("${characterById(project, l.characterId)?.name ?? "旁白"}", "${l.text}")`);
+      }
+      foreignLines.push(`end`);
+    }
+  }
+
+  return [
+    `/**`,
+    ` * 跨语言桥接器 (scripts/bridge.ts)`,
+    ` * MooVN 以 TypeScript/JavaScript 为核心运行时，通过 moovn.bridge 桥接 ${lang.toUpperCase()}`,
+    ` */`,
+    `import { moovn } from "@moovn/sdk";`,
+    ``,
+    `export async function executeBridged_${lang}Module() {`,
+    `  return await moovn.bridge.${bridgeFn}(\`\\`,
+    ...foreignLines.map((l) => `  ${l.replace(/`/g, "\\`")}`),
+    `  \`);`,
+    `}`,
+  ].join("\n");
 }
