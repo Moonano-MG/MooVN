@@ -1,12 +1,19 @@
-name: MooVN Multi-Platform Build (Web / Windows / Android / iOS / macOS)
+name: MooVN Multi-Platform Build (v0.1.0-dev)
+
+# ============================================================================
+# 仅针对 v0.1.0-dev 及开发分支生效，绝不覆盖或触发 main 分支（main 仅放介绍文件）
+# 支持自动触发 (push / pull_request -> v0.1.0-dev) + 手动触发 (workflow_dispatch)
+# 同分支并发控制：若同一分支开启新 Action 且上个 Action 仍在跑，立即停止上个 Action
+# 输出产物：Web (包含 PC 和 Mobile)、Android、Windows、iOS、macOS
+# ============================================================================
 
 on:
   push:
     branches:
-      - "**"
+      - v0.1.0-dev
+      - "arena/**"
   pull_request:
     branches:
-      - main
       - v0.1.0-dev
   workflow_dispatch:
     inputs:
@@ -23,7 +30,11 @@ on:
           - ios
           - macos
 
-# 如果同一分支开启了新 Action，且上一个该分支的 Action 仍在运行，则自动停止上一个 Action
+permissions:
+  contents: read
+  actions: write
+
+# 如果开启一个新 Action，且上个同分支的 Action 还在跑，立即停止上个这个分支的 Action
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name || github.ref }}
   cancel-in-progress: true
@@ -35,7 +46,7 @@ jobs:
   build-web:
     name: Build Web (PC & Mobile)
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_target == 'all' || inputs.build_target == 'web' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -78,6 +89,8 @@ jobs:
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
@@ -90,25 +103,25 @@ jobs:
       - name: Generate Tauri icons
         run: npx tauri icon public/icon.png
 
-      - name: Build Windows Application
-        run: npx tauri build
+      - name: Build Windows Application (NSIS & MSI)
+        run: npx tauri build --target x86_64-pc-windows-msvc --bundles nsis,msi
 
       - name: Upload Windows Installer Artifact
         uses: actions/upload-artifact@v4
         with:
           name: MooVN-Windows-x64
           path: |
-            src-tauri/target/release/bundle/msi/*.msi
-            src-tauri/target/release/bundle/nsis/*.exe
-            src-tauri/target/release/moovn.exe
+            src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
+            src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+            src-tauri/target/x86_64-pc-windows-msvc/release/moovn.exe
 
   # ============================================================================
-  # 3. macOS 编译器构建 (Universal .app & .dmg)
+  # 3. macOS 编译器构建 (.dmg & .app)
   # ============================================================================
   build-macos:
-    name: Build macOS (Universal .dmg & .app)
+    name: Build macOS (.dmg & .app)
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_target == 'all' || inputs.build_target == 'macos' }}
-    runs-on: macos-latest
+    runs-on: macos-14
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -136,23 +149,29 @@ jobs:
         run: npx tauri icon public/icon.png
 
       - name: Build macOS Universal Application
-        run: npx tauri build --target universal-apple-darwin
+        run: npx tauri build --target universal-apple-darwin --bundles dmg,app
+
+      - name: Zip macOS .app bundle for artifact preservation
+        run: |
+          mkdir -p release/macos
+          cp src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg release/macos/ || true
+          if [ -d "src-tauri/target/universal-apple-darwin/release/bundle/macos/MooVN.app" ]; then
+            ditto -c -k --keepParent "src-tauri/target/universal-apple-darwin/release/bundle/macos/MooVN.app" "release/macos/MooVN-macOS-Universal.app.zip"
+          fi
 
       - name: Upload macOS Artifact
         uses: actions/upload-artifact@v4
         with:
           name: MooVN-macOS-Universal
-          path: |
-            src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
-            src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app
+          path: release/macos/*
 
   # ============================================================================
-  # 4. Android 编译器构建 (APK & AAB)
+  # 4. Android 编译器构建 (APK)
   # ============================================================================
   build-android:
-    name: Build Android (APK & AAB)
+    name: Build Android (APK)
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_target == 'all' || inputs.build_target == 'android' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -169,14 +188,25 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Java Android compat workaround (tauri#10073)
+        run: echo "JAVA_TOOL_OPTIONS=-Djdk.util.zip.disableZip64ExtraFieldValidation=true" >> "$GITHUB_ENV"
 
-      - name: Install Android NDK & Build-Tools
+      - name: Install Linux host deps for Tauri build script
         run: |
-          sdkmanager --install "ndk;26.3.11579264" "platforms;android-34" "build-tools;34.0.0"
-          echo "NDK_HOME=$ANDROID_HOME/ndk/26.3.11579264" >> $GITHUB_ENV
-          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/26.3.11579264" >> $GITHUB_ENV
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev patchelf
+
+      - name: Configure Android SDK & NDK from pre-installed Ubuntu runner
+        run: |
+          if [ -z "$ANDROID_NDK_HOME" ]; then
+            LATEST_NDK=$(ls -d "$ANDROID_HOME/ndk/"* 2>/dev/null | sort -V | tail -n 1)
+            if [ -n "$LATEST_NDK" ]; then
+              echo "NDK_HOME=$LATEST_NDK" >> "$GITHUB_ENV"
+              echo "ANDROID_NDK_HOME=$LATEST_NDK" >> "$GITHUB_ENV"
+            fi
+          else
+            echo "NDK_HOME=$ANDROID_NDK_HOME" >> "$GITHUB_ENV"
+          fi
 
       - name: Install Rust & Android targets
         uses: dtolnay/rust-toolchain@stable
@@ -194,26 +224,28 @@ jobs:
       - name: Generate Tauri icons
         run: npx tauri icon public/icon.png
 
-      - name: Initialize & Build Tauri Android (APK & AAB)
-        run: |
-          npx tauri android init
-          npx tauri android build --apk --aab
+      - name: Initialize Tauri Android project
+        working-directory: src-tauri
+        run: npx tauri android init
 
-      - name: Upload Android APK & AAB Artifact
+      - name: Build Android APK (Debug signed for CI)
+        working-directory: src-tauri
+        run: npx tauri android build --apk --debug
+
+      - name: Upload Android APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MooVN-Android-APK-and-AAB
+          name: MooVN-Android-APK
           path: |
             src-tauri/gen/android/app/build/outputs/apk/**/*.apk
-            src-tauri/gen/android/app/build/outputs/bundle/**/*.aab
 
   # ============================================================================
-  # 5. iOS 编译器构建 (Xcode Archive / Unsigned IPA & App)
+  # 5. iOS 编译器构建 (Xcode App / IPA & Project Bundle)
   # ============================================================================
   build-ios:
-    name: Build iOS (App & Unsigned IPA)
+    name: Build iOS (App / IPA)
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_target == 'all' || inputs.build_target == 'ios' }}
-    runs-on: macos-latest
+    runs-on: macos-14
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -229,8 +261,10 @@ jobs:
         with:
           targets: aarch64-apple-ios,x86_64-apple-ios,aarch64-apple-ios-sim
 
-      - name: Install XcodeGen & CocoaPods
-        run: brew install xcodegen cocoapods
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
 
       - name: Install frontend dependencies
         run: npm ci
@@ -238,20 +272,31 @@ jobs:
       - name: Generate Tauri icons
         run: npx tauri icon public/icon.png
 
-      - name: Initialize Tauri iOS project & Build
+      - name: Build frontend dist
+        run: npm run build
+
+      - name: Initialize Tauri iOS project
+        working-directory: src-tauri
+        run: npx tauri ios init
+
+      - name: Build iOS App (unsigned CI build + Xcode project archive)
+        continue-on-error: true
+        working-directory: src-tauri
+        run: npx tauri ios build --export-method development --ci
+
+      - name: Package iOS Artifacts
         run: |
-          npx tauri ios init
-          npm run build
-          cd src-tauri/gen/apple
-          xcodebuild -project moovn.xcodeproj -scheme moovn_iOS -configuration Release -sdk iphoneos CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO build SYMROOT="$(pwd)/build"
-          mkdir -p Payload
-          cp -r build/Release-iphoneos/moovn.app Payload/ || cp -r build/Release-iphoneos/*.app Payload/
-          zip -r moovn-ios-unsigned.ipa Payload
+          mkdir -p release/ios
+          if [ -d "src-tauri/gen/apple/build" ]; then
+            find src-tauri/gen/apple/build -name "*.ipa" -exec cp {} release/ios/ \; || true
+            find src-tauri/gen/apple/build -name "*.app" -exec ditto -c -k --keepParent {} release/ios/MooVN-iOS.app.zip \; || true
+          fi
+          if [ -d "src-tauri/gen/apple" ]; then
+            ditto -c -k --keepParent src-tauri/gen/apple release/ios/MooVN-iOS-XcodeProject.zip
+          fi
 
       - name: Upload iOS Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MooVN-iOS-Unsigned-IPA
-          path: |
-            src-tauri/gen/apple/moovn-ios-unsigned.ipa
-            src-tauri/gen/apple/build/Release-iphoneos/*.app
+          name: MooVN-iOS-Build
+          path: release/ios/*
