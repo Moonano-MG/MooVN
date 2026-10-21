@@ -1,0 +1,17 @@
+node_modules/
+target/
+src-tauri/target/
+dist/
+build/
+.env
+.env.local
+.env.*.local
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+Thumbs.db

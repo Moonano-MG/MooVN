@@ -69,15 +69,24 @@ bun run build      # 产出 dist/（编辑器 + 游戏运行时）
 ## 🖥️ 桌面端（Windows / macOS / Linux）
 
 ```bash
-# 1) 生成完整图标集（首次）
-bunx tauri icon src-tauri/icons/app-icon.png
+# 1) 生成完整图标集（首次；仓库已内置生成结果，也可重新生成）
+python3 scripts/gen-icons.py          # 或 bunx tauri icon src-tauri/icons/app-icon.jpg
 
 # 2) 开发调试
 bun tauri dev
 
-# 3) 构建（Windows 产出 NSIS 安装包）
-bunx tauri build
+# 3a) 仅构建当前平台安装包 + ZIP 免安装版
+npm run build:win     # Windows: NSIS .exe + MSI + MooVN-vX.Y.Z-windows-portable.zip
+npm run build:mac     # macOS:   .dmg + .app + MooVN-vX.Y.Z-macos-portable.zip
+npm run build:linux   # Linux:   deb/rpm/AppImage + MooVN-vX.Y.Z-linux-portable.zip
+
+# 3b) 一键发布脚本（类型检查 → 前端构建 → tauri build → 收集产物 → ZIP 免安装 → SHA256SUMS）
+./scripts/build-release.sh
+# 可选参数: --targets nsis,msi  /  --skip-frontend  /  MOOVN_VERSION=0.2.0 ./scripts/build-release.sh
 ```
+
+所有产物统一输出到 `release/` 目录（含 `SHA256SUMS.txt` 校验和）。
+**构建脚本不会自动创建 git tag、不会执行任何 git 写操作**；如需打标签请手动 `git tag v0.1.0`。
 
 ## 🤖 Android
 

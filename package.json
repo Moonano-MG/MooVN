@@ -10,7 +10,12 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "tauri": "tauri",
-    "assets:audio": "node scripts/gen-audio.mjs"
+    "assets:audio": "node scripts/gen-audio.mjs",
+    "icons": "python3 scripts/gen-icons.py",
+    "build:win": "tauri build --bundles nsis,msi && node scripts/zip-portable.mjs",
+    "build:mac": "tauri build --bundles dmg,app && node scripts/zip-portable.mjs",
+    "build:linux": "tauri build --bundles deb,rpm,appimage && node scripts/zip-portable.mjs",
+    "release": "bash scripts/build-release.sh"
   },
   "dependencies": {
     "@codemirror/lang-javascript": "^6.2.2",
