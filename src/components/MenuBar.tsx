@@ -4,42 +4,35 @@ import {
   Save,
   Undo2,
   Redo2,
-  FileJson,
-  FileCode2,
   FolderOpen,
   FilePlus2,
-  Network,
-  ScrollText,
-  Maximize,
-  PanelLeft,
-  PanelRight,
-  CircleHelp,
   Trash2,
   Copy,
   Flag,
-  Check,
-  MonitorPlay,
   Sparkles,
+  Feather,
+  Moon,
+  Sun,
+  Package,
+  Bug,
+  RotateCcw,
 } from "lucide-react";
 import type { Editor } from "../hooks/useEditor";
-
-export type ViewTab = "graph" | "stage" | "script";
+import type { EditorTheme } from "../types";
 
 interface MenuBarProps {
   editor: Editor;
-  view: ViewTab;
-  onViewChange: (v: ViewTab) => void;
+  theme: EditorTheme;
+  debugMode: boolean;
+  onToggleDebugMode: () => void;
+  onToggleTheme: () => void;
   onSave: () => void;
-  onExportYaml: () => void;
-  onExportSceneYaml: () => void;
+  onPackageGame: () => void;
   onImport: () => void;
   onNewProject: () => void;
   onLoadTemplate: () => void;
-  onPreview: (fromNodeId: string | null, startInMenu?: boolean) => void;
-  onFitView: () => void;
-  onToggleLeft: () => void;
-  onToggleRight: () => void;
-  onAbout: () => void;
+  onPreview: () => void;
+  onResetLayout: () => void;
 }
 
 interface MenuItem {
@@ -48,16 +41,21 @@ interface MenuItem {
   icon?: React.ReactNode;
   action?: () => void;
   disabled?: boolean;
-  checked?: boolean;
   danger?: boolean;
   divider?: boolean;
 }
 
 export default function MenuBar(props: MenuBarProps) {
-  const { editor, view, onViewChange } = props;
+  const { editor, theme, debugMode } = props;
   const { project, selectedNode, selectedEdge } = editor;
   const [open, setOpen] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState(project.name);
   const barRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setNameDraft(project.name);
+  }, [project.name]);
 
   useEffect(() => {
     const onDoc = (e: MouseEvent) => {
@@ -66,6 +64,16 @@ export default function MenuBar(props: MenuBarProps) {
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
   }, []);
+
+  const commitName = () => {
+    setEditingName(false);
+    const trimmed = nameDraft.trim();
+    if (trimmed && trimmed !== project.name) {
+      editor.update((p) => ({ ...p, name: trimmed }), true);
+    } else {
+      setNameDraft(project.name);
+    }
+  };
 
   const deleteSelected = () => {
     if (selectedEdge) editor.connect(selectedEdge, null);
@@ -77,12 +85,11 @@ export default function MenuBar(props: MenuBarProps) {
       label: "文件",
       items: [
         { label: "新建空白工程", icon: <FilePlus2 size={14} />, shortcut: "Ctrl+N", action: props.onNewProject },
-        { label: "加载《樱花树下的约定》模板", icon: <Sparkles size={14} />, action: props.onLoadTemplate },
-        { label: "导入工程文件…", icon: <FolderOpen size={14} />, action: props.onImport },
+        { label: "载入《樱花树下的约定》示例", icon: <Sparkles size={14} />, action: props.onLoadTemplate },
+        { label: "导入工程 (.json)…", icon: <FolderOpen size={14} />, action: props.onImport },
         { divider: true, label: "" },
         { label: "保存工程", icon: <Save size={14} />, shortcut: "Ctrl+S", action: props.onSave },
-        { label: "导出当前场景 YAML", icon: <FileCode2 size={14} />, action: props.onExportSceneYaml },
-        { label: "导出全工程 YAML", icon: <FileJson size={14} />, action: props.onExportYaml },
+        { label: "打包导出独立游戏 (.html)", icon: <Package size={14} />, action: props.onPackageGame },
       ],
     },
     {
@@ -92,13 +99,13 @@ export default function MenuBar(props: MenuBarProps) {
         { label: "重做", icon: <Redo2 size={14} />, shortcut: "Ctrl+Y", action: editor.redo, disabled: !editor.canRedo },
         { divider: true, label: "" },
         {
-          label: "复制当前场景",
+          label: "复制当前选中节点",
           icon: <Copy size={14} />,
           action: () => selectedNode && editor.duplicateNode(selectedNode.id),
           disabled: !selectedNode,
         },
         {
-          label: selectedEdge ? "删除所选连线" : "删除当前场景",
+          label: selectedEdge ? "删除所选连线" : "删除当前节点",
           icon: <Trash2 size={14} />,
           shortcut: "Del",
           danger: true,
@@ -106,7 +113,7 @@ export default function MenuBar(props: MenuBarProps) {
           disabled: !selectedNode && !selectedEdge,
         },
         {
-          label: "将当前场景设为故事起点",
+          label: "设为故事起点",
           icon: <Flag size={14} />,
           action: () => selectedNode && editor.setStartNode(selectedNode.id),
           disabled: !selectedNode || selectedNode?.id === project.startNodeId,
@@ -114,61 +121,70 @@ export default function MenuBar(props: MenuBarProps) {
       ],
     },
     {
-      label: "视图",
+      label: "布局",
       items: [
-        { label: "工作流画布", icon: <Network size={14} />, checked: view === "graph", action: () => onViewChange("graph") },
-        { label: "可视化场景舞台", icon: <MonitorPlay size={14} />, checked: view === "stage", action: () => onViewChange("stage") },
-        { label: "脚本与配置 (YAML / Lua / Teal / Py / TS)", icon: <ScrollText size={14} />, checked: view === "script", action: () => onViewChange("script") },
-        { divider: true, label: "" },
-        { label: "适应画布", icon: <Maximize size={14} />, action: props.onFitView, disabled: view !== "graph" },
-        { label: "切换左侧面板", icon: <PanelLeft size={14} />, action: props.onToggleLeft },
-        { label: "切换右侧检查器", icon: <PanelRight size={14} />, action: props.onToggleRight },
-      ],
-    },
-    {
-      label: "运行",
-      items: [
-        { label: "启动完整游戏（含主菜单）", icon: <Play size={14} />, shortcut: "F5", action: () => props.onPreview(null, true) },
-        {
-          label: "从当前选中场景直接试玩",
-          icon: <Play size={14} />,
-          action: () => selectedNode && props.onPreview(selectedNode.id, false),
-          disabled: !selectedNode,
-        },
-      ],
-    },
-    {
-      label: "帮助",
-      items: [
-        { label: "关于 MooVN Studio", icon: <CircleHelp size={14} />, action: props.onAbout },
+        { label: "重置所有面板停靠位置与尺寸", icon: <RotateCcw size={14} />, action: props.onResetLayout },
       ],
     },
   ];
 
   return (
-    <div
+    <header
       ref={barRef}
-      className="relative z-30 flex h-11 shrink-0 items-center gap-1 border-b border-white/[0.06] bg-[#0d0d10] px-2 select-none"
+      className="relative z-30 flex h-10 shrink-0 items-center gap-1.5 border-b border-white/[0.07] bg-[#0e0e12] px-3 select-none"
     >
-      {/* 顶部下拉菜单 */}
+      {/* Logo 与工程名 */}
+      <div className="flex items-center gap-2 pr-1">
+        <div className="flex h-6 w-6 items-center justify-center rounded-md bg-sky-500 text-white">
+          <Feather size={14} strokeWidth={2.2} />
+        </div>
+        {editingName ? (
+          <input
+            autoFocus
+            value={nameDraft}
+            onChange={(e) => setNameDraft(e.target.value)}
+            onBlur={commitName}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") commitName();
+              if (e.key === "Escape") {
+                setNameDraft(project.name);
+                setEditingName(false);
+              }
+            }}
+            className="field w-40 rounded border border-white/20 bg-zinc-900 px-2 py-0.5 text-[12.5px] text-zinc-100"
+          />
+        ) : (
+          <button
+            onDoubleClick={() => setEditingName(true)}
+            title="双击修改工程名称"
+            className="max-w-44 truncate text-[13px] font-semibold text-zinc-100 hover:text-sky-400"
+          >
+            {project.name}
+          </button>
+        )}
+      </div>
+
+      <div className="h-4 w-px bg-white/10" />
+
+      {/* 顶部菜单 */}
       {menus.map((menu) => (
         <div key={menu.label} className="relative">
           <button
             onClick={() => setOpen(open === menu.label ? null : menu.label)}
             onMouseEnter={() => open && setOpen(menu.label)}
-            className={`rounded-md px-3 py-1.5 text-[13px] transition ${
+            className={`rounded-md px-2.5 py-1 text-[12.5px] transition ${
               open === menu.label
-                ? "bg-white/[0.08] text-white"
+                ? "bg-white/[0.09] text-white"
                 : "text-zinc-300 hover:bg-white/[0.05] hover:text-white"
             }`}
           >
             {menu.label}
           </button>
           {open === menu.label && (
-            <div className="animate-pop-in absolute top-full left-0 mt-1 w-64 overflow-hidden rounded-xl border border-white/10 bg-[#17171b] py-1.5 shadow-2xl shadow-black/60">
+            <div className="animate-pop-in absolute top-full left-0 mt-1 w-60 overflow-hidden rounded-xl border border-white/10 bg-[#17171c] py-1.5 shadow-2xl">
               {menu.items.map((item, i) =>
                 item.divider ? (
-                  <div key={i} className="mx-3 my-1.5 h-px bg-white/[0.07]" />
+                  <div key={i} className="mx-3 my-1 h-px bg-white/[0.07]" />
                 ) : (
                   <button
                     key={i}
@@ -177,7 +193,7 @@ export default function MenuBar(props: MenuBarProps) {
                       setOpen(null);
                       item.action?.();
                     }}
-                    className={`flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-[12.5px] transition ${
+                    className={`flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-[12px] transition ${
                       item.disabled
                         ? "cursor-not-allowed text-zinc-600"
                         : item.danger
@@ -185,11 +201,9 @@ export default function MenuBar(props: MenuBarProps) {
                           : "text-zinc-200 hover:bg-white/[0.07]"
                     }`}
                   >
-                    <span className="flex h-4 w-4 items-center justify-center text-zinc-400">
-                      {item.checked ? <Check size={13} className="text-sky-400" /> : item.icon}
-                    </span>
+                    <span className="flex h-4 w-4 items-center justify-center text-zinc-400">{item.icon}</span>
                     <span className="flex-1">{item.label}</span>
-                    {item.shortcut && <span className="font-mono text-[11px] text-zinc-500">{item.shortcut}</span>}
+                    {item.shortcut && <span className="font-mono text-[10.5px] text-zinc-500">{item.shortcut}</span>}
                   </button>
                 ),
               )}
@@ -198,89 +212,75 @@ export default function MenuBar(props: MenuBarProps) {
         </div>
       ))}
 
-      <div className="mx-1.5 h-4 w-px bg-white/10" />
+      <div className="h-4 w-px bg-white/10" />
 
-      {/* 快捷撤销 / 重做 / 保存 */}
+      {/* 撤销 / 重做 / 保存 */}
       <button
         onClick={editor.undo}
         disabled={!editor.canUndo}
         title="撤销 (Ctrl+Z)"
-        className="flex h-8 w-8 items-center justify-center rounded-md text-zinc-400 transition hover:bg-white/[0.06] hover:text-zinc-100 disabled:opacity-30"
+        className="flex h-7 w-7 items-center justify-center rounded-md text-zinc-400 hover:bg-white/[0.06] hover:text-zinc-100 disabled:opacity-30"
       >
-        <Undo2 size={15} />
+        <Undo2 size={14} />
       </button>
       <button
         onClick={editor.redo}
         disabled={!editor.canRedo}
         title="重做 (Ctrl+Y)"
-        className="flex h-8 w-8 items-center justify-center rounded-md text-zinc-400 transition hover:bg-white/[0.06] hover:text-zinc-100 disabled:opacity-30"
+        className="flex h-7 w-7 items-center justify-center rounded-md text-zinc-400 hover:bg-white/[0.06] hover:text-zinc-100 disabled:opacity-30"
       >
-        <Redo2 size={15} />
+        <Redo2 size={14} />
       </button>
       <button
         onClick={props.onSave}
-        title="保存工程 (Ctrl+S)"
-        className="flex h-8 w-8 items-center justify-center rounded-md text-zinc-400 transition hover:bg-white/[0.06] hover:text-zinc-100"
+        title="保存 (Ctrl+S)"
+        className="flex h-7 w-7 items-center justify-center rounded-md text-zinc-400 hover:bg-white/[0.06] hover:text-zinc-100"
       >
-        <Save size={15} />
+        <Save size={14} />
       </button>
 
       <div className="flex-1" />
 
-      {/* 中央清爽三视图切换器：工作流 / 场景舞台 / 脚本与配置 */}
-      <div className="flex items-center gap-0.5 rounded-lg border border-white/[0.08] bg-white/[0.03] p-0.5">
-        <button
-          onClick={() => onViewChange("graph")}
-          className={`flex h-7 items-center gap-1.5 rounded-md px-3 text-[12px] font-medium transition ${
-            view === "graph" ? "bg-sky-500 text-white shadow-sm" : "text-zinc-400 hover:text-zinc-200"
-          }`}
-        >
-          <Network size={13} />
-          工作流
-        </button>
-        <button
-          onClick={() => onViewChange("stage")}
-          className={`flex h-7 items-center gap-1.5 rounded-md px-3 text-[12px] font-medium transition ${
-            view === "stage" ? "bg-sky-500 text-white shadow-sm" : "text-zinc-400 hover:text-zinc-200"
-          }`}
-        >
-          <MonitorPlay size={13} />
-          场景舞台
-        </button>
-        <button
-          onClick={() => onViewChange("script")}
-          className={`flex h-7 items-center gap-1.5 rounded-md px-3 text-[12px] font-medium transition ${
-            view === "script" ? "bg-sky-500 text-white shadow-sm" : "text-zinc-400 hover:text-zinc-200"
-          }`}
-        >
-          <ScrollText size={13} />
-          脚本与YAML
-        </button>
-      </div>
+      {/* 深浅主题切换 */}
+      <button
+        onClick={props.onToggleTheme}
+        className="flex h-7 items-center gap-1 rounded-md border border-white/10 bg-white/[0.04] px-2.5 text-[11.5px] text-zinc-300 hover:bg-white/[0.09]"
+      >
+        {theme === "dark" ? <Moon size={12} className="text-sky-400" /> : <Sun size={12} className="text-amber-500" />}
+        <span>{theme === "dark" ? "深色" : "浅色"}</span>
+      </button>
 
-      <div className="flex-1" />
+      {/* 开发者调试开关（正式打包导出时自动剔除） */}
+      <button
+        onClick={props.onToggleDebugMode}
+        title="开启后在编辑器内运行游戏时可查看开发者调试悬浮窗（正式打包导出的游戏不会包含）"
+        className={`flex h-7 items-center gap-1 rounded-md border px-2.5 text-[11.5px] font-medium transition ${
+          debugMode
+            ? "border-amber-400/50 bg-amber-400/15 text-amber-200"
+            : "border-white/10 bg-white/[0.04] text-zinc-400 hover:text-zinc-200"
+        }`}
+      >
+        <Bug size={12} />
+        <span>调试模式</span>
+      </button>
 
-      {/* 右侧运行按钮 */}
-      <div className="flex items-center gap-1.5">
-        {selectedNode && (
-          <button
-            onClick={() => props.onPreview(selectedNode.id, false)}
-            className="hidden h-8 items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] px-3 text-[12.5px] text-zinc-200 transition hover:bg-white/[0.09] sm:flex"
-            title="从当前选中的场景直接进入画面试玩"
-          >
-            <Play size={12} />
-            当前场景试玩
-          </button>
-        )}
-        <button
-          onClick={() => props.onPreview(null, true)}
-          className="flex h-8 items-center gap-1.5 rounded-lg bg-sky-500 px-3.5 text-[12.5px] font-medium text-white shadow-[0_2px_12px_rgba(14,165,233,0.35)] transition hover:bg-sky-400"
-          title="运行完整游戏 (F5)"
-        >
-          <Play size={13} fill="currentColor" />
-          运行游戏
-        </button>
-      </div>
-    </div>
+      {/* 唯一打包游戏入口 */}
+      <button
+        onClick={props.onPackageGame}
+        className="flex h-7 items-center gap-1.5 rounded-md border border-sky-400/40 bg-sky-500/15 px-3 text-[12px] font-medium text-sky-200 transition hover:bg-sky-500/25"
+      >
+        <Package size={13} />
+        打包游戏
+      </button>
+
+      {/* 唯一运行入口 */}
+      <button
+        onClick={props.onPreview}
+        className="flex h-7 items-center gap-1.5 rounded-md bg-sky-500 px-3 text-[12px] font-semibold text-white shadow-[0_2px_10px_rgba(14,165,233,0.35)] transition hover:bg-sky-400"
+      >
+        <Play size={12} fill="currentColor" />
+        运行游戏
+      </button>
+    </header>
   );
 }
