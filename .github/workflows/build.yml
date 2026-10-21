@@ -1,115 +1,306 @@
 name: Build Release Artifacts
 
-# 手动触发 + 推送到主分支时构建（不自动打 tag；tag 推送时也可构建但绝不创建新 tag）
+# =============================================================================
+# MooVN 多平台编译流水线（自动 + 手动触发）
+#   - 自动触发：任意分支 push、PR、tag（v*）
+#   - 手动触发：Actions 页面 "Run workflow"（可勾选单个平台）
+#   - 版本号 = 当前分支名（做文件名安全清洗并全部转小写；默认分支回退到 package.json 版本）
+#   - concurrency：同一分支的旧 Run 会被自动取消，然后跑新的（cancel-in-progress: true）
+#   - fail-fast: false：某个平台失败，其他平台继续构建，互不影响
+#   - 全程绝不创建 git tag、不做任何 git 写操作
+# =============================================================================
+
 on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
   workflow_dispatch:
     inputs:
-      version:
-        description: "版本后缀（留空则用 package.json 中的 version）"
+      platform:
+        description: "只构建指定平台（all = 全部）"
         required: false
-        default: ""
-  push:
-    branches: [main, master]
-    tags: ["v*"]
+        default: "all"
+        type: choice
+        options: [all, windows, mac, ios, web, android, ubuntu]
 
 permissions:
   contents: read
+  actions: write # 用于并发组取消同分支旧 Run（cancel-in-progress）
 
+# 关键：并发组按“分支(ref)”划分。同一分支再次触发时，正在跑的旧 Run 会被自动停止，随即启动新的 Run。
 concurrency:
-  group: release-build-${{ github.ref }}
+  group: build-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  desktop:
+  # ---------------------------------------------------------------------------
+  # meta：计算版本号 = 当前分支名（清洗 + 全小写），供所有平台共用。
+  # iOS / Android / macOS 相关命名一律使用 ${BRANCH_SLUG}（天然全小写）。
+  # ---------------------------------------------------------------------------
+  meta:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+      branch: ${{ steps.ver.outputs.branch }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - id: ver
+        run: |
+          RAW="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
+          # 文件名安全清洗：非 [a-z0-9._-] -> '-'，折叠连续 '-'，去首尾 '-'，全小写
+          SLUG=$(echo "$RAW" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9._-]+/-/g; s/-+/-/g; s/^-+//; s/-+$//')
+          BASE=$(node -p "require('./package.json').version")
+          [ -z "$SLUG" ] && SLUG="$BASE"
+          echo "branch=$RAW" >> "$GITHUB_OUTPUT"
+          echo "version=$SLUG" >> "$GITHUB_OUTPUT"
+          echo "==> 分支 '$RAW' -> 版本标识 '$SLUG'（基础版本 $BASE）"
+
+  # ---------------------------------------------------------------------------
+  # Windows x64 + x86(32位)：NSIS 安装器 + MSI + ZIP 免安装包
+  # ---------------------------------------------------------------------------
+  windows:
+    needs: meta
+    if: >-
+      (github.event_name != 'workflow_dispatch') ||
+      (inputs.platform == 'all') || (inputs.platform == 'windows')
+    strategy:
+      fail-fast: false   # 任一架构/target 失败，其它 job 不受影响、不重跑
+      matrix:
+        rust-target: [x86_64-pc-windows-msvc, i686-pc-windows-msvc]
+        include:
+          - rust-target: x86_64-pc-windows-msvc
+            arch: x64
+            npm_arch: x64
+          - rust-target: i686-pc-windows-msvc
+            arch: x86
+            npm_arch: ia32
+    runs-on: windows-latest
+    env:
+      MOOVN_VERSION_OVERRIDE: ${{ needs.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          architecture: ${{ matrix.npm_arch }}
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-target }}
+      - name: Sync version from branch slug (no git write)
+        shell: bash
+        run: node scripts/set-version.mjs "$MOOVN_VERSION_OVERRIDE"
+      - run: npm ci
+      - run: npm run typecheck && npm run build
+      - name: Tauri build (NSIS + MSI, ${{ matrix.arch }})
+        run: npx tauri build --target ${{ matrix.rust-target }} --bundles nsis,msi
+      - name: Collect installers + ZIP portable
+        shell: bash
+        run: bash scripts/collect-artifacts.sh "windows-${{ matrix.arch }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: moovn-windows-${{ matrix.arch }}-${{ needs.meta.outputs.version }}
+          path: release/windows-${{ matrix.arch }}/*
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # Ubuntu（deb / rpm / AppImage，可直接 apt/dnf install 或双击运行，适用 Cloud Shell 等环境）
+  # ---------------------------------------------------------------------------
+  ubuntu:
+    needs: meta
+    if: >-
+      (github.event_name != 'workflow_dispatch') ||
+      (inputs.platform == 'all') || (inputs.platform == 'ubuntu')
     strategy:
       fail-fast: false
       matrix:
+        rust-target: [x86_64-unknown-linux-gnu, i686-unknown-linux-gnu]
         include:
-          - os: windows-latest
-            bundles: nsis,msi
-            artifact: moovn-windows
-          - os: ubuntu-22.04
-            bundles: deb,rpm,appimage
-            artifact: moovn-linux
-          - os: macos-14
-            bundles: dmg,app
-            artifact: moovn-macos
-    runs-on: ${{ matrix.os }}
+          - rust-target: x86_64-unknown-linux-gnu
+            arch: amd64
+          - rust-target: i686-unknown-linux-gnu
+            arch: i386
+    runs-on: ubuntu-24.04
+    env:
+      MOOVN_VERSION_OVERRIDE: ${{ needs.meta.outputs.version }}
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
+        with: { node-version: "20", cache: npm }
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          node-version: 20
-          cache: npm
-
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Linux system deps (Tauri)
-        if: runner.os == 'Linux'
+          targets: ${{ matrix.rust-target }}
+      - name: System deps (Tauri v2 / webkit2gtk-4.1)
         run: |
+          sudo dpkg --add-architecture i386 || true
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev patchelf rpm libssl-dev libgtk-3-dev libayatana-appindicator3-dev
-
-      - name: Generate icons (if missing)
-        shell: bash
-        run: |
-          if [ ! -f src-tauri/icons/icon.ico ]; then
-            python3 -m pip install --quiet pillow || pip3 install --quiet pillow
-            python3 scripts/gen-icons.py || npx tauri icon src-tauri/icons/app-icon.jpg
+          sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev patchelf rpm libssl-dev \
+            libgtk-3-dev libayatana-appindicator3-dev
+          if [ "${{ matrix.rust-target }}" = "i686-unknown-linux-gnu" ]; then
+            sudo apt-get install -y gcc-multilib libc6-dev-i386 || \
+              echo "::warning::i386 dev 库不完整，32 位 Linux 构建可能失败（不影响其它平台）"
           fi
-
-      - name: npm install & typecheck & frontend build
-        run: |
-          npm ci
-          npm run typecheck
-          npm run build
-
-      - name: Tauri build (installers)
-        run: npx tauri build --bundles ${{ matrix.bundles }}
-
-      - name: Package ZIP portable + collect artifacts
-        run: node scripts/zip-portable.mjs
-        env:
-          MOOVN_VERSION: ${{ github.event.inputs.version }}
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+      - run: node scripts/set-version.mjs "$MOOVN_VERSION_OVERRIDE"
+      - run: npm ci && npm run typecheck && npm run build
+      - name: Tauri build (deb + rpm + appimage, ${{ matrix.arch }})
+        run: npx tauri build --target ${{ matrix.rust-target }} --bundles deb,rpm,appimage
+      - name: Collect artifacts
+        run: bash scripts/collect-artifacts.sh "ubuntu-${{ matrix.arch }}"
+      - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact }}
-          path: |
-            release/*
-            !release/SHA256SUMS.txt
+          name: moovn-ubuntu-${{ matrix.arch }}-${{ needs.meta.outputs.version }}
+          path: release/ubuntu-${{ matrix.arch }}/*
           if-no-files-found: error
 
-  android:
-    runs-on: ubuntu-22.04
+  # ---------------------------------------------------------------------------
+  # Web（纯浏览器版：编辑器 + 游戏页，ZIP 静态包，解压即用）
+  # ---------------------------------------------------------------------------
+  web:
+    needs: meta
+    if: >-
+      (github.event_name != 'workflow_dispatch') ||
+      (inputs.platform == 'all') || (inputs.platform == 'web')
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 20, cache: npm }
+        with: { node-version: "20", cache: npm }
+      - run: npm ci && npm run typecheck && npm run build
+      - name: Package web ZIP (lowercased)
+        run: |
+          V="${{ needs.meta.outputs.version }}"
+          mkdir -p release/web
+          zip -qr "release/web/moovn-web-${V}.zip" dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: moovn-web-${{ needs.meta.outputs.version }}
+          path: release/web/*
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # macOS（dmg + app + .app ZIP 免安装；产物名统一小写，防止 macOS 大小写识别问题）
+  # ---------------------------------------------------------------------------
+  mac:
+    needs: meta
+    if: >-
+      (github.event_name != 'workflow_dispatch') ||
+      (inputs.platform == 'all') || (inputs.platform == 'mac')
+    strategy:
+      fail-fast: false
+      matrix:
+        rust-target: [aarch64-apple-darwin, x86_64-apple-darwin]
+        include:
+          - rust-target: aarch64-apple-darwin
+            arch: arm64
+          - rust-target: x86_64-apple-darwin
+            arch: x64
+    runs-on: macos-14
+    env:
+      MOOVN_VERSION_OVERRIDE: ${{ needs.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "20", cache: npm }
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-target }}
+      - run: node scripts/set-version.mjs "$MOOVN_VERSION_OVERRIDE"
+      - run: npm ci && npm run typecheck && npm run build
+      - name: Tauri build (dmg + app, ${{ matrix.arch }})
+        run: npx tauri build --target ${{ matrix.rust-target }} --bundles dmg,app
+      - name: Collect + lowercase artifact names
+        run: bash scripts/collect-artifacts.sh "mac-${{ matrix.arch }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: moovn-mac-${{ matrix.arch }}-${{ needs.meta.outputs.version }}
+          path: release/mac-${{ matrix.arch }}/*
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # Android（APK universal；debug 签名，CI 无 keystore）
+  # ---------------------------------------------------------------------------
+  android:
+    needs: meta
+    if: >-
+      (github.event_name != 'workflow_dispatch') ||
+      (inputs.platform == 'all') || (inputs.platform == 'android')
+    runs-on: ubuntu-24.04
+    env:
+      MOOVN_VERSION_OVERRIDE: ${{ needs.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "20", cache: npm }
       - uses: dtolnay/rust-toolchain@stable
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: "17" }
       - name: Java Android compat workaround (tauri#10073)
         run: echo "JAVA_TOOL_OPTIONS=-Djdk.util.zip.disableZip64ExtraFieldValidation=true" >> "$GITHUB_ENV"
-      - name: Linux deps
+      - name: System deps
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev patchelf
+      - run: node scripts/set-version.mjs "$MOOVN_VERSION_OVERRIDE"
       - run: npm ci && npm run build
       - name: Init Android project
         working-directory: src-tauri
         run: npx tauri android init
-      - name: Build APK (debug signing in CI without keystore)
+      - name: Build universal APK (debug signing in CI)
         working-directory: src-tauri
         run: npx tauri android build --apk --debug
+      - name: Normalize names to lowercase & collect
+        working-directory: src-tauri
+        run: bash ../scripts/collect-artifacts.sh android
       - uses: actions/upload-artifact@v4
         with:
-          name: moovn-android-apk
-          path: src-tauri/gen/android/app/build/outputs/apk/**/universal*.apk
+          name: moovn-android-${{ needs.meta.outputs.version }}
+          path: release/android/*
           if-no-files-found: warn
 
-  # 注意：本工作流只“构建”与“上传产物”。
-  # 按仓库规范，不自动创建 git tag；如需 GitHub Release，请人工打 tag 后再单独运行发布流程。
+  # ---------------------------------------------------------------------------
+  # iOS（仅 macOS 可构建；CI 无开发者证书时产出 Xcode 工程 + 构建日志，
+  #       本地/自托管 Runner 配好证书后可直接出 ipa。bundle 标识与产物名均为小写）
+  # ---------------------------------------------------------------------------
+  ios:
+    needs: meta
+    if: >-
+      (github.event_name != 'workflow_dispatch') ||
+      (inputs.platform == 'all') || (inputs.platform == 'ios')
+    runs-on: macos-14
+    env:
+      MOOVN_VERSION_OVERRIDE: ${{ needs.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "20", cache: npm }
+      - uses: dtolnay/rust-toolchain@stable
+      - run: rustup target add aarch64-apple-ios-sim aarch64-apple-ios
+      - run: node scripts/set-version.mjs "$MOOVN_VERSION_OVERRIDE"
+      - run: npm ci && npm run build
+      - name: Init iOS project
+        working-directory: src-tauri
+        run: npx tauri ios init
+      - name: Build iOS app (unsigned attempt; codesign required for final ipa)
+        working-directory: src-tauri
+        continue-on-error: true # CI 无 Apple 证书：允许链接/签名阶段失败，gen/apple 工程仍会产出
+        run: npx tauri ios build --export-method development
+      - name: Collect iOS artifacts (lowercased)
+        working-directory: src-tauri
+        run: bash ../scripts/collect-artifacts.sh ios
+      - name: Zip iOS Xcode project as fallback artifact
+        run: |
+          V="${{ needs.meta.outputs.version }}"
+          mkdir -p release/ios
+          if [ -d src-tauri/gen/apple ]; then
+            ditto -c -k --keepParent src-tauri/gen/apple "release/ios/moovn-ios-project-${V}.zip"
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: moovn-ios-${{ needs.meta.outputs.version }}
+          path: release/ios/*
+          if-no-files-found: warn
+
+# 提醒：本工作流不创建 tag、不发布 GitHub Release。如需发版请人工打 tag 后另行发布。
