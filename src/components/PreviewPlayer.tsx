@@ -1,105 +1,53 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   X,
-  RotateCcw,
-  FastForward,
-  Play,
-  Pause,
-  EyeOff,
-  Settings,
-  StepBack,
+  Volume2,
+  VolumeX,
+  FolderOpen,
+  Save,
+  Home,
+  Sliders,
   Bug,
-} from "lucide-react";
-import type {
-  ChoiceOption,
-  Project,
-  SaveFolderTab,
-  SaveSlotData,
-  SettingsSection,
-} from "../types";
-import { ENDING_LABELS, SAVE_FOLDER_TABS } from "../types";
-import { BACKGROUNDS, backgroundById, spriteById } from "../data/assets";
-import { charById, nodeById } from "../lib/projectUtils";
+  Timer,
+  BookOpen,
+} from 'lucide-react';
+import { VNProject, SaveTabId, SaveSlotData } from '../types';
+import { getBackgroundById, getCharacterById, getAudioById } from '../data/assets';
+import { soundEngine } from '../lib/soundEngine';
 
 interface PreviewPlayerProps {
-  project: Project;
-  initialNodeId: string | null;
-  startInMenu?: boolean;
-  debugMode?: boolean;
+  project: VNProject;
+  initialNodeId?: string;
   onClose: () => void;
 }
 
-interface HistorySnapshot {
-  nodeId: string;
-  lineIndex: number;
-  affectionMap: Record<string, number>;
-}
+const SAVE_TABS: { id: SaveTabId; label: string }[] = [
+  { id: 'auto', label: 'Auto' },
+  { id: 'quick', label: '快速' },
+  { id: '1', label: '1' },
+  { id: '2', label: '2' },
+  { id: '3', label: '3' },
+  { id: '4', label: '4' },
+  { id: '5', label: '5' },
+  { id: '6', label: '6' },
+  { id: '7', label: '7' },
+  { id: '8', label: '8' },
+  { id: '9', label: '9' },
+  { id: '0', label: '0' },
+];
 
-const SAVES_STORAGE_KEY = "moovn.blue_template.saves.v2";
-const PLAYED_SCENES_KEY = "moovn.blue_template.played_scenes.v2";
-
-function loadSavedSlots(): Record<string, SaveSlotData> {
-  try {
-    const raw = localStorage.getItem(SAVES_STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as Record<string, SaveSlotData>) : {};
-  } catch {
-    return {};
-  }
-}
-
-function saveSlotsToStorage(slots: Record<string, SaveSlotData>) {
-  try {
-    localStorage.setItem(SAVES_STORAGE_KEY, JSON.stringify(slots));
-  } catch {
-    // ignore
-  }
-}
-
-function loadPlayedScenes(): Set<string> {
-  try {
-    const raw = localStorage.getItem(PLAYED_SCENES_KEY);
-    if (!raw) return new Set();
-    return new Set(JSON.parse(raw) as string[]);
-  } catch {
-    return new Set();
-  }
-}
-
-function persistPlayedScenes(set: Set<string>) {
-  try {
-    localStorage.setItem(PLAYED_SCENES_KEY, JSON.stringify([...set]));
-  } catch {
-    // ignore
-  }
-}
-
-function formatSaveTimestamp(d = new Date()): string {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-}
-
-export default function PreviewPlayer({
+export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
   project,
   initialNodeId,
-  startInMenu = true,
-  debugMode = false,
   onClose,
-}: PreviewPlayerProps) {
-  const firstChapterFirstSceneId = useMemo(() => {
-    const firstChap = [...project.chapters].sort((a, b) => a.order - b.order)[0];
-    if (firstChap) {
-      const firstScene = project.nodes.find((n) => n.chapterId === firstChap.id);
-      if (firstScene) return firstScene.id;
-    }
-    return project.startNodeId || project.nodes[0]?.id || "";
-  }, [project]);
-
-  const [screen, setScreen] = useState<"menu" | "game" | "about">(
-    startInMenu && !initialNodeId ? "menu" : "game",
+}) => {
+  const [screenMode, setScreenMode] = useState<'main_menu' | 'playing'>(
+    initialNodeId ? 'playing' : 'main_menu'
   );
-  const [nodeId, setNodeId] = useState<string>(initialNodeId || firstChapterFirstSceneId);
-  const [lineIndex, setLineIndex] = useState(0);
-  const [history, setHistory] = useState<HistorySnapshot[]>([]);
+  const [currentNodeId, setCurrentNodeId] = useState<string>(
+    initialNodeId || project.startNodeId
+  );
+  const [dialogueIndex, setDialogueIndex] = useState<number>(0);
 
   const [affectionMap, setAffectionMap] = useState<Record<string, number>>(() => {
     const init: Record<string, number> = {};
@@ -109,939 +57,1106 @@ export default function PreviewPlayer({
     return init;
   });
 
-  const [playedScenes, setPlayedScenes] = useState<Set<string>>(() => loadPlayedScenes());
-
-  const [typedCount, setTypedCount] = useState(0);
-  const [autoPlay, setAutoPlay] = useState(false);
-  const [skipping, setSkipping] = useState(false);
-  const [uiHidden, setUiHidden] = useState(false);
-  const [hideCycleKey, setHideCycleKey] = useState(0);
-  const [toastMsg, setToastMsg] = useState<string | null>(null);
-  const [frameTick, setFrameTick] = useState(0);
-  const [fadeActive, setFadeActive] = useState(false);
-
-  // 设置界面
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<SettingsSection>("general");
-  const [activeFolderTab, setActiveFolderTab] = useState<SaveFolderTab>("1");
-  const [saves, setSaves] = useState<Record<string, SaveSlotData>>(() => loadSavedSlots());
-
-  // 通用与高级设置参数
-  const [textSpeed, setTextSpeed] = useState(45);
-  const [autoDelayMs, setAutoDelayMs] = useState(1400);
-  const [bgmVolume, setBgmVolume] = useState(80);
-  const [voiceVolume, setVoiceVolume] = useState(90);
-  const [dialogOpacity, setDialogOpacity] = useState(92);
-  const [skipUnreadAllowed, setSkipUnreadAllowed] = useState(false);
-
-  const showToast = useCallback((msg: string) => {
-    setToastMsg(msg);
-    setTimeout(() => setToastMsg((cur) => (cur === msg ? null : cur)), 1800);
-  }, []);
-
-  const node = nodeById(project, nodeId);
-  const line = node?.lines[lineIndex];
-  const fullText = line?.text ?? "";
-  const speaker = line?.characterId ? charById(project, line.characterId) : null;
-  const bg = backgroundById(node?.backgroundId) ?? BACKGROUNDS[0];
-  const currentChapter = project.chapters.find((c) => c.id === node?.chapterId);
-
-  const atLastLine = !node || lineIndex >= Math.max(0, node.lines.length - 1);
-  const waitingChoice = Boolean(node && node.type === "choice" && atLastLine && typedCount >= fullText.length);
-  const isEnd = node?.type === "end";
-
-  // 多图序列帧定时器
-  useEffect(() => {
-    const fps = node?.backgroundFps || 2;
-    const t = setInterval(() => setFrameTick((n) => n + 1), Math.max(120, Math.round(1000 / fps)));
-    return () => clearInterval(t);
-  }, [node?.backgroundFps]);
-
-  // 节点进入时触发 fadeConfig 动画
-  useEffect(() => {
-    if (!node?.fadeConfig) {
-      setFadeActive(false);
-      return;
-    }
-    setFadeActive(false);
-    const id = requestAnimationFrame(() => setFadeActive(true));
-    return () => cancelAnimationFrame(id);
-  }, [node?.id]);
-
-  // 记录已游玩场景 & 更新 Auto 存档
-  useEffect(() => {
-    if (screen !== "game" || !node) return;
-    setPlayedScenes((prev) => {
-      if (prev.has(node.id)) return prev;
-      const next = new Set(prev);
-      next.add(node.id);
-      persistPlayedScenes(next);
-      return next;
-    });
-
-    const bgAsset = backgroundById(node.backgroundId) ?? BACKGROUNDS[0];
-    const autoSlot: SaveSlotData = {
-      slotKey: "Auto-0",
-      folder: "Auto",
-      index: 0,
-      nodeId: node.id,
-      lineIndex,
-      chapterTitle: currentChapter?.title ?? "第一章",
-      sceneTitle: node.title,
-      previewText: node.lines[lineIndex]?.text ?? node.endingDescription ?? "",
-      thumbnailUrl: bgAsset.url,
-      savedAt: formatSaveTimestamp(),
-      affectionMap,
-      playedNodeIds: [...playedScenes, node.id],
-    };
-    setSaves((prev) => {
-      const next = { ...prev, ["Auto-0"]: autoSlot };
-      saveSlotsToStorage(next);
-      return next;
-    });
-  }, [screen, node?.id]);
-
-  // 打字机逐字显示（若开启快进，则直接跳过逐字动画瞬间显示整句！）
-  useEffect(() => {
-    if (!fullText) {
-      setTypedCount(0);
-      return;
-    }
-    if (skipping) {
-      setTypedCount(fullText.length);
-      return;
-    }
-    setTypedCount(0);
-    const stepMs = Math.max(10, 70 - textSpeed);
-    const id = setInterval(() => {
-      setTypedCount((n) => {
-        if (n >= fullText.length) {
-          clearInterval(id);
-          return n;
-        }
-        return n + 1;
+  const [customAttrMap, setCustomAttrMap] = useState<
+    Record<string, Record<string, number | string | boolean>>
+  >(() => {
+    const init: Record<string, Record<string, number | string | boolean>> = {};
+    project.characters.forEach((c) => {
+      init[c.id] = {};
+      c.customAttributes.forEach((attr) => {
+        init[c.id][attr.key] = attr.value;
       });
-    }, stepMs);
-    return () => clearInterval(id);
-  }, [nodeId, lineIndex, fullText, textSpeed, skipping]);
+    });
+    return init;
+  });
+
+  const [variablesMap, setVariablesMap] = useState<Record<string, number | string | boolean>>(
+    () => {
+      const init: Record<string, number | string | boolean> = {};
+      project.variables.forEach((v) => {
+        init[v.key] = v.value;
+      });
+      return init;
+    }
+  );
+
+  const [unlockedClues, setUnlockedClues] = useState<{ title: string; desc: string }[]>([]);
+  const [showClueDrawer, setShowClueDrawer] = useState(false);
+
+  const [typedText, setTypedText] = useState<string>('');
+  const [isTyping, setIsTyping] = useState<boolean>(false);
+  const [isAutoPlay, setIsAutoPlay] = useState<boolean>(false);
+  const [isSkipMode, setIsSkipMode] = useState<boolean>(false);
+  const [isUiHidden, setIsUiHidden] = useState<boolean>(false);
+  const [hideHintPhase, setHideHintPhase] = useState<'hidden' | 'fading_in' | 'fading_out'>(
+    'hidden'
+  );
+  const [isMuted, setIsMuted] = useState<boolean>(false);
+  const [textSpeedMs, setTextSpeedMs] = useState<number>(24);
+  const [historyStack, setHistoryStack] = useState<
+    { nodeId: string; dialogueIndex: number }[]
+  >([]);
+
+  const [showDevDebug, setShowDevDebug] = useState<boolean>(false);
+  const [timedRemaining, setTimedRemaining] = useState<number | null>(null);
+
+  const [modalMode, setModalMode] = useState<'none' | 'save' | 'load' | 'settings'>('none');
+  const [activeSaveTab, setActiveSaveTab] = useState<SaveTabId>('1');
+  const [saveSlots, setSaveSlots] = useState<Record<string, SaveSlotData>>(() => {
+    try {
+      const raw = localStorage.getItem(`moovn_saves_${project.id}`);
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  const currentNode =
+    project.nodes.find((n) => n.id === currentNodeId) || project.nodes[0];
+  const currentChapter =
+    project.chapters.find((c) => c.id === currentNode.chapterId) || project.chapters[0];
+  const bg = getBackgroundById(currentNode.backgroundId);
+  const bgm = getAudioById(currentNode.bgmId);
+  const currentLine = currentNode.dialogues[dialogueIndex] || currentNode.dialogues[0];
+  const ui = project.uiConfig;
+
+  const persistSaveSlot = useCallback(
+    (tabId: SaveTabId, slotIndex: number) => {
+      if (!currentNode || !currentLine) return;
+      const slotKey = `${tabId}-${slotIndex}`;
+      const newSlot: SaveSlotData = {
+        slotKey,
+        tabId,
+        slotIndex,
+        savedAt: new Date().toLocaleString('zh-CN', { hour12: false }),
+        chapterTitle: currentChapter?.title || '第一章',
+        nodeId: currentNode.id,
+        nodeTitle: currentNode.title,
+        dialogueIndex,
+        speakerName: currentLine.speakerName,
+        textPreview: currentLine.text,
+        backgroundId: currentNode.backgroundId,
+        affectionSnapshot: { ...affectionMap },
+        customAttrSnapshot: JSON.parse(JSON.stringify(customAttrMap)),
+        variablesSnapshot: { ...variablesMap },
+      };
+      setSaveSlots((prev) => {
+        const next = { ...prev, [slotKey]: newSlot };
+        try {
+          localStorage.setItem(`moovn_saves_${project.id}`, JSON.stringify(next));
+        } catch {
+          // ignore
+        }
+        return next;
+      });
+    },
+    [
+      currentNode,
+      currentLine,
+      currentChapter,
+      dialogueIndex,
+      affectionMap,
+      customAttrMap,
+      variablesMap,
+      project.id,
+    ]
+  );
+
+  // Unlock clue automatically when visiting a clue_unlock node
+  useEffect(() => {
+    if (screenMode === 'playing' && currentNode?.unlockedClueTitle) {
+      setUnlockedClues((prev) => {
+        if (prev.some((c) => c.title === currentNode.unlockedClueTitle)) return prev;
+        return [
+          ...prev,
+          {
+            title: currentNode.unlockedClueTitle!,
+            desc: currentNode.unlockedClueDesc || '',
+          },
+        ];
+      });
+    }
+  }, [screenMode, currentNode?.id, currentNode?.unlockedClueTitle, currentNode?.unlockedClueDesc]);
+
+  // Timed choice countdown
+  useEffect(() => {
+    if (
+      screenMode === 'playing' &&
+      currentNode?.type === 'timed_choice' &&
+      dialogueIndex === currentNode.dialogues.length - 1
+    ) {
+      setTimedRemaining(currentNode.timedChoiceSeconds || 12);
+      const timer = setInterval(() => {
+        setTimedRemaining((prev) => {
+          if (prev === null) return null;
+          if (prev <= 1) {
+            clearInterval(timer);
+            const fallback =
+              currentNode.defaultTimeoutTargetId ||
+              currentNode.choices[0]?.targetNodeId ||
+              project.startNodeId;
+            setCurrentNodeId(fallback);
+            setDialogueIndex(0);
+            return null;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+      return () => clearInterval(timer);
+    } else {
+      setTimedRemaining(null);
+    }
+  }, [screenMode, currentNode, dialogueIndex, project.startNodeId]);
+
+  // Auto-save
+  useEffect(() => {
+    if (screenMode === 'playing' && currentNode) {
+      persistSaveSlot('auto', 1);
+    }
+  }, [currentNodeId, screenMode, currentNode, persistSaveSlot]);
+
+  // Hide UI hint fade in once then fade out
+  useEffect(() => {
+    if (!isUiHidden) {
+      setHideHintPhase('hidden');
+      return;
+    }
+    setHideHintPhase('hidden');
+    const tIn = setTimeout(() => setHideHintPhase('fading_in'), 550);
+    const tOut = setTimeout(() => setHideHintPhase('fading_out'), 2600);
+    return () => {
+      clearTimeout(tIn);
+      clearTimeout(tOut);
+    };
+  }, [isUiHidden]);
+
+  // Play BGM
+  useEffect(() => {
+    if (screenMode === 'playing' && !isMuted && bgm) {
+      soundEngine.playBgm(bgm);
+    } else {
+      soundEngine.stopBgm();
+    }
+    return () => {
+      soundEngine.stopBgm();
+    };
+  }, [currentNode?.bgmId, isMuted, bgm, screenMode]);
+
+  // Typewriter effect (skipped immediately in 快进 mode)
+  useEffect(() => {
+    if (screenMode !== 'playing' || !currentLine) return;
+    const full = currentLine.text;
+
+    if (isSkipMode) {
+      setTypedText(full);
+      setIsTyping(false);
+      return;
+    }
+
+    setTypedText('');
+    setIsTyping(true);
+    let idx = 0;
+
+    const timer = setInterval(() => {
+      idx += 1;
+      setTypedText(full.slice(0, idx));
+      if (idx >= full.length) {
+        clearInterval(timer);
+        setIsTyping(false);
+      }
+    }, textSpeedMs);
+
+    return () => clearInterval(timer);
+  }, [currentNodeId, dialogueIndex, currentLine, screenMode, textSpeedMs, isSkipMode]);
+
+  const evaluateCondition = useCallback((): string | null => {
+    const rule = currentNode.conditionRule;
+    if (!rule) return currentNode.nextNodeId;
+
+    let leftValue: number | string | boolean = 0;
+    if (rule.variableType === 'affection' && rule.characterId) {
+      leftValue = affectionMap[rule.characterId] ?? 0;
+    } else if (rule.variableType === 'custom_attr' && rule.characterId) {
+      leftValue = customAttrMap[rule.characterId]?.[rule.attributeKey] ?? 0;
+    } else {
+      leftValue = variablesMap[rule.attributeKey] ?? 0;
+    }
+
+    const rightValue = rule.compareValue;
+    let passed = false;
+    switch (rule.operator) {
+      case '>=':
+        passed = Number(leftValue) >= Number(rightValue);
+        break;
+      case '<=':
+        passed = Number(leftValue) <= Number(rightValue);
+        break;
+      case '>':
+        passed = Number(leftValue) > Number(rightValue);
+        break;
+      case '<':
+        passed = Number(leftValue) < Number(rightValue);
+        break;
+      case '==':
+        passed = String(leftValue) === String(rightValue);
+        break;
+      case '!=':
+        passed = String(leftValue) !== String(rightValue);
+        break;
+    }
+
+    return passed ? rule.trueTargetNodeId : rule.falseTargetNodeId;
+  }, [currentNode, affectionMap, customAttrMap, variablesMap]);
 
   const advance = useCallback(() => {
-    if (!node) return;
-    if (typedCount < fullText.length) {
-      setTypedCount(fullText.length);
-      return;
-    }
-    if (lineIndex < node.lines.length - 1) {
-      setHistory((h) => [...h, { nodeId, lineIndex, affectionMap }]);
-      setLineIndex((i) => i + 1);
-      return;
-    }
-    if (node.type !== "choice" && node.type !== "end" && node.nextNodeId) {
-      setHistory((h) => [...h, { nodeId, lineIndex, affectionMap }]);
-      setNodeId(node.nextNodeId);
-      setLineIndex(0);
-    }
-  }, [node, typedCount, fullText.length, lineIndex, nodeId, affectionMap]);
+    if (isUiHidden || modalMode !== 'none') return;
 
-  const stepBack = useCallback(() => {
-    setAutoPlay(false);
-    setSkipping(false);
-    setHistory((h) => {
-      if (h.length === 0) return h;
-      const prev = h[h.length - 1];
-      setNodeId(prev.nodeId);
-      setLineIndex(prev.lineIndex);
-      setAffectionMap(prev.affectionMap);
-      return h.slice(0, -1);
-    });
-  }, []);
-
-  // 自动播放
-  useEffect(() => {
-    if (!autoPlay || screen !== "game" || settingsOpen || uiHidden || waitingChoice || isEnd) return;
-    if (typedCount < fullText.length) return;
-    const t = setTimeout(() => {
-      advance();
-    }, autoDelayMs);
-    return () => clearTimeout(t);
-  }, [autoPlay, screen, settingsOpen, uiHidden, waitingChoice, isEnd, typedCount, fullText.length, autoDelayMs, advance]);
-
-  // 快进（自动跳过逐字显示 + 仅快进已游玩场景）
-  useEffect(() => {
-    if (!skipping || screen !== "game" || settingsOpen || uiHidden) return;
-    if (!node || waitingChoice || isEnd) {
-      setSkipping(false);
+    if (isTyping && !isSkipMode && currentLine) {
+      setTypedText(currentLine.text);
+      setIsTyping(false);
       return;
     }
 
-    const isCurrentScenePlayed = playedScenes.has(node.id);
-    if (!isCurrentScenePlayed && !skipUnreadAllowed) {
-      setSkipping(false);
+    if (dialogueIndex < currentNode.dialogues.length - 1) {
+      setHistoryStack((h) => [...h, { nodeId: currentNodeId, dialogueIndex }]);
+      setDialogueIndex((i) => i + 1);
       return;
     }
 
-    if (lineIndex >= node.lines.length - 1 && node.nextNodeId) {
-      if (!playedScenes.has(node.nextNodeId) && !skipUnreadAllowed) {
-        setTypedCount(fullText.length);
-        setSkipping(false);
-        return;
+    if (
+      (currentNode.type === 'choice' ||
+        currentNode.type === 'timed_choice' ||
+        currentNode.type === 'switch_branch' ||
+        currentNode.type === 'random_branch') &&
+      currentNode.choices.length > 0
+    ) {
+      return;
+    }
+
+    if (currentNode.type === 'condition') {
+      const targetId = evaluateCondition();
+      if (targetId) {
+        setHistoryStack((h) => [...h, { nodeId: currentNodeId, dialogueIndex }]);
+        setCurrentNodeId(targetId);
+        setDialogueIndex(0);
       }
+      return;
     }
 
-    const t = setTimeout(() => {
-      setTypedCount(fullText.length);
-      advance();
-    }, 90);
-    return () => clearTimeout(t);
+    if (currentNode.nextNodeId) {
+      setHistoryStack((h) => [...h, { nodeId: currentNodeId, dialogueIndex }]);
+      setCurrentNodeId(currentNode.nextNodeId);
+      setDialogueIndex(0);
+    }
   }, [
-    skipping,
-    screen,
-    settingsOpen,
-    uiHidden,
-    node,
-    waitingChoice,
-    isEnd,
-    playedScenes,
-    skipUnreadAllowed,
-    lineIndex,
-    fullText.length,
-    advance,
+    isUiHidden,
+    modalMode,
+    isTyping,
+    isSkipMode,
+    currentLine,
+    dialogueIndex,
+    currentNode,
+    currentNodeId,
+    evaluateCondition,
   ]);
 
+  // Auto-play / Skip-mode timer
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        if (settingsOpen) setSettingsOpen(false);
-        else if (uiHidden) setUiHidden(false);
-        else onClose();
-      } else if (screen === "game" && !settingsOpen && (e.key === " " || e.key === "Enter")) {
-        e.preventDefault();
-        if (uiHidden) setUiHidden(false);
-        else if (!waitingChoice && !isEnd) advance();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [settingsOpen, uiHidden, screen, waitingChoice, isEnd, advance, onClose]);
+    if (screenMode !== 'playing' || (!isAutoPlay && !isSkipMode) || isTyping) return;
+    const isChoicePause =
+      (currentNode.type === 'choice' || currentNode.type === 'timed_choice') &&
+      dialogueIndex === currentNode.dialogues.length - 1;
+    if (isChoicePause) return;
+
+    const delay = isSkipMode ? 110 : 1650;
+    const t = setTimeout(() => {
+      advance();
+    }, delay);
+    return () => clearTimeout(t);
+  }, [screenMode, isAutoPlay, isSkipMode, isTyping, advance, currentNode.type, dialogueIndex, currentNode.dialogues.length]);
+
+  const stepBack = () => {
+    if (historyStack.length === 0) return;
+    const last = historyStack[historyStack.length - 1];
+    setHistoryStack((h) => h.slice(0, -1));
+    setCurrentNodeId(last.nodeId);
+    setDialogueIndex(last.dialogueIndex);
+  };
+
+  const handleLoadSlot = (slot: SaveSlotData) => {
+    setCurrentNodeId(slot.nodeId);
+    setDialogueIndex(slot.dialogueIndex);
+    setAffectionMap({ ...slot.affectionSnapshot });
+    setCustomAttrMap(JSON.parse(JSON.stringify(slot.customAttrSnapshot)));
+    setVariablesMap({ ...slot.variablesSnapshot });
+    setModalMode('none');
+    setScreenMode('playing');
+  };
 
   const startNewGame = () => {
-    const initAff: Record<string, number> = {};
-    project.characters.forEach((c) => {
-      initAff[c.id] = c.initialAffection;
-    });
-    setAffectionMap(initAff);
-    setNodeId(firstChapterFirstSceneId);
-    setLineIndex(0);
-    setHistory([]);
-    setAutoPlay(false);
-    setSkipping(false);
-    setUiHidden(false);
-    setSettingsOpen(false);
-    setScreen("game");
+    setCurrentNodeId(project.startNodeId);
+    setDialogueIndex(0);
+    setHistoryStack([]);
+    setScreenMode('playing');
   };
 
-  const pickChoice = (c: ChoiceOption) => {
-    if (!c.targetNodeId) return;
-    setAutoPlay(false);
-    setSkipping(false);
-    const nextAff = { ...affectionMap };
-    if (c.affectionCharacterId && c.affectionDelta) {
-      nextAff[c.affectionCharacterId] = (nextAff[c.affectionCharacterId] ?? 0) + c.affectionDelta;
-    }
-    setHistory((h) => [...h, { nodeId, lineIndex, affectionMap }]);
-    setAffectionMap(nextAff);
-    setNodeId(c.targetNodeId);
-    setLineIndex(0);
-  };
-
-  const handleSaveSlot = (folder: SaveFolderTab, index: number) => {
-    if (!node) return;
-    const slotKey = `${folder}-${index}`;
-    const bgAsset = backgroundById(node.backgroundId) ?? BACKGROUNDS[0];
-    const data: SaveSlotData = {
-      slotKey,
-      folder,
-      index,
-      nodeId: node.id,
-      lineIndex,
-      chapterTitle: currentChapter?.title ?? "第一章",
-      sceneTitle: node.title,
-      previewText: node.lines[lineIndex]?.text ?? node.endingDescription ?? "",
-      thumbnailUrl: bgAsset.url,
-      savedAt: formatSaveTimestamp(),
-      affectionMap,
-      playedNodeIds: [...playedScenes],
-    };
-    const next = { ...saves, [slotKey]: data };
-    setSaves(next);
-    saveSlotsToStorage(next);
-    showToast("已保存进度");
-  };
-
-  const handleLoadSlot = (folder: SaveFolderTab, index: number) => {
-    const slotKey = `${folder}-${index}`;
-    const data = saves[slotKey];
-    if (!data) return;
-    if (!nodeById(project, data.nodeId)) return;
-    setNodeId(data.nodeId);
-    setLineIndex(data.lineIndex);
-    setAffectionMap(data.affectionMap ?? affectionMap);
-    if (data.playedNodeIds) {
-      const merged = new Set([...playedScenes, ...data.playedNodeIds]);
-      setPlayedScenes(merged);
-      persistPlayedScenes(merged);
-    }
-    setHistory([]);
-    setAutoPlay(false);
-    setSkipping(false);
-    setSettingsOpen(false);
-    setScreen("game");
-  };
-
-  const openSettings = (tab: SettingsSection) => {
-    setAutoPlay(false);
-    setSkipping(false);
-    setSettingsTab(tab);
-    setSettingsOpen(true);
-  };
-
-  const stagePlacements = useMemo(() => {
-    if (!node) return [];
-    if (node.stageCharacters && node.stageCharacters.length > 0) {
-      return node.stageCharacters;
-    }
-    if (speaker?.spriteId) {
-      return [{ characterId: speaker.id, x: 50, y: 54, scale: 1, opacity: 1, flipX: false, tween: "breathe" as const }];
-    }
-    return [];
-  }, [node, speaker]);
-
-  const keyVisualBg = BACKGROUNDS[1] ?? BACKGROUNDS[0];
-  const heroSprite = spriteById("sp-yuki");
-  const bgMediaKind = node?.backgroundMediaKind ?? bg.mediaKind ?? "static";
-  const bgUrl =
-    bgMediaKind === "frame_sequence" && bg.frames && bg.frames.length > 1
-      ? bg.frames[frameTick % bg.frames.length]
-      : bg.url;
-
-  const fadeCfg = node?.fadeConfig;
+  const menuBg = getBackgroundById(ui.mainMenu.backgroundId);
+  const menuHero = getCharacterById(ui.mainMenu.heroCharacterSpriteId);
 
   return (
-    <div className="animate-fade-in fixed inset-0 z-50 flex items-center justify-center bg-black select-none">
-      {/* 右上角极简退出预览按钮 */}
-      <button
-        onClick={onClose}
-        title="退出游戏预览 (Esc)"
-        className="fixed top-3 right-3 z-50 flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-black/70 text-zinc-300 backdrop-blur transition hover:bg-rose-500 hover:text-white"
-      >
-        <X size={15} />
-      </button>
-
-      {/* 开发者调试悬浮窗（仅当编辑器开启“调试模式”时显示，正式打包导出游戏绝不包含） */}
-      {debugMode && screen === "game" && node && (
-        <div className="fixed top-3 left-3 z-50 flex items-center gap-3 rounded-lg border border-amber-400/40 bg-black/85 px-3 py-1.5 font-mono text-[11px] text-amber-200 backdrop-blur">
-          <span className="flex items-center gap-1 font-sans font-semibold text-amber-300">
-            <Bug size={12} /> 开发者调试
-          </span>
-          <span>场景: {node.id}</span>
-          <span>台词: {lineIndex + 1}/{Math.max(1, node.lines.length)}</span>
-          <span>已读场景数: {playedScenes.size}</span>
-          <select
-            value={node.id}
-            onChange={(e) => {
-              setNodeId(e.target.value);
-              setLineIndex(0);
-            }}
-            className="rounded border border-white/15 bg-zinc-900 px-1.5 py-0.5 font-sans text-[11px] text-zinc-100"
-          >
-            {project.nodes.map((n) => (
-              <option key={n.id} value={n.id}>
-                跳转: {n.title}
-              </option>
-            ))}
-          </select>
+    <div className="fixed inset-0 z-50 bg-black flex flex-col select-none overflow-hidden">
+      {/* Top Bar */}
+      <div className="h-9 bg-[#18181b] border-b border-[#2b2b30] px-4 flex items-center justify-between text-xs text-slate-300 shrink-0">
+        <div className="flex items-center gap-3">
+          <span className="font-semibold text-white">{project.title}</span>
+          {screenMode === 'playing' && (
+            <>
+              <button
+                onClick={() => {
+                  setActiveSaveTab('1');
+                  setModalMode('save');
+                }}
+                className="flex items-center gap-1 px-2 py-0.5 rounded bg-[#252529] hover:bg-[#323238] text-slate-200 transition"
+              >
+                <Save className="w-3 h-3 text-sky-400" />
+                存档
+              </button>
+              <button
+                onClick={() => {
+                  setActiveSaveTab('1');
+                  setModalMode('load');
+                }}
+                className="flex items-center gap-1 px-2 py-0.5 rounded bg-[#252529] hover:bg-[#323238] text-slate-200 transition"
+              >
+                <FolderOpen className="w-3 h-3 text-amber-400" />
+                读档
+              </button>
+              <button
+                onClick={() => setShowClueDrawer((v) => !v)}
+                className="flex items-center gap-1 px-2 py-0.5 rounded bg-[#252529] hover:bg-[#323238] text-slate-200 transition"
+              >
+                <BookOpen className="w-3 h-3 text-fuchsia-400" />
+                档案词条 ({unlockedClues.length})
+              </button>
+              <button
+                onClick={() => setScreenMode('main_menu')}
+                className="flex items-center gap-1 px-2 py-0.5 rounded bg-[#252529] hover:bg-[#323238] text-slate-200 transition"
+              >
+                <Home className="w-3 h-3" />
+                主菜单
+              </button>
+            </>
+          )}
         </div>
-      )}
 
-      {/* 游戏主画面 (16:9) */}
-      <div className="relative aspect-video w-full max-w-[1240px] overflow-hidden bg-black shadow-[0_28px_90px_rgba(0,0,0,0.9)]">
-        {/* ============================================================
-            1. 蓝色模板主菜单界面
-               - 左侧深蓝色背景 + 5 个菜单项（开启新游戏、读取存档、设置、关于、退出游戏）
-               - 左侧与中间之间为深蓝色到黑色的模糊渐变层
-               - 中间与右侧为主视觉图与透明立绘
-        ============================================================ */}
-        {screen === "menu" && (
-          <div className="relative h-full w-full overflow-hidden">
-            <div className="absolute inset-y-0 right-0 left-[24%] overflow-hidden bg-black">
-              <img
-                src={keyVisualBg.url}
-                alt={project.name}
-                draggable={false}
-                className="h-full w-full object-cover object-center"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-transparent to-black/25" />
-              {heroSprite && (
-                <img
-                  src={heroSprite.url}
-                  alt=""
-                  draggable={false}
-                  className="pointer-events-none absolute right-[10%] bottom-0 h-[92%] w-auto object-contain drop-shadow-[0_18px_40px_rgba(0,0,0,0.85)]"
-                />
-              )}
-              <div className="pointer-events-none absolute right-8 bottom-7 text-right">
-                <h1 className="text-3xl font-bold tracking-wider text-white drop-shadow-[0_4px_20px_rgba(0,0,0,0.9)]">
-                  {project.name}
-                </h1>
-              </div>
-            </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowDevDebug((d) => !d)}
+            className={`flex items-center gap-1 px-2 py-0.5 rounded border transition ${
+              showDevDebug
+                ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'
+                : 'bg-[#252529] border-[#383840] text-slate-400 hover:text-white'
+            }`}
+            title="开发者调试叠加层（正式导出游戏时自动剔除）"
+          >
+            <Bug className="w-3 h-3" />
+            开发者调试
+          </button>
 
-            {/* 深蓝色到黑色的模糊过渡层 */}
+          <button
+            onClick={() => setIsMuted((m) => !m)}
+            className="flex items-center gap-1 px-2 py-0.5 rounded bg-[#252529] hover:bg-[#323238]"
+          >
+            {isMuted ? (
+              <VolumeX className="w-3.5 h-3.5 text-rose-400" />
+            ) : (
+              <Volume2 className="w-3.5 h-3.5 text-emerald-400" />
+            )}
+          </button>
+
+          <button
+            onClick={onClose}
+            className="flex items-center gap-1 px-2.5 py-0.5 rounded bg-rose-600/20 hover:bg-rose-600/35 text-rose-300 border border-rose-500/30 transition"
+          >
+            <X className="w-3.5 h-3.5" />
+            返回编辑器
+          </button>
+        </div>
+      </div>
+
+      {/* Main Viewport */}
+      <div
+        onClick={() => {
+          if (isUiHidden) {
+            setIsUiHidden(false);
+          }
+        }}
+        className="relative flex-1 w-full h-full overflow-hidden bg-[#040915]"
+      >
+        {/* ==================== 1. CUSTOMIZABLE MAIN MENU ==================== */}
+        {screenMode === 'main_menu' && (
+          <div
+            className={`absolute inset-0 z-30 flex ${
+              ui.mainMenu.layout === 'right_panel' ? 'flex-row-reverse' : 'flex-row'
+            }`}
+          >
             <div
-              className="pointer-events-none absolute inset-y-0 left-[24%] z-10 w-[18%] backdrop-blur-md"
-              style={{
-                background:
-                  "linear-gradient(90deg, #07193a 0%, rgba(7, 25, 58, 0.88) 42%, rgba(0, 0, 0, 0.72) 78%, rgba(0, 0, 0, 0) 100%)",
-              }}
-            />
+              style={{ backgroundColor: ui.mainMenu.panelColor }}
+              className="w-[34%] min-w-[300px] max-w-[440px] h-full flex flex-col justify-between px-11 py-14 relative z-20"
+            >
+              <div>
+                <div
+                  style={{ color: ui.mainMenu.accentColor }}
+                  className="text-[11px] font-mono uppercase tracking-[0.24em] mb-3"
+                >
+                  {ui.mainMenu.subtitleText}
+                </div>
+                <h1
+                  style={{ color: ui.mainMenu.titleColor }}
+                  className="text-3xl font-extrabold tracking-tight leading-snug"
+                >
+                  {project.title}
+                </h1>
+                <p className="text-xs text-slate-400 mt-2">
+                  全 {project.chapters.length} 章 · {project.characters.length} 名登场角色
+                </p>
+              </div>
 
-            {/* 左侧深蓝色菜单 */}
-            <div className="relative z-20 flex h-full w-[30%] min-w-[230px] flex-col justify-center bg-[#07193a] px-7">
-              <nav className="flex flex-col gap-3">
+              <div className="space-y-1.5 my-auto">
                 {[
-                  { label: "开启新游戏", action: startNewGame },
-                  { label: "读取存档", action: () => openSettings("load") },
-                  { label: "设置", action: () => openSettings("general") },
-                  { label: "关于", action: () => setScreen("about") },
-                  { label: "退出游戏", action: onClose },
-                ].map((item) => (
+                  { label: '开始游戏', action: startNewGame },
+                  {
+                    label: '继续游戏',
+                    action: () => {
+                      const autoSlot = saveSlots['auto-1'];
+                      if (autoSlot) handleLoadSlot(autoSlot);
+                      else startNewGame();
+                    },
+                  },
+                  {
+                    label: '读取存档',
+                    action: () => {
+                      setActiveSaveTab('1');
+                      setModalMode('load');
+                    },
+                  },
+                  { label: '游戏设置', action: () => setModalMode('settings') },
+                  { label: '退出游戏', action: onClose },
+                ].map((item, idx) => (
                   <button
-                    key={item.label}
+                    key={idx}
                     onClick={item.action}
-                    className="group relative flex items-center overflow-hidden rounded-lg border border-sky-400/20 bg-black/40 px-5 py-3 text-left transition hover:border-sky-400/75 hover:bg-black/70"
+                    className="w-full text-left py-3 px-4 text-lg font-semibold text-slate-200 hover:text-white border-l-[3px] border-transparent hover:border-sky-400 hover:bg-gradient-to-r hover:from-sky-500/20 hover:to-transparent hover:pl-6 transition-all duration-200 tracking-wider"
                   >
-                    <span className="mr-3 h-4 w-1 rounded-full bg-transparent transition-colors group-hover:bg-sky-400" />
-                    <span className="text-[15px] font-semibold tracking-wider text-zinc-100 group-hover:text-sky-200">
-                      {item.label}
-                    </span>
+                    {item.label}
                   </button>
                 ))}
-              </nav>
+              </div>
+
+              <div className="text-[11px] text-slate-400 font-mono">
+                Version {project.version} · {project.author}
+              </div>
             </div>
-          </div>
-        )}
 
-        {/* ============================================================
-            2. 关于页面
-        ============================================================ */}
-        {screen === "about" && (
-          <div className="relative flex h-full w-full flex-col items-center justify-center bg-[#061229] p-8 text-center">
-            <div className="max-w-md rounded-2xl border border-[#1d4ed8]/60 bg-black/85 p-8 shadow-2xl">
-              <h2 className="text-2xl font-bold text-white">《{project.name}》</h2>
-              {project.author && (
-                <p className="mt-2 text-[13px] text-sky-300">制作：{project.author}</p>
-              )}
-              <button
-                onClick={() => setScreen("menu")}
-                className="mt-6 rounded-xl border border-sky-400/50 bg-[#0b2559] px-6 py-2 text-[13px] font-medium text-white hover:bg-sky-500"
-              >
-                返回主菜单
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* ============================================================
-            3. 游戏画面（无左上角场景名、无右上角对话数、无对话框底部存读档杂项）
-        ============================================================ */}
-        {screen === "game" && node && (
-          <div
-            onClick={() => {
-              if (uiHidden) {
-                setUiHidden(false);
-                return;
-              }
-              if (!waitingChoice && !isEnd) advance();
-            }}
-            className="relative h-full w-full cursor-pointer overflow-hidden"
-          >
-            {/* 背景层 */}
-            <img
-              key={bgUrl}
-              src={bgUrl}
-              alt=""
-              draggable={false}
-              style={{
-                opacity:
-                  fadeActive && fadeCfg?.target === "background"
-                    ? fadeCfg.direction === "out"
-                      ? fadeCfg.targetOpacity
-                      : 1
-                    : 1,
-                transition: `opacity ${fadeCfg?.durationMs ?? 600}ms ease`,
-              }}
-              className="absolute inset-0 h-full w-full object-cover"
-            />
-            <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-black/20" />
-
-            {/* 角色透明立绘层 */}
-            {stagePlacements.map((placement) => {
-              const ch = charById(project, placement.characterId);
-              const sp = spriteById(ch?.spriteId);
-              if (!ch || !sp) return null;
-              const isSpeaking = speaker?.id === ch.id;
-              const isFadingChar =
-                fadeActive &&
-                fadeCfg?.target === "character" &&
-                (!fadeCfg.characterId || fadeCfg.characterId === placement.characterId);
-              const effectiveOpacity = isFadingChar
-                ? fadeCfg?.direction === "out"
-                  ? fadeCfg.targetOpacity
-                  : 1
-                : placement.opacity;
-
-              const tweenClass =
-                placement.tween === "breathe"
-                  ? "animate-vn-breathe"
-                  : placement.tween === "bounce"
-                    ? "animate-vn-bounce"
-                    : placement.tween === "float"
-                      ? "animate-vn-float"
-                      : placement.tween === "shake"
-                        ? "animate-vn-shake"
-                        : "";
-
-              return (
-                <img
-                  key={placement.characterId}
-                  src={sp.url}
-                  alt={ch.name}
-                  draggable={false}
-                  style={{
-                    left: `${placement.x}%`,
-                    top: `${placement.y}%`,
-                    transform: `translate(-50%, -45%) scale(${placement.scale * (placement.flipX ? -1 : 1)}, ${placement.scale})`,
-                    opacity: effectiveOpacity,
-                    transition: `all ${fadeCfg?.durationMs ?? 450}ms ease`,
-                  }}
-                  className={`pointer-events-none absolute h-[80%] w-auto object-contain drop-shadow-[0_18px_40px_rgba(0,0,0,0.85)] ${tweenClass} ${
-                    isSpeaking ? "brightness-105" : "brightness-90"
-                  }`}
-                />
-              );
-            })}
-
-            {/* 屏幕自由文字叠加层 */}
-            {(node.screenTexts ?? []).map((st) => (
-              <div
-                key={st.id}
-                style={{
-                  left: `${st.x}%`,
-                  top: `${st.y}%`,
-                  transform: "translate(-50%, -50%)",
-                  fontSize: `${st.fontSize}px`,
-                  color: st.color,
-                  fontWeight: st.fontWeight ?? "bold",
-                  textAlign: st.align ?? "center",
-                }}
-                className="animate-fade-in pointer-events-none absolute z-15 whitespace-nowrap drop-shadow-[0_4px_18px_rgba(0,0,0,0.95)]"
-              >
-                {st.text}
-              </div>
-            ))}
-
-            {/* 结局画面 */}
-            {isEnd && !uiHidden && (
-              <div
-                onClick={(e) => e.stopPropagation()}
-                className="animate-fade-in absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/80 p-8 text-center backdrop-blur-md"
-              >
-                <span className="rounded-full border border-sky-400/40 bg-sky-500/15 px-3.5 py-1 text-[12px] font-semibold text-sky-200">
-                  {ENDING_LABELS[node.endingKind ?? "normal"]}
-                </span>
-                <h2 className="mt-3 text-3xl font-bold text-white">{node.title}</h2>
-                <p className="mt-3 max-w-lg text-[15px] leading-relaxed text-zinc-200">
-                  {node.endingDescription || "感谢游玩，故事在此落下帷幕。"}
-                </p>
-                <div className="mt-7 flex items-center gap-3">
-                  <button
-                    onClick={startNewGame}
-                    className="flex h-10 items-center gap-2 rounded-xl bg-sky-500 px-5 text-[13px] font-semibold text-white hover:bg-sky-400"
-                  >
-                    <RotateCcw size={14} /> 重新开始
-                  </button>
-                  <button
-                    onClick={() => setScreen("menu")}
-                    className="flex h-10 items-center gap-2 rounded-xl border border-[#1d4ed8] bg-black px-5 text-[13px] text-zinc-200 hover:bg-white/10"
-                  >
-                    返回主菜单
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* 底部对话框与左上方分支选项 */}
-            {!isEnd && !uiHidden && (
-              <div
-                onClick={(e) => e.stopPropagation()}
-                className="absolute right-6 bottom-4 left-6 z-20 flex flex-col items-start"
-              >
-                {/* 对话框左上方分支选项（未超过屏幕宽度绝不换行 + 悬停左侧浅蓝竖条） */}
-                {waitingChoice && (
-                  <div className="mb-3 flex max-w-full flex-col items-start gap-2">
-                    {node.choices.map((c) => (
-                      <button
-                        key={c.id}
-                        disabled={!c.targetNodeId}
-                        onClick={() => pickChoice(c)}
-                        className="group relative flex max-w-[calc(100vw-4rem)] items-center overflow-x-auto rounded-lg border-2 border-[#1d4ed8] bg-black/95 px-4 py-2.5 text-left text-[14px] font-medium whitespace-nowrap text-zinc-100 shadow-[0_10px_30px_rgba(0,0,0,0.85)] transition hover:border-sky-400 disabled:cursor-not-allowed disabled:opacity-45"
-                      >
-                        <span className="mr-3 h-4 w-1 shrink-0 rounded-full bg-transparent transition-colors group-hover:bg-sky-400" />
-                        <span className="whitespace-nowrap">{c.text}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                {/* 对话框主体（黑色背景 + 深蓝色边框，无右上角对话数） */}
-                <div
-                  style={{ backgroundColor: `rgba(0, 0, 0, ${dialogOpacity / 100})` }}
-                  className="w-full rounded-xl border-2 border-[#1d4ed8] px-6 pt-4 pb-2.5 shadow-[0_16px_50px_rgba(0,0,0,0.9)]"
-                >
-                  <div className="mb-1">
-                    <span
-                      className="text-[14px] font-bold tracking-wide"
-                      style={{ color: speaker?.color ?? "#93c5fd" }}
-                    >
-                      {speaker ? speaker.name : "旁白"}
-                    </span>
-                  </div>
-
-                  <div
-                    onClick={() => {
-                      if (!waitingChoice) advance();
-                    }}
-                    className="min-h-[3.2rem] cursor-pointer text-[15.5px] leading-relaxed text-zinc-100"
-                  >
-                    {fullText.slice(0, typedCount)}
-                  </div>
-
-                  {/* 对话框下方仅保留 5 个标准按钮：后退、自动、快进、隐藏、设置 */}
-                  <div className="mt-2 flex items-center justify-end gap-2 border-t border-[#1e3a8a]/50 pt-2">
-                    <button
-                      onClick={stepBack}
-                      disabled={history.length === 0}
-                      className="flex items-center gap-1 rounded border border-[#1d4ed8]/70 bg-black px-3 py-1 text-[12px] font-medium text-zinc-200 transition hover:border-sky-400 hover:text-sky-300 disabled:opacity-35"
-                    >
-                      <StepBack size={12} /> 后退
-                    </button>
-                    <button
-                      onClick={() => {
-                        setSkipping(false);
-                        setAutoPlay((v) => !v);
-                      }}
-                      className={`flex items-center gap-1 rounded border px-3 py-1 text-[12px] font-medium transition ${
-                        autoPlay
-                          ? "border-sky-400 bg-sky-500/25 text-sky-200"
-                          : "border-[#1d4ed8]/70 bg-black text-zinc-200 hover:border-sky-400 hover:text-sky-300"
-                      }`}
-                    >
-                      {autoPlay ? <Pause size={12} /> : <Play size={12} />} 自动
-                    </button>
-                    <button
-                      onClick={() => {
-                        setAutoPlay(false);
-                        setSkipping((v) => !v);
-                      }}
-                      className={`flex items-center gap-1 rounded border px-3 py-1 text-[12px] font-medium transition ${
-                        skipping
-                          ? "border-sky-400 bg-sky-500/25 text-sky-200"
-                          : "border-[#1d4ed8]/70 bg-black text-zinc-200 hover:border-sky-400 hover:text-sky-300"
-                      }`}
-                    >
-                      <FastForward size={12} /> 快进
-                    </button>
-                    <button
-                      onClick={() => {
-                        setAutoPlay(false);
-                        setSkipping(false);
-                        setHideCycleKey((k) => k + 1);
-                        setUiHidden(true);
-                      }}
-                      className="flex items-center gap-1 rounded border border-[#1d4ed8]/70 bg-black px-3 py-1 text-[12px] font-medium text-zinc-200 transition hover:border-sky-400 hover:text-sky-300"
-                    >
-                      <EyeOff size={12} /> 隐藏
-                    </button>
-                    <button
-                      onClick={() => openSettings("general")}
-                      className="flex items-center gap-1 rounded border border-[#1d4ed8]/70 bg-black px-3 py-1 text-[12px] font-medium text-zinc-200 transition hover:border-sky-400 hover:text-sky-300"
-                    >
-                      <Settings size={12} /> 设置
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* 隐藏 UI 提示：隐藏后等待片刻慢慢显示一次，随后平滑淡出消失 */}
-            {uiHidden && (
-              <div
-                key={hideCycleKey}
-                className="animate-hide-hint-once pointer-events-none absolute bottom-7 left-1/2 z-30 rounded-full border border-[#1d4ed8]/70 bg-black/80 px-4 py-1.5 text-[12px] text-sky-100"
-              >
-                点击画面任意位置恢复对话框
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ============================================================
-            4. 设置界面（通用设置、高级设置、读档、存档、退出到菜单）
-               - 去除所有多余说明字样
-               - 上方与中间为 3 排档案槽位（共 6 个），底部为 Auto、快速、1~0 文件夹标签
-        ============================================================ */}
-        {settingsOpen && (
-          <div
-            onClick={() => setSettingsOpen(false)}
-            className="animate-fade-in absolute inset-0 z-30 flex items-center justify-center bg-black/80 p-5 backdrop-blur-md"
-          >
+            {/* Blur Bridge */}
             <div
-              onClick={(e) => e.stopPropagation()}
-              className="flex h-full w-full max-w-[960px] flex-col overflow-hidden rounded-2xl border-2 border-[#1d4ed8] bg-[#050d1f] shadow-2xl"
-            >
-              <div className="flex h-12 shrink-0 items-center justify-between border-b border-[#1e3a8a] bg-[#081738] px-4">
-                <div className="flex items-center gap-1.5">
-                  {(
-                    [
-                      { id: "general", label: "通用设置" },
-                      { id: "advanced", label: "高级设置" },
-                      { id: "load", label: "读档" },
-                      { id: "save", label: "存档" },
-                    ] as { id: SettingsSection; label: string }[]
-                  ).map((t) => (
-                    <button
-                      key={t.id}
-                      onClick={() => setSettingsTab(t.id)}
-                      className={`rounded-lg px-4 py-1.5 text-[13px] font-semibold transition ${
-                        settingsTab === t.id
-                          ? "bg-sky-500 text-white shadow"
-                          : "text-zinc-300 hover:bg-white/10"
-                      }`}
+              style={{
+                background:
+                  ui.mainMenu.layout === 'right_panel'
+                    ? `linear-gradient(270deg, ${ui.mainMenu.panelColor} 0%, ${ui.mainMenu.panelColor}cc 45%, transparent 100%)`
+                    : `linear-gradient(90deg, ${ui.mainMenu.panelColor} 0%, ${ui.mainMenu.panelColor}cc 45%, transparent 100%)`,
+              }}
+              className={`absolute top-0 bottom-0 ${
+                ui.mainMenu.layout === 'right_panel' ? 'right-[31%]' : 'left-[31%]'
+              } w-36 z-10 pointer-events-none backdrop-blur-md`}
+            />
+
+            {/* Key Visual */}
+            <div className="flex-1 h-full relative overflow-hidden">
+              <div
+                className="absolute inset-0 bg-cover bg-center scale-105"
+                style={{ backgroundImage: `url(${menuBg.path})` }}
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-[#040c1f]/75 via-transparent to-[#040c1f]/30" />
+              {ui.mainMenu.showHeroCharacter && (
+                <img
+                  src={menuHero.path}
+                  alt={menuHero.name}
+                  className="absolute bottom-0 right-[14%] h-[90%] w-auto object-contain drop-shadow-[0_20px_50px_rgba(0,0,0,0.75)] pointer-events-none"
+                />
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ==================== 2. IN-GAME STAGE ==================== */}
+        {screenMode === 'playing' && (
+          <>
+            {/* Background Layer */}
+            <div
+              className={`absolute inset-0 bg-cover bg-center transition-all duration-700 ${
+                currentNode.cameraConfig?.shakeIntensity === 'heavy'
+                  ? 'animate-bounce'
+                  : ''
+              }`}
+              style={{
+                backgroundImage: `url(${bg.path})`,
+                filter:
+                  currentNode.colorFilter === 'sepia'
+                    ? 'sepia(0.75)'
+                    : currentNode.colorFilter === 'grayscale'
+                    ? 'grayscale(0.92)'
+                    : currentNode.colorFilter === 'night_blue'
+                    ? 'brightness(0.72) hue-rotate(195deg)'
+                    : 'none',
+                transform: currentNode.cameraConfig
+                  ? `scale(${currentNode.cameraConfig.zoom || 1}) translate(${
+                      currentNode.cameraConfig.offsetX || 0
+                    }%, ${currentNode.cameraConfig.offsetY || 0}%)`
+                  : 'none',
+              }}
+            />
+
+            {/* Developer Debug Overlay */}
+            {showDevDebug && (
+              <div className="absolute top-3 left-3 z-30 p-3 rounded-lg bg-slate-950/90 border border-amber-500/50 text-[11px] font-mono text-amber-200 space-y-1 shadow-xl pointer-events-none">
+                <div className="font-bold text-amber-400">DEVELOPER DEBUG (不打入正式包)</div>
+                <div>Chapter: {currentChapter?.title}</div>
+                <div>
+                  Node: {currentNode.id} ({currentNode.type})
+                </div>
+                <div>
+                  Line: {dialogueIndex + 1} / {currentNode.dialogues.length}
+                </div>
+                <div className="pt-1 border-t border-amber-500/20">
+                  {project.characters.map((c) => (
+                    <div key={c.id}>
+                      • {c.name}: {affectionMap[c.id] ?? c.initialAffection}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Clue Drawer */}
+            {showClueDrawer && (
+              <div
+                onClick={(e) => e.stopPropagation()}
+                className="absolute top-3 right-3 z-35 w-80 rounded-xl bg-slate-950/95 border border-fuchsia-500/40 p-3.5 text-xs shadow-2xl space-y-2"
+              >
+                <div className="flex items-center justify-between font-bold text-fuchsia-300">
+                  <span>已解锁推理档案 ({unlockedClues.length})</span>
+                  <button onClick={() => setShowClueDrawer(false)}>
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                {unlockedClues.length === 0 ? (
+                  <div className="text-slate-400 text-[11px]">尚未解锁档案词条</div>
+                ) : (
+                  unlockedClues.map((c, i) => (
+                    <div
+                      key={i}
+                      className="p-2 rounded bg-fuchsia-950/25 border border-fuchsia-500/30"
                     >
-                      {t.label}
+                      <div className="font-semibold text-white">{c.title}</div>
+                      <div className="text-[11px] text-slate-300 mt-0.5">{c.desc}</div>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+
+            {/* Toast Popup */}
+            {currentNode.toastMessage && (
+              <div className="absolute top-5 left-1/2 -translate-x-1/2 z-30 px-5 py-2 rounded-full bg-[#07142b]/95 border border-sky-400/60 text-xs font-bold text-sky-200 shadow-xl">
+                {currentNode.toastMessage}
+              </div>
+            )}
+
+            {/* Characters Layer (with live per-line expression switching!) */}
+            <div className="absolute inset-0 pointer-events-none">
+              {currentNode.characters.map((pl) => {
+                const activeSpriteId =
+                  currentLine?.speakerId === pl.characterId && currentLine?.expressionSpriteId
+                    ? currentLine.expressionSpriteId
+                    : currentNode.type === 'char_expression' &&
+                      currentNode.targetExpressionCharId === pl.characterId &&
+                      currentNode.targetExpressionSpriteId
+                    ? currentNode.targetExpressionSpriteId
+                    : pl.spriteId;
+                const sprite = getCharacterById(activeSpriteId);
+                const isSpeaking = currentLine?.speakerId === pl.characterId;
+
+                return (
+                  <div
+                    key={pl.id}
+                    style={{
+                      left: `${pl.x}%`,
+                      top: `${pl.y}%`,
+                      transform: `translate(-50%, -50%) scale(${
+                        pl.scale * (isSpeaking ? 1.03 : 0.98)
+                      }) ${pl.flipX ? 'scaleX(-1)' : ''}`,
+                      opacity: pl.opacity ?? 1,
+                    }}
+                    className={`absolute transition-all duration-300 ${
+                      isSpeaking ? 'brightness-105 z-20' : 'brightness-90 z-10'
+                    }`}
+                  >
+                    <img
+                      src={sprite.path}
+                      alt={pl.name}
+                      className="h-[76vh] w-auto object-contain drop-shadow-[0_20px_40px_rgba(0,0,0,0.72)]"
+                    />
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Screen Text / Chapter Banner / Cinematic Subtitle Layer */}
+            {currentNode.screenTextConfig && (
+              <div
+                style={{
+                  backgroundColor:
+                    currentNode.screenTextConfig.bgOverlay === 'dim'
+                      ? 'rgba(2, 6, 23, 0.65)'
+                      : currentNode.screenTextConfig.bgOverlay === 'black'
+                      ? '#020617'
+                      : 'transparent',
+                }}
+                className="absolute inset-0 z-20 pointer-events-none"
+              >
+                {currentNode.screenTextConfig.bgOverlay === 'cinematic_bars' && (
+                  <>
+                    <div className="absolute top-0 left-0 right-0 h-[10vh] bg-black" />
+                    <div className="absolute bottom-0 left-0 right-0 h-[10vh] bg-black" />
+                  </>
+                )}
+                <div
+                  style={{
+                    left: `${currentNode.screenTextConfig.x}%`,
+                    top: `${currentNode.screenTextConfig.y}%`,
+                    transform: 'translate(-50%, -50%)',
+                    textAlign: currentNode.screenTextConfig.align,
+                  }}
+                  className="absolute w-[84%] max-w-4xl"
+                >
+                  <div
+                    style={{
+                      fontSize: `${currentNode.screenTextConfig.fontSize}px`,
+                      color: currentNode.screenTextConfig.color,
+                    }}
+                    className="font-extrabold tracking-wide drop-shadow-[0_6px_24px_rgba(0,0,0,0.92)] whitespace-pre-wrap leading-snug"
+                  >
+                    {currentNode.screenTextConfig.text}
+                  </div>
+                  {currentNode.screenTextConfig.subText && (
+                    <div className="text-xs font-mono tracking-[0.28em] text-slate-300 mt-3 uppercase">
+                      {currentNode.screenTextConfig.subText}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Choice Overlay (Single-line unless exceeding screen width + Timed Countdown Bar) */}
+            {!isUiHidden &&
+              (currentNode.type === 'choice' ||
+                currentNode.type === 'timed_choice' ||
+                currentNode.type === 'switch_branch') &&
+              dialogueIndex === currentNode.dialogues.length - 1 &&
+              currentNode.choices.length > 0 && (
+                <div
+                  style={{
+                    left:
+                      ui.choiceBox.position === 'screen_center'
+                        ? '50%'
+                        : `calc((100% - ${ui.dialogueBox.widthPercent}%) / 2)`,
+                    transform:
+                      ui.choiceBox.position === 'screen_center'
+                        ? 'translate(-50%, -50%)'
+                        : 'none',
+                    top: ui.choiceBox.position === 'screen_center' ? '45%' : 'auto',
+                    bottom:
+                      ui.choiceBox.position === 'screen_center'
+                        ? 'auto'
+                        : `${ui.dialogueBox.bottomOffset + ui.dialogueBox.heightPx + 18}px`,
+                  }}
+                  className="absolute z-30 flex flex-col items-start gap-2.5 max-w-[92vw]"
+                >
+                  {timedRemaining !== null && (
+                    <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-orange-950/90 border border-orange-400 text-orange-200 text-xs font-bold shadow-lg">
+                      <Timer className="w-3.5 h-3.5 animate-spin" />
+                      <span>限时抉择剩余：{timedRemaining} 秒</span>
+                    </div>
+                  )}
+                  {currentNode.choices.map((choice) => (
+                    <button
+                      key={choice.id}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (choice.affectionCharacterId && choice.affectionDelta) {
+                          setAffectionMap((prev) => ({
+                            ...prev,
+                            [choice.affectionCharacterId!]:
+                              (prev[choice.affectionCharacterId!] || 0) +
+                              choice.affectionDelta!,
+                          }));
+                        }
+                        if (choice.setVarKey !== undefined && choice.setVarValue !== undefined) {
+                          setVariablesMap((prev) => ({
+                            ...prev,
+                            [choice.setVarKey!]: choice.setVarValue!,
+                          }));
+                        }
+                        setHistoryStack((h) => [...h, { nodeId: currentNodeId, dialogueIndex }]);
+                        setCurrentNodeId(choice.targetNodeId);
+                        setDialogueIndex(0);
+                      }}
+                      style={{
+                        backgroundColor: ui.choiceBox.bgColor,
+                        borderColor: ui.choiceBox.borderColor,
+                        color: ui.choiceBox.textColor,
+                        fontSize: `${ui.choiceBox.fontSize}px`,
+                        borderRadius: `${ui.choiceBox.borderRadius}px`,
+                      }}
+                      className="group relative pl-6 pr-6 py-2.5 border backdrop-blur-md text-left font-medium transition-all duration-200 shadow-[0_10px_28px_rgba(0,0,0,0.6)] hover:translate-x-1 whitespace-nowrap overflow-x-auto max-w-[92vw]"
+                    >
+                      <span
+                        style={{ backgroundColor: ui.choiceBox.hoverAccentColor }}
+                        className="absolute left-0 top-0 bottom-0 w-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                      />
+                      <span>{choice.text}</span>
                     </button>
                   ))}
-                  <button
-                    onClick={() => {
-                      setSettingsOpen(false);
-                      setAutoPlay(false);
-                      setSkipping(false);
-                      setScreen("menu");
-                    }}
-                    className="ml-2 rounded-lg border border-amber-400/35 bg-amber-400/10 px-4 py-1.5 text-[13px] font-semibold text-amber-200 transition hover:bg-amber-400/20"
-                  >
-                    退出到菜单
-                  </button>
                 </div>
+              )}
 
-                <button
-                  onClick={() => setSettingsOpen(false)}
-                  className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-300 hover:bg-white/10 hover:text-white"
+            {/* Ending Banner */}
+            {!isUiHidden &&
+              currentNode.type === 'end' &&
+              dialogueIndex === currentNode.dialogues.length - 1 && (
+                <div className="absolute inset-x-0 top-14 z-30 flex justify-center pointer-events-none">
+                  <div className="px-10 py-6 rounded-2xl bg-[#071630]/92 border border-sky-400/50 backdrop-blur-xl text-center shadow-2xl pointer-events-auto">
+                    <div className="text-xs font-mono uppercase tracking-[0.25em] text-sky-400 mb-1">
+                      {currentNode.endingType?.toUpperCase()} ENDING UNLOCKED
+                    </div>
+                    <div className="text-2xl font-bold text-white mb-4">
+                      {currentNode.endingTitle || currentNode.title}
+                    </div>
+                    <button
+                      onClick={startNewGame}
+                      className="px-6 py-2 rounded-lg bg-[#007acc] hover:bg-[#1f8ad2] text-white text-xs font-bold transition"
+                    >
+                      重新开始轮回
+                    </button>
+                  </div>
+                </div>
+              )}
+
+            {/* Customizable Bottom Dialogue Box */}
+            {!isUiHidden && (
+              <div
+                style={{
+                  bottom: `${ui.dialogueBox.bottomOffset}px`,
+                  width: `${ui.dialogueBox.widthPercent}%`,
+                }}
+                className="absolute left-1/2 -translate-x-1/2 max-w-[1180px] z-20"
+              >
+                <div
+                  onClick={advance}
+                  style={{
+                    minHeight: `${ui.dialogueBox.heightPx}px`,
+                    padding: `${ui.dialogueBox.paddingPx}px ${
+                      ui.dialogueBox.paddingPx + 6
+                    }px 48px ${ui.dialogueBox.paddingPx + 6}px`,
+                    backgroundColor: ui.dialogueBox.bgColor,
+                    opacity: ui.dialogueBox.bgOpacity,
+                    borderColor: ui.dialogueBox.borderColor,
+                    borderWidth: `${ui.dialogueBox.borderWidth}px`,
+                    borderStyle: 'solid',
+                    borderRadius: `${ui.dialogueBox.borderRadius}px`,
+                  }}
+                  className="relative backdrop-blur-xl shadow-[0_20px_50px_rgba(0,0,0,0.75)] cursor-pointer flex flex-col justify-between"
                 >
-                  <X size={16} />
+                  <div>
+                    {currentLine && (
+                      <div
+                        style={{
+                          fontSize: `${ui.dialogueBox.speakerFontSize}px`,
+                          color: currentLine.speakerColor || '#38bdf8',
+                        }}
+                        className="font-bold tracking-wide mb-2"
+                      >
+                        {currentLine.speakerName}
+                      </div>
+                    )}
+                    <p
+                      style={{
+                        fontSize: `${ui.dialogueBox.textFontSize}px`,
+                        color: ui.dialogueBox.textColor,
+                        lineHeight: ui.dialogueBox.lineHeight,
+                      }}
+                      className="tracking-wide whitespace-pre-wrap"
+                    >
+                      {typedText}
+                      {isTyping && (
+                        <span className="inline-block w-1.5 h-5 bg-sky-400 ml-1 animate-pulse align-middle" />
+                      )}
+                    </p>
+                  </div>
+
+                  {/* Bottom-Right Controls */}
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    className={`absolute bottom-3 ${
+                      ui.dialogueBox.controlPosition === 'bottom_center'
+                        ? 'left-1/2 -translate-x-1/2'
+                        : 'right-5'
+                    } flex items-center gap-2`}
+                  >
+                    {ui.dialogueBox.visibleControls.back && (
+                      <button
+                        onClick={stepBack}
+                        disabled={historyStack.length === 0}
+                        className="px-3 py-1 rounded bg-[#0f2246]/80 hover:bg-[#163263] disabled:opacity-35 border border-sky-400/25 text-xs text-slate-200 transition"
+                      >
+                        后退
+                      </button>
+                    )}
+                    {ui.dialogueBox.visibleControls.auto && (
+                      <button
+                        onClick={() => setIsAutoPlay((a) => !a)}
+                        className={`px-3 py-1 rounded border text-xs transition ${
+                          isAutoPlay
+                            ? 'bg-sky-500/30 border-sky-400 text-white'
+                            : 'bg-[#0f2246]/80 hover:bg-[#163263] border-sky-400/25 text-slate-200'
+                        }`}
+                      >
+                        自动
+                      </button>
+                    )}
+                    {ui.dialogueBox.visibleControls.skip && (
+                      <button
+                        onClick={() => setIsSkipMode((s) => !s)}
+                        className={`px-3 py-1 rounded border text-xs transition ${
+                          isSkipMode
+                            ? 'bg-amber-500/30 border-amber-400 text-white'
+                            : 'bg-[#0f2246]/80 hover:bg-[#163263] border-sky-400/25 text-slate-200'
+                        }`}
+                      >
+                        快进
+                      </button>
+                    )}
+                    {ui.dialogueBox.visibleControls.hide && (
+                      <button
+                        onClick={() => setIsUiHidden(true)}
+                        className="px-3 py-1 rounded bg-[#0f2246]/80 hover:bg-[#163263] border border-sky-400/25 text-xs text-slate-200 transition"
+                      >
+                        隐藏
+                      </button>
+                    )}
+                    {ui.dialogueBox.visibleControls.settings && (
+                      <button
+                        onClick={() => setModalMode('settings')}
+                        className="px-3 py-1 rounded bg-[#0f2246]/80 hover:bg-[#163263] border border-sky-400/25 text-xs text-slate-200 transition"
+                      >
+                        设置
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* UI Hidden Hint: slowly fades in once after delay, then fades out */}
+            {isUiHidden && (
+              <div
+                className={`absolute bottom-7 left-1/2 -translate-x-1/2 px-5 py-2 rounded-full bg-[#071630]/85 border border-sky-400/30 text-xs text-slate-200 pointer-events-none transition-opacity duration-700 ${
+                  hideHintPhase === 'fading_in' ? 'opacity-100' : 'opacity-0'
+                }`}
+              >
+                点击屏幕任意位置恢复界面
+              </div>
+            )}
+          </>
+        )}
+
+        {/* ==================== 3. SAVE / LOAD FOLDER TABS MODAL ==================== */}
+        {(modalMode === 'save' || modalMode === 'load') && (
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="absolute inset-0 z-40 bg-[#030917]/90 backdrop-blur-xl flex flex-col p-8"
+          >
+            <div className="max-w-5xl w-full mx-auto flex-1 flex flex-col">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="text-2xl font-bold text-white tracking-wider">
+                    {modalMode === 'save' ? '保存进度 (SAVE)' : '读取进度 (LOAD)'}
+                  </h2>
+                  <p className="text-xs text-slate-400 mt-0.5">请选择存档分类页签与对应槽位</p>
+                </div>
+                <button
+                  onClick={() => setModalMode('none')}
+                  className="px-4 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-200 border border-slate-700"
+                >
+                  关闭
                 </button>
               </div>
 
-              <div className="flex min-h-0 flex-1 flex-col p-5">
-                {settingsTab === "general" && (
-                  <div className="mx-auto flex w-full max-w-xl flex-col gap-5 py-4">
-                    <div className="rounded-xl border border-[#1e3a8a] bg-black/60 p-4">
-                      <div className="mb-2 flex justify-between text-[13px]">
-                        <span className="font-semibold text-zinc-200">文字速度</span>
-                        <span className="font-mono text-sky-300">{textSpeed}</span>
-                      </div>
-                      <input
-                        type="range"
-                        min={15}
-                        max={65}
-                        value={textSpeed}
-                        onChange={(e) => setTextSpeed(Number(e.target.value))}
-                        className="w-full accent-sky-400"
-                      />
-                    </div>
+              <div className="flex items-end gap-1 border-b border-sky-500/30 px-2">
+                {SAVE_TABS.map((tab) => {
+                  const active = activeSaveTab === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      onClick={() => setActiveSaveTab(tab.id)}
+                      className={`px-4 py-2 rounded-t-lg text-xs font-bold tracking-wider transition-all border-t border-l border-r ${
+                        active
+                          ? 'bg-[#0c234a] text-sky-300 border-sky-400/50 -mb-px pb-2.5'
+                          : 'bg-[#07142b]/70 text-slate-400 border-slate-800 hover:text-slate-200'
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  );
+                })}
+              </div>
 
-                    <div className="rounded-xl border border-[#1e3a8a] bg-black/60 p-4">
-                      <div className="mb-2 flex justify-between text-[13px]">
-                        <span className="font-semibold text-zinc-200">自动推进间隔</span>
-                        <span className="font-mono text-sky-300">{(autoDelayMs / 1000).toFixed(1)}s</span>
-                      </div>
-                      <input
-                        type="range"
-                        min={600}
-                        max={3500}
-                        step={100}
-                        value={autoDelayMs}
-                        onChange={(e) => setAutoDelayMs(Number(e.target.value))}
-                        className="w-full accent-sky-400"
-                      />
-                    </div>
+              <div className="flex-1 bg-[#081733]/90 border border-t-0 border-sky-500/30 rounded-b-xl p-5 grid grid-cols-2 grid-rows-3 gap-4 overflow-y-auto">
+                {[1, 2, 3, 4, 5, 6].map((slotIdx) => {
+                  const slotKey = `${activeSaveTab}-${slotIdx}`;
+                  const data = saveSlots[slotKey];
+                  const slotBg = data ? getBackgroundById(data.backgroundId) : null;
 
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="rounded-xl border border-[#1e3a8a] bg-black/60 p-4">
-                        <div className="mb-2 flex justify-between text-[13px]">
-                          <span className="font-semibold text-zinc-200">音乐音量</span>
-                          <span className="font-mono text-sky-300">{bgmVolume}%</span>
+                  return (
+                    <div
+                      key={slotKey}
+                      onClick={() => {
+                        if (modalMode === 'save') {
+                          persistSaveSlot(activeSaveTab, slotIdx);
+                        } else if (data) {
+                          handleLoadSlot(data);
+                        }
+                      }}
+                      className={`group relative rounded-xl border p-3.5 flex gap-4 transition cursor-pointer ${
+                        data
+                          ? 'bg-[#0c2147]/85 border-sky-400/35 hover:border-sky-300 hover:bg-[#102a58]'
+                          : 'bg-[#061229]/60 border-slate-800 hover:border-sky-500/40'
+                      }`}
+                    >
+                      <div className="w-36 h-full rounded-lg overflow-hidden bg-slate-950 border border-slate-800 shrink-0 relative">
+                        {slotBg ? (
+                          <img
+                            src={slotBg.path}
+                            alt={data.nodeTitle}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-[11px] text-slate-600 font-mono">
+                            NO DATA
+                          </div>
+                        )}
+                        <div className="absolute top-1.5 left-1.5 px-2 py-0.5 rounded bg-black/75 text-[10px] font-mono text-sky-300">
+                          {activeSaveTab.toUpperCase()} - 0{slotIdx}
                         </div>
-                        <input
-                          type="range"
-                          min={0}
-                          max={100}
-                          value={bgmVolume}
-                          onChange={(e) => setBgmVolume(Number(e.target.value))}
-                          className="w-full accent-sky-400"
-                        />
                       </div>
-                      <div className="rounded-xl border border-[#1e3a8a] bg-black/60 p-4">
-                        <div className="mb-2 flex justify-between text-[13px]">
-                          <span className="font-semibold text-zinc-200">语音音量</span>
-                          <span className="font-mono text-sky-300">{voiceVolume}%</span>
-                        </div>
-                        <input
-                          type="range"
-                          min={0}
-                          max={100}
-                          value={voiceVolume}
-                          onChange={(e) => setVoiceVolume(Number(e.target.value))}
-                          className="w-full accent-sky-400"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                )}
 
-                {settingsTab === "advanced" && (
-                  <div className="mx-auto flex w-full max-w-xl flex-col gap-5 py-4">
-                    <div className="rounded-xl border border-[#1e3a8a] bg-black/60 p-4">
-                      <div className="mb-2 flex justify-between text-[13px]">
-                        <span className="font-semibold text-zinc-200">对话框不透明度</span>
-                        <span className="font-mono text-sky-300">{dialogOpacity}%</span>
-                      </div>
-                      <input
-                        type="range"
-                        min={55}
-                        max={100}
-                        value={dialogOpacity}
-                        onChange={(e) => setDialogOpacity(Number(e.target.value))}
-                        className="w-full accent-sky-400"
-                      />
-                    </div>
-
-                    <div className="flex items-center justify-between rounded-xl border border-[#1e3a8a] bg-black/60 p-4">
-                      <span className="text-[13px] font-semibold text-zinc-200">快进范围</span>
-                      <button
-                        onClick={() => setSkipUnreadAllowed((v) => !v)}
-                        className={`rounded-lg px-3.5 py-1.5 text-[12px] font-semibold transition ${
-                          skipUnreadAllowed
-                            ? "bg-amber-500/20 text-amber-200"
-                            : "bg-sky-500/20 text-sky-200"
-                        }`}
-                      >
-                        {skipUnreadAllowed ? "允许快进未读场景" : "仅快进已游玩场景"}
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* 读档 / 存档：清爽 3 排档案槽 + 底部文件夹标签（无任何多余说明文字） */}
-                {(settingsTab === "load" || settingsTab === "save") && (
-                  <div className="flex min-h-0 flex-1 flex-col justify-between">
-                    <div className="grid min-h-0 flex-1 grid-cols-2 grid-rows-3 gap-3">
-                      {Array.from({ length: 6 }).map((_, idx) => {
-                        const slotKey = `${activeFolderTab}-${idx}`;
-                        const slot = saves[slotKey];
-                        return (
-                          <button
-                            key={slotKey}
-                            onClick={() => {
-                              if (settingsTab === "save") {
-                                if (screen === "game") handleSaveSlot(activeFolderTab, idx);
-                              } else {
-                                handleLoadSlot(activeFolderTab, idx);
-                              }
-                            }}
-                            className="group relative flex overflow-hidden rounded-xl border-2 border-[#1e3a8a] bg-black/85 p-2.5 text-left transition hover:border-sky-400"
-                          >
-                            {slot ? (
-                              <div className="flex h-full w-full items-center gap-3.5">
-                                <div className="flex h-full w-40 shrink-0 flex-col overflow-hidden rounded-lg border border-white/15 bg-zinc-950">
-                                  <img
-                                    src={slot.thumbnailUrl}
-                                    alt=""
-                                    className="min-h-0 flex-1 w-full object-cover"
-                                  />
-                                  <div className="bg-[#081738] px-1.5 py-0.5 text-center font-mono text-[10px] text-sky-200">
-                                    {slot.savedAt}
-                                  </div>
-                                </div>
-
-                                <div className="flex min-w-0 flex-1 flex-col justify-center h-full py-0.5">
-                                  <div className="truncate text-[13.5px] font-bold text-white">
-                                    {slot.sceneTitle}
-                                  </div>
-                                  <p className="mt-1 line-clamp-2 text-[12px] text-zinc-300">
-                                    {slot.previewText}
-                                  </p>
-                                </div>
-                              </div>
-                            ) : (
-                              <div className="flex h-full w-full items-center justify-center rounded-lg border border-dashed border-[#1e3a8a]/60 bg-[#040a18]/60">
-                                <span className="text-[15px] font-semibold tracking-widest text-zinc-500 group-hover:text-sky-300">
-                                  空档案
+                      <div className="flex-1 min-w-0 flex flex-col justify-between py-0.5">
+                        {data ? (
+                          <>
+                            <div>
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-xs font-bold text-sky-300 truncate">
+                                  {data.chapterTitle}
+                                </span>
+                                <span className="text-[10px] font-mono text-slate-400 shrink-0">
+                                  {data.savedAt}
                                 </span>
                               </div>
-                            )}
-                          </button>
-                        );
-                      })}
+                              <div className="text-xs font-semibold text-white mt-0.5 truncate">
+                                {data.nodeTitle}
+                              </div>
+                              <p className="text-[11px] text-slate-300 line-clamp-2 mt-1.5 leading-relaxed">
+                                「{data.textPreview}」
+                              </p>
+                            </div>
+                          </>
+                        ) : (
+                          <div className="my-auto text-xs text-slate-500">
+                            {modalMode === 'save'
+                              ? '点击将当前游戏进度保存至此槽位'
+                              : '空白存档槽位'}
+                          </div>
+                        )}
+                      </div>
                     </div>
-
-                    <div className="mt-3.5 flex items-center justify-center gap-1.5 border-t border-[#1e3a8a] pt-3">
-                      {SAVE_FOLDER_TABS.map((folder) => {
-                        const active = activeFolderTab === folder;
-                        const hasAny = Array.from({ length: 6 }).some(
-                          (_, i) => Boolean(saves[`${folder}-${i}`]),
-                        );
-                        return (
-                          <button
-                            key={folder}
-                            onClick={() => setActiveFolderTab(folder)}
-                            className={`relative min-w-11 rounded-lg border px-3 py-1.5 font-mono text-[12px] font-bold transition ${
-                              active
-                                ? "border-sky-400 bg-sky-500 text-white shadow-[0_0_14px_rgba(56,189,248,0.45)]"
-                                : "border-[#1e3a8a] bg-[#081738] text-zinc-300 hover:border-sky-400/60 hover:text-white"
-                            }`}
-                          >
-                            {folder}
-                            {hasAny && !active && (
-                              <span className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-sky-400" />
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
+                  );
+                })}
               </div>
             </div>
           </div>
         )}
 
-        {toastMsg && (
-          <div className="animate-pop-in pointer-events-none absolute top-4 right-14 z-40 rounded-lg border border-sky-400/50 bg-[#081738]/95 px-3.5 py-1.5 text-[12px] font-medium text-sky-100 shadow-xl">
-            {toastMsg}
+        {/* ==================== 4. SETTINGS MODAL ==================== */}
+        {modalMode === 'settings' && (
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="absolute inset-0 z-40 bg-[#030917]/85 backdrop-blur-xl flex items-center justify-center p-6"
+          >
+            <div className="w-full max-w-md rounded-xl bg-[#091b3a] border border-sky-400/40 p-6 space-y-5 shadow-2xl">
+              <div className="flex items-center justify-between border-b border-sky-500/20 pb-3">
+                <div className="flex items-center gap-2">
+                  <Sliders className="w-4 h-4 text-sky-400" />
+                  <h3 className="text-base font-bold text-white">游戏环境设置</h3>
+                </div>
+                <button
+                  onClick={() => setModalMode('none')}
+                  className="text-slate-400 hover:text-white"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="space-y-4 text-xs">
+                <div>
+                  <div className="flex justify-between text-slate-300 mb-1">
+                    <span>文字显示速度</span>
+                    <span className="font-mono text-sky-300">{textSpeedMs} ms/字</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={10}
+                    max={60}
+                    step={2}
+                    value={textSpeedMs}
+                    onChange={(e) => setTextSpeedMs(Number(e.target.value))}
+                    className="w-full accent-sky-400"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between pt-2 border-t border-sky-500/20">
+                  <span className="text-slate-300">背景音乐与音效</span>
+                  <button
+                    onClick={() => setIsMuted((m) => !m)}
+                    className="px-3 py-1 rounded bg-sky-500/20 border border-sky-400/40 text-sky-200"
+                  >
+                    {isMuted ? '已静音' : '正常播放'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="pt-2 flex justify-end">
+                <button
+                  onClick={() => setModalMode('none')}
+                  className="px-5 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold"
+                >
+                  确定
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>
     </div>
   );
-}
+};

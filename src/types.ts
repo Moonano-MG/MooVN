@@ -1,282 +1,467 @@
-export type EditorTheme = "dark" | "light";
+export type ScriptLanguage = 'typescript' | 'javascript' | 'lua' | 'teal' | 'python';
 
-export type NodeType =
-  | "dialogue"
-  | "choice"
-  | "fade"
-  | "screen_text"
-  | "character"
-  | "background"
-  | "audio"
-  | "script"
-  | "end";
+export type NodeCategory =
+  | 'control'
+  | 'narrative'
+  | 'screen_text'
+  | 'character'
+  | 'visual'
+  | 'audio'
+  | 'ui'
+  | 'script';
 
-export type EndingKind = "true" | "good" | "normal" | "bad";
+export type WorkflowNodeType =
+  // 1. 叙事 (Narrative)
+  | 'dialogue'
+  | 'narration'
+  | 'cg_caption'
+  | 'inner_monologue'
+  // 2. 屏幕文字 (Screen Text)
+  | 'screen_text'
+  | 'chapter_title'
+  | 'floating_subtitle'
+  | 'banner_notice'
+  // 3. 控制 (Flow Control)
+  | 'choice'
+  | 'timed_choice'
+  | 'condition'
+  | 'switch_branch'
+  | 'wait_timer'
+  | 'jump_chapter'
+  | 'random_branch'
+  | 'end'
+  // 4. 角色 (Character & Expression)
+  | 'char_enter'
+  | 'char_exit'
+  | 'char_expression'
+  | 'char_move'
+  | 'char_action'
+  | 'char_highlight'
+  | 'affection_change'
+  // 5. 视觉 (Visual, Fade & Camera)
+  | 'bg_switch'
+  | 'fade'
+  | 'camera_pan_zoom'
+  | 'camera_shake'
+  | 'screen_flash'
+  | 'weather_particles'
+  | 'color_filter'
+  | 'frame_animation'
+  // 6. 音频 (Audio)
+  | 'bgm_play'
+  | 'bgm_stop'
+  | 'sfx_play'
+  | 'voice_play'
+  // 7. 界面 (In-Game UI)
+  | 'ui_visibility'
+  | 'popup_toast'
+  | 'clue_unlock'
+  | 'ui_theme_switch'
+  // 8. 数据与脚本 (Data & Script Bridge)
+  | 'set_variable'
+  | 'script';
 
-/** 主支持语言为 TypeScript/JavaScript；其他语言通过 TS/JS Bridge 桥接执行 */
-export type ScriptLang = "typescript" | "javascript" | "lua" | "teal" | "python";
-export type ScriptLanguage = ScriptLang;
+export interface NodeTypeMeta {
+  type: WorkflowNodeType;
+  category: NodeCategory;
+  categoryLabel: string; // 类型标，例如 "控制"、"屏幕文字"、"角色"
+  title: string;
+  description: string;
+  accentColor: string;
+  badgeBg: string;
+  badgeText: string;
+}
 
-export type SettingsSection = "general" | "advanced" | "load" | "save";
-
-/** 媒体资源与动画类型：纯静态图、多图片序列帧动画、视频、补间动画 */
-export type MediaKind = "static" | "frame_sequence" | "video" | "tween";
-
-export type TweenPreset = "none" | "breathe" | "bounce" | "shake" | "float" | "slide_in";
-
-export interface CharacterAttribute {
+export interface CharacterCustomAttribute {
+  id: string;
   key: string;
   label: string;
-  value: string | number;
+  value: number | string | boolean;
 }
 
-export interface Character {
+export interface CharacterExpressionVariant {
+  id: string;
+  label: string; // 例如 "微笑"、"惊讶"、"害羞"、"抱猫"
+  spriteId: string;
+}
+
+export interface CharacterProfile {
   id: string;
   name: string;
+  titleRole: string;
   color: string;
-  spriteId: string | null;
-  description: string;
+  spriteId: string;
+  expressions?: CharacterExpressionVariant[];
   initialAffection: number;
-  affection: number;
-  attributes: CharacterAttribute[];
+  maxAffection: number;
+  bio: string;
+  customAttributes: CharacterCustomAttribute[];
 }
 
-export interface StageCharacterPlacement {
-  characterId: string;
-  /** 舞台水平位置百分比 (0 ~ 100) */
-  x: number;
-  /** 舞台垂直位置百分比 (0 ~ 100) */
-  y: number;
-  /** 缩放倍率 (0.5 ~ 1.6) */
-  scale: number;
-  /** 透明度 (0 ~ 1.0) */
-  opacity: number;
-  flipX?: boolean;
-  /** 角色动画模式（静态、多图序列帧呼吸眨眼、补间动画） */
-  mediaKind?: MediaKind;
-  tween?: TweenPreset;
-  fps?: number;
-}
-
-/** 淡入 / 淡出效果配置（可作用于角色、背景场景或整屏） */
-export interface FadeConfig {
-  target: "character" | "background" | "screen";
-  characterId?: string | null;
-  direction: "in" | "out";
-  durationMs: number;
-  targetOpacity: number;
-  color?: string;
-}
-
-/** 屏幕自由文字（可自定义大小、颜色、坐标位置、淡入时长） */
-export interface ScreenTextItem {
+export interface CharacterPlacement {
   id: string;
-  text: string;
-  x: number; // 0..100 %
-  y: number; // 0..100 %
-  fontSize: number; // px
-  color: string;
-  fontWeight?: "normal" | "bold";
-  align?: "left" | "center" | "right";
-  fadeDurationMs?: number;
+  characterId: string;
+  name: string;
+  spriteId: string;
+  expressionLabel?: string;
+  x: number; // 0-100 stage percentage
+  y: number; // 0-100 stage percentage
+  scale: number; // 0.5-2.0
+  opacity?: number; // 0-1
+  flipX?: boolean;
+  highlight?: boolean;
+  enterAnimation?: 'none' | 'fade' | 'slide-left' | 'slide-right' | 'bounce' | 'shake' | 'nod' | 'jump';
+  tweenDurationMs?: number;
 }
 
 export interface DialogueLine {
   id: string;
-  characterId: string | null;
+  speakerId: string;
+  speakerName: string;
+  speakerColor: string;
   text: string;
+  expressionSpriteId?: string;
+  voiceAudioId?: string;
+  charAction?: 'none' | 'bounce' | 'shake' | 'nod' | 'slide-in';
 }
 
 export interface ChoiceOption {
   id: string;
   text: string;
-  targetNodeId: string | null;
-  affectionCharacterId?: string | null;
+  targetNodeId: string;
+  affectionCharacterId?: string;
   affectionDelta?: number;
-  requiredAffection?: number;
+  conditionExpr?: string;
+  setVarKey?: string;
+  setVarValue?: string | number | boolean;
 }
 
-/** Dify + Scratch 节点内积木块（底层统一生成 TypeScript/JavaScript） */
-export type ScratchBlockKind =
-  | "say"
-  | "bg"
-  | "char"
-  | "fade"
-  | "screen_text"
-  | "animate"
-  | "affection"
-  | "ts_code"
-  | "bridge_call";
-
-export interface ScratchBlock {
-  id: string;
-  kind: ScratchBlockKind;
-  /**
-   * 积木参数（例如 speaker, text, target, direction, durationMs, fontSize, color, x, y,
-   * mediaKind, tween, fps, bridgeLang, code 等）
-   */
-  params: Record<string, any>;
+export interface ConditionBranchRule {
+  variableType: 'affection' | 'custom_attr' | 'global_var';
+  characterId?: string;
+  attributeKey: string;
+  operator: '>=' | '<=' | '==' | '>' | '<' | '!=';
+  compareValue: number | string | boolean;
+  trueTargetNodeId: string;
+  falseTargetNodeId: string;
 }
 
-export interface Chapter {
+export interface FadeActionConfig {
+  targetType: 'character' | 'background' | 'screen';
+  direction: 'in' | 'out';
+  characterId?: string;
+  backgroundId?: string;
+  durationMs: number;
+  easing: 'linear' | 'ease-in' | 'ease-out' | 'ease-in-out';
+  tintColor?: string;
+}
+
+export interface ScreenTextConfig {
+  text: string;
+  subText?: string;
+  x: number; // 0-100%
+  y: number; // 0-100%
+  fontSize: number; // px
+  color: string;
+  strokeColor?: string;
+  align: 'left' | 'center' | 'right';
+  bgOverlay: 'none' | 'dim' | 'black' | 'white' | 'cinematic_bars';
+  animation: 'fade' | 'typewriter' | 'zoom_in' | 'slide_up';
+  durationMs: number;
+  holdOnScreen?: boolean;
+}
+
+export interface CameraActionConfig {
+  zoom: number; // 1.0 - 2.5
+  offsetX: number; // -50 to 50
+  offsetY: number; // -50 to 50
+  shakeIntensity?: 'none' | 'light' | 'medium' | 'heavy';
+  flashColor?: string;
+  durationMs: number;
+}
+
+export type VisualBlockCategory =
+  | 'narrative'
+  | 'screen_text'
+  | 'character'
+  | 'visual'
+  | 'control'
+  | 'audio'
+  | 'ui'
+  | 'script';
+
+export type VisualBlockKind =
+  | 'say'
+  | 'narrate'
+  | 'screen_text'
+  | 'chapter_banner'
+  | 'show_bg'
+  | 'fade_target'
+  | 'show_char'
+  | 'switch_expr'
+  | 'move_char_tween'
+  | 'hide_char'
+  | 'play_anim_frames'
+  | 'play_bgm'
+  | 'play_sfx'
+  | 'camera_effect'
+  | 'weather_effect'
+  | 'filter_effect'
+  | 'modify_affection'
+  | 'set_char_attr'
+  | 'branch_if'
+  | 'wait_ms'
+  | 'toast_popup'
+  | 'call_bridge_script';
+
+export interface VisualScriptBlock {
   id: string;
+  category: VisualBlockCategory;
+  kind: VisualBlockKind;
+  params: Record<string, string | number | boolean>;
+}
+
+export interface MediaAnimationConfig {
+  mediaType: 'static' | 'frame_sequence' | 'video' | 'tween';
+  frameAssetIds?: string[];
+  fps?: number;
+  loop?: boolean;
+  videoUrl?: string;
+  tweenTargetX?: number;
+  tweenTargetY?: number;
+  tweenTargetScale?: number;
+  tweenDurationMs?: number;
+}
+
+export interface SceneNode {
+  id: string;
+  type: WorkflowNodeType;
   title: string;
-  order: number;
-}
-
-export interface StoryNode {
-  id: string;
   chapterId: string;
-  type: NodeType;
-  title: string;
-  x: number;
-  y: number;
-  backgroundId: string | null;
-  /** 背景媒体模式：静态图 / 多图片序列帧 / 视频 / 动态粒子 */
-  backgroundMediaKind?: MediaKind;
-  backgroundFps?: number;
-  bgmId?: string | null;
-  sfxId?: string | null;
-  stageCharacters: StageCharacterPlacement[];
-  /** 节点淡入淡出配置 */
-  fadeConfig?: FadeConfig | null;
-  /** 屏幕自定义文字叠加层 */
-  screenTexts?: ScreenTextItem[];
-  /** 节点内嵌的 Scratch 可拖拽积木列表（底层直接转为 TypeScript） */
-  blocks?: ScratchBlock[];
-  lines: DialogueLine[];
+  position: { x: number; y: number };
+  backgroundId: string;
+  bgmId: string;
+  sfxId?: string;
+  transition: 'fade' | 'slide' | 'dissolve' | 'flash' | 'curtain' | 'none';
+  weatherEffect?: 'none' | 'sakura' | 'rain' | 'sunset_glow' | 'fireflies' | 'snow';
+  colorFilter?: 'none' | 'sepia' | 'grayscale' | 'night_blue' | 'dream_bloom';
+  characters: CharacterPlacement[];
+  dialogues: DialogueLine[];
   choices: ChoiceOption[];
+  timedChoiceSeconds?: number;
+  defaultTimeoutTargetId?: string;
+  conditionRule?: ConditionBranchRule;
+  fadeConfig?: FadeActionConfig;
+  screenTextConfig?: ScreenTextConfig;
+  cameraConfig?: CameraActionConfig;
+  waitDurationMs?: number;
+  toastMessage?: string;
+  unlockedClueTitle?: string;
+  unlockedClueDesc?: string;
+  targetExpressionCharId?: string;
+  targetExpressionSpriteId?: string;
+  affectionTargetCharId?: string;
+  affectionDelta?: number;
+  variableKey?: string;
+  variableValue?: string | number | boolean;
+  mediaAnimation?: MediaAnimationConfig;
+  visualBlocks: VisualScriptBlock[];
   nextNodeId: string | null;
-  endingKind?: EndingKind;
-  endingDescription?: string;
-  storyline?: string;
-  scriptLang?: ScriptLang;
-  scriptCode?: string;
+  endingType?: 'good' | 'true' | 'normal' | 'bad';
+  endingTitle?: string;
+  scriptLanguage?: ScriptLanguage;
+  customScript?: string;
+  notes?: string;
 }
 
-export interface Project {
+export interface StoryChapter {
   id: string;
-  name: string;
+  index: number;
+  title: string;
+  subtitle: string;
+  yamlFileName: string;
+  description: string;
+}
+
+export interface GlobalVariable {
+  key: string;
+  label: string;
+  type: 'number' | 'boolean' | 'string';
+  value: number | boolean | string;
+}
+
+export interface GameUIConfig {
+  presetId: 'classic_blue' | 'glass_cyan' | 'sakura_romance' | 'obsidian_gold' | 'minimal_cinema';
+  dialogueBox: {
+    bottomOffset: number; // px from bottom (0 - 120)
+    widthPercent: number; // 60 - 100%
+    heightPx: number; // 130 - 260px
+    paddingPx: number; // 14 - 36px
+    bgColor: string; // hex
+    bgOpacity: number; // 0.1 - 1.0
+    borderColor: string; // hex
+    borderWidth: number; // 0 - 6px
+    borderRadius: number; // 0 - 28px
+    backdropBlur: boolean;
+    speakerFontSize: number; // 15 - 30px
+    speakerTagMode: 'inside' | 'floating_badge';
+    textFontSize: number; // 14 - 28px
+    textColor: string; // hex
+    lineHeight: number; // 1.3 - 2.2
+    controlPosition: 'bottom_right' | 'top_right' | 'bottom_center';
+    visibleControls: {
+      back: boolean;
+      auto: boolean;
+      skip: boolean;
+      hide: boolean;
+      settings: boolean;
+    };
+  };
+  choiceBox: {
+    position: 'above_left' | 'above_center' | 'screen_center';
+    bgColor: string;
+    bgOpacity: number;
+    borderColor: string;
+    hoverAccentColor: string;
+    textColor: string;
+    fontSize: number;
+    borderRadius: number;
+  };
+  mainMenu: {
+    layout: 'left_panel' | 'right_panel' | 'center_card';
+    panelColor: string;
+    accentColor: string;
+    titleColor: string;
+    backgroundId: string;
+    showHeroCharacter: boolean;
+    heroCharacterSpriteId: string;
+    subtitleText: string;
+  };
+}
+
+export interface VNProject {
+  id: string;
+  title: string;
   author: string;
   version: string;
+  resolution: { width: number; height: number };
+  defaultLanguage: ScriptLanguage;
   startNodeId: string;
-  chapters: Chapter[];
-  characters: Character[];
-  nodes: StoryNode[];
-  aiSpecContent?: string;
-  updatedAt: string;
+  chapters: StoryChapter[];
+  characters: CharacterProfile[];
+  nodes: SceneNode[];
+  variables: GlobalVariable[];
+  uiConfig: GameUIConfig;
 }
 
-export interface EdgeRef {
-  fromNodeId: string;
-  port: number;
-}
-
-export interface ValidationIssue {
+export interface BackgroundAsset {
   id: string;
-  nodeId: string | null;
-  level: "error" | "warning";
-  message: string;
+  name: string;
+  category: string;
+  path: string;
+  accent: string;
+  timeOfDay?: '晴日' | '黄昏' | '夜晚' | '室内';
 }
 
-export type SaveFolderTab =
-  | "Auto"
-  | "快速"
-  | "1"
-  | "2"
-  | "3"
-  | "4"
-  | "5"
-  | "6"
-  | "7"
-  | "8"
-  | "9"
-  | "0";
+export interface CharacterSpriteAsset {
+  id: string;
+  name: string;
+  characterGroup: string;
+  expressionLabel: string;
+  role: string;
+  path: string;
+  themeColor: string;
+}
 
-export const SAVE_FOLDER_TABS: SaveFolderTab[] = [
-  "Auto",
-  "快速",
-  "1",
-  "2",
-  "3",
-  "4",
-  "5",
-  "6",
-  "7",
-  "8",
-  "9",
-  "0",
-];
+export interface AudioAsset {
+  id: string;
+  name: string;
+  type: 'bgm' | 'sfx' | 'voice';
+  duration: string;
+  tempo: number;
+  notes: number[];
+  waveType: OscillatorType;
+}
+
+export type SaveTabId =
+  | 'auto'
+  | 'quick'
+  | '1'
+  | '2'
+  | '3'
+  | '4'
+  | '5'
+  | '6'
+  | '7'
+  | '8'
+  | '9'
+  | '0';
 
 export interface SaveSlotData {
   slotKey: string;
-  folder: SaveFolderTab;
-  index: number;
-  nodeId: string;
-  lineIndex: number;
-  chapterTitle: string;
-  sceneTitle: string;
-  previewText: string;
-  thumbnailUrl: string;
+  tabId: SaveTabId;
+  slotIndex: number;
   savedAt: string;
-  affectionMap?: Record<string, number>;
-  playedNodeIds?: string[];
+  chapterTitle: string;
+  nodeId: string;
+  nodeTitle: string;
+  dialogueIndex: number;
+  speakerName: string;
+  textPreview: string;
+  backgroundId: string;
+  affectionSnapshot: Record<string, number>;
+  customAttrSnapshot: Record<string, Record<string, number | string | boolean>>;
+  variablesSnapshot: Record<string, number | string | boolean>;
+  unlockedClues?: string[];
 }
 
-/** 4 种常见 AI API 格式 */
-export type AiApiFormat = "openai" | "anthropic" | "gemini" | "ollama";
+export type AiApiFormat =
+  | 'openai_compatible'
+  | 'anthropic_claude'
+  | 'google_gemini'
+  | 'ollama_local';
 
 export interface AiProviderConfig {
-  mode: "local" | "api";
-  localModelId: string;
-  localModelDownloaded: boolean;
+  mode: 'local_model' | 'api_key';
   apiFormat: AiApiFormat;
-  endpoint: string;
+  endpointUrl: string;
   apiKey: string;
   modelName: string;
+  localModelId: string;
+  localModelDownloaded: boolean;
+  agentAutoApply: boolean;
 }
 
-/** VS Code 风格可拖拽停靠面板 */
-export type WorkspacePanelId = "workflow" | "stage" | "code" | "inspector" | "ai";
-export type DockSlot = "center" | "right" | "bottom" | "floating";
+export interface AiChatMessage {
+  id: string;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  timestamp: string;
+  appliedActions?: string[];
+}
 
-export interface FloatingPanelRect {
+export type PanelId =
+  | 'explorer'
+  | 'node_library'
+  | 'canvas'
+  | 'stage'
+  | 'ui_customizer'
+  | 'ts_code'
+  | 'yaml_code'
+  | 'inspector'
+  | 'characters'
+  | 'ai_agent';
+
+export type DockZoneId = 'left' | 'center' | 'right' | 'bottom';
+
+export interface FloatingWindowConfig {
+  id: string;
+  panelId: PanelId;
   x: number;
   y: number;
   width: number;
   height: number;
+  zIndex: number;
 }
 
-export const ENDING_LABELS: Record<EndingKind, string> = {
-  true: "True End",
-  good: "Good End",
-  normal: "Normal End",
-  bad: "Bad End",
-};
-
-export const NODE_TYPE_LABELS: Record<NodeType, string> = {
-  dialogue: "对话场景",
-  choice: "分支选择",
-  fade: "淡入淡出",
-  screen_text: "屏幕文字",
-  character: "角色动作",
-  background: "场景切换",
-  audio: "音乐音效",
-  script: "TS脚本桥接",
-  end: "结局节点",
-};
-
-export const SCRATCH_BLOCK_META: Record<
-  ScratchBlockKind,
-  { label: string; color: string; badge: string }
-> = {
-  say: { label: "台词对白", color: "border-sky-500/40 bg-sky-500/15 text-sky-200", badge: "moovn.say" },
-  bg: { label: "背景/媒体切换", color: "border-emerald-500/40 bg-emerald-500/15 text-emerald-200", badge: "moovn.bg" },
-  char: { label: "角色位移/动画", color: "border-violet-500/40 bg-violet-500/15 text-violet-200", badge: "moovn.char" },
-  fade: { label: "淡入/淡出控制", color: "border-cyan-500/40 bg-cyan-500/15 text-cyan-200", badge: "moovn.fade" },
-  screen_text: { label: "屏幕自由文字", color: "border-amber-500/40 bg-amber-500/15 text-amber-200", badge: "moovn.screenText" },
-  animate: { label: "多帧/视频/补间动画", color: "border-pink-500/40 bg-pink-500/15 text-pink-200", badge: "moovn.animate" },
-  affection: { label: "好感度变更", color: "border-rose-500/40 bg-rose-500/15 text-rose-200", badge: "moovn.addAffection" },
-  ts_code: { label: "TypeScript 原生代码", color: "border-blue-500/40 bg-blue-500/15 text-blue-200", badge: "TS/JS" },
-  bridge_call: { label: "跨语言桥接 (Lua/Py/Teal)", color: "border-indigo-500/40 bg-indigo-500/15 text-indigo-200", badge: "moovn.bridge" },
-};
+export type ExportPlatform = 'windows' | 'android' | 'macos' | 'ios' | 'web';
