@@ -7,6 +7,8 @@ import {
   Download,
   RotateCcw,
   Share,
+  Save,
+  LayoutGrid,
 } from 'lucide-react';
 import { VNProject, PanelId, DockZoneId } from '../types';
 import { exportProjectJson, exportChapterYaml } from '../lib/projectUtils';
@@ -26,6 +28,8 @@ interface MenuBarProps {
   onResetDefault: () => void;
   onStartPreview: () => void;
   onOpenExportModal: () => void;
+  onOpenProjectLauncher?: () => void;
+  onSaveProjectToWorkspace?: () => void;
   onFloatPanel: (panelId: PanelId) => void;
   onMovePanelToDock?: (panelId: PanelId, zone: DockZoneId) => void;
   onResetLayout: () => void;
@@ -52,6 +56,8 @@ export const MenuBar: React.FC<MenuBarProps> = ({
   onResetDefault,
   onStartPreview,
   onOpenExportModal,
+  onOpenProjectLauncher,
+  onSaveProjectToWorkspace,
   onFloatPanel,
   onResetLayout,
 }) => {
@@ -197,6 +203,25 @@ export const MenuBar: React.FC<MenuBarProps> = ({
         </div>
 
         <div className="h-3.5 w-px bg-[#27272c] mx-1" />
+
+        {onOpenProjectLauncher && (
+          <button
+            onClick={onOpenProjectLauncher}
+            className="icon-btn"
+            title="项目中心（切换/新建项目与专属路径设置）"
+          >
+            <LayoutGrid className="w-3.5 h-3.5" strokeWidth={1.6} />
+          </button>
+        )}
+        {onSaveProjectToWorkspace && (
+          <button
+            onClick={onSaveProjectToWorkspace}
+            className="icon-btn"
+            title="保存项目到 MooVN 专属目录"
+          >
+            <Save className="w-3.5 h-3.5" strokeWidth={1.6} />
+          </button>
+        )}
 
         <button
           disabled={!canUndo}

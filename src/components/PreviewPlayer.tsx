@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   X,
   Volume2,
@@ -10,10 +10,18 @@ import {
   Bug,
   Timer,
   BookOpen,
+  Layers,
 } from 'lucide-react';
 import { VNProject, SaveTabId, SaveSlotData } from '../types';
 import { getBackgroundById, getCharacterById, getAudioById } from '../data/assets';
 import { soundEngine } from '../lib/soundEngine';
+import {
+  DEFAULT_PERFORMANCE_CONFIG,
+  SceneStreamMemoryManager,
+  StreamedSceneEntry,
+  applyChapterMinimumCharacterStats,
+  parseAndDecompressMsvnPackage,
+} from '../lib/assetCompressionEngine';
 
 interface PreviewPlayerProps {
   project: VNProject;
@@ -100,8 +108,22 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
   const [showDevDebug, setShowDevDebug] = useState<boolean>(false);
   const [timedRemaining, setTimedRemaining] = useState<number | null>(null);
 
-  const [modalMode, setModalMode] = useState<'none' | 'save' | 'load' | 'settings'>('none');
+  const [modalMode, setModalMode] = useState<'none' | 'save' | 'load' | 'settings' | 'msvn'>('none');
   const [activeSaveTab, setActiveSaveTab] = useState<SaveTabId>('1');
+
+  // 流加载、提前解压与旧场景内存卸载管理器
+  const streamManagerRef = useRef(new SceneStreamMemoryManager());
+  const [streamEntries, setStreamEntries] = useState<StreamedSceneEntry[]>([]);
+  const [mountedChapterIds, setMountedChapterIds] = useState<Record<string, boolean>>(() => {
+    const init: Record<string, boolean> = {};
+    project.chapters.forEach((ch) => {
+      init[ch.id] = true;
+    });
+    return init;
+  });
+  const [minStatNotice, setMinStatNotice] = useState<string | null>(null);
+  const msvnFileInputRef = useRef<HTMLInputElement | null>(null);
+  const lastVisitedChapterIdRef = useRef<string>('');
   const [saveSlots, setSaveSlots] = useState<Record<string, SaveSlotData>>(() => {
     try {
       const raw = localStorage.getItem(`moovn_saves_${project.id}`);
@@ -177,6 +199,58 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
       });
     }
   }, [screenMode, currentNode?.id, currentNode?.unlockedClueTitle, currentNode?.unlockedClueDesc]);
+
+  // 1) 场景流加载、提前解压 (1~20 场景) 与旧场景内存卸载 (1~20 场景)
+  // 2) 进入新章节时自动检查并应用角色最低保底数值 (.msvn 跳章防错)
+  // 3) 执行 game_settings_modify / stream_preload_hint / msvn_chapter_load 节点效果
+  useEffect(() => {
+    if (screenMode !== 'playing' || !currentNode) return;
+
+    const perf = {
+      ...(project.performanceConfig || DEFAULT_PERFORMANCE_CONFIG),
+    };
+    if (currentNode.settingsActionConfig?.preloadAheadScenes) {
+      perf.preloadSceneDistance = currentNode.settingsActionConfig.preloadAheadScenes;
+    }
+    if (currentNode.settingsActionConfig?.unloadBehindScenes) {
+      perf.unloadSceneDistance = currentNode.settingsActionConfig.unloadBehindScenes;
+    }
+
+    streamManagerRef.current.onEnterScene(
+      currentNode.id,
+      project.nodes,
+      perf,
+      (snap) => setStreamEntries(snap)
+    );
+
+    if (currentNode.type === 'game_settings_modify' && currentNode.settingsActionConfig) {
+      if (typeof currentNode.settingsActionConfig.textSpeedMs === 'number') {
+        setTextSpeedMs(currentNode.settingsActionConfig.textSpeedMs);
+      }
+      if (currentNode.settingsActionConfig.openSettingsPanel) {
+        setModalMode('settings');
+      }
+    }
+
+    if (currentChapter && lastVisitedChapterIdRef.current !== currentChapter.id) {
+      lastVisitedChapterIdRef.current = currentChapter.id;
+      const { nextAffection, nextVariables, boostedLogs } =
+        applyChapterMinimumCharacterStats(
+          currentChapter,
+          project.characters,
+          affectionMap,
+          variablesMap
+        );
+      if (boostedLogs.length > 0) {
+        setAffectionMap(nextAffection);
+        setVariablesMap(nextVariables);
+        setMinStatNotice(
+          `进入 [${currentChapter.title}] · 已自动应用跳章保底数值：${boostedLogs.join('，')}`
+        );
+        setTimeout(() => setMinStatNotice(null), 3600);
+      }
+    }
+  }, [screenMode, currentNode?.id]);
 
   // Timed choice countdown
   useEffect(() => {
@@ -450,6 +524,15 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setModalMode('msvn')}
+            className="flex items-center gap-1 px-2 py-0.5 rounded bg-[#252529] hover:bg-[#323238] text-slate-200 border border-[#383840] transition"
+            title="插件式章节包 (.msvn) 挂载与卸载"
+          >
+            <Layers className="w-3 h-3" />
+            章节包 (.msvn)
+          </button>
+
           <button
             onClick={() => setShowDevDebug((d) => !d)}
             className={`flex items-center gap-1 px-2 py-0.5 rounded border transition ${
@@ -1153,6 +1236,188 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
                   确定
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* ==================== 5. MSVN MODULAR CHAPTER PACKAGE MANAGER MODAL ==================== */}
+        {modalMode === 'msvn' && (
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="absolute inset-0 z-40 bg-black/80 backdrop-blur-md flex items-center justify-center p-6"
+          >
+            <input
+              ref={msvnFileInputRef}
+              type="file"
+              accept=".msvn,.json"
+              className="hidden"
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                try {
+                  const text = await file.text();
+                  const { pkg } = await parseAndDecompressMsvnPackage(text);
+                  setMountedChapterIds((prev) => ({
+                    ...prev,
+                    [pkg.chapter.id]: true,
+                  }));
+                  const { nextAffection, nextVariables, boostedLogs } =
+                    applyChapterMinimumCharacterStats(
+                      pkg.chapter,
+                      project.characters,
+                      affectionMap,
+                      variablesMap
+                    );
+                  setAffectionMap(nextAffection);
+                  setVariablesMap(nextVariables);
+                  setMinStatNotice(
+                    `已挂载外部章节包 [${pkg.chapter.title}]${
+                      boostedLogs.length > 0 ? ` · 保底补偿：${boostedLogs.join('，')}` : ''
+                    }`
+                  );
+                } catch {
+                  setMinStatNotice('章节包解析失败，请确认文件为 .msvn 格式');
+                }
+                e.target.value = '';
+              }}
+            />
+            <div className="w-full max-w-2xl rounded-xl bg-[#161619] border border-[#27272c] p-5 space-y-4 shadow-2xl text-xs">
+              <div className="flex items-center justify-between border-b border-[#27272c] pb-3">
+                <div className="flex items-center gap-2">
+                  <Layers className="w-4 h-4 text-zinc-200" />
+                  <h3 className="text-sm font-semibold text-white">
+                    插件式章节更新管理 (.msvn 按需加载与旧章卸载)
+                  </h3>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => msvnFileInputRef.current?.click()}
+                    className="px-2.5 py-1 rounded bg-[#222228] hover:bg-[#2c2c34] border border-[#2e2e36] text-zinc-200 text-[11px]"
+                  >
+                    导入本地 .msvn
+                  </button>
+                  <button
+                    onClick={() => setModalMode('none')}
+                    className="text-zinc-400 hover:text-white"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="text-[11px] text-zinc-400 leading-relaxed">
+                第一章为基础必装章节（不可卸载）。后续章节可单独挂载游玩，玩完后卸载上一章释放磁盘与内存；若跳过中间章节直接游玩后续章节，系统将自动按该章节设定的「角色最低数值」补齐好感度。
+              </div>
+
+              <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                {project.chapters.map((ch, idx) => {
+                  const isFirst = idx === 0;
+                  const isMounted = isFirst || !!mountedChapterIds[ch.id];
+                  const firstNodeOfChapter = project.nodes.find((n) => n.chapterId === ch.id);
+
+                  return (
+                    <div
+                      key={ch.id}
+                      className="p-3 rounded-lg bg-[#1c1c20] border border-[#27272c] flex items-center justify-between gap-3"
+                    >
+                      <div className="min-w-0 flex-1 space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-zinc-100">{ch.title}</span>
+                          {isFirst ? (
+                            <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[10px]">
+                              必装基础包
+                            </span>
+                          ) : isMounted ? (
+                            <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 text-[10px]">
+                              已挂载
+                            </span>
+                          ) : (
+                            <span className="px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500 text-[10px]">
+                              已卸载 (省空间)
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[10px] text-zinc-400 flex flex-wrap gap-2 font-mono">
+                          {project.characters.slice(0, 4).map((c) => (
+                            <span key={c.id}>
+                              {c.name.split(' ')[0]}保底≥
+                              {ch.minCharacterAffection?.[c.id] ?? c.initialAffection + idx * 8}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {!isFirst && (
+                          <button
+                            onClick={() =>
+                              setMountedChapterIds((prev) => ({
+                                ...prev,
+                                [ch.id]: !isMounted,
+                              }))
+                            }
+                            className={`px-2.5 py-1 rounded text-[11px] border transition ${
+                              isMounted
+                                ? 'bg-[#141417] border-[#27272c] text-zinc-400 hover:text-rose-300'
+                                : 'bg-zinc-200 text-zinc-950 border-zinc-200 font-medium'
+                            }`}
+                          >
+                            {isMounted ? '卸载本章' : '下载挂载 .msvn'}
+                          </button>
+                        )}
+
+                        {isMounted && firstNodeOfChapter && (
+                          <button
+                            onClick={() => {
+                              const { nextAffection, nextVariables, boostedLogs } =
+                                applyChapterMinimumCharacterStats(
+                                  ch,
+                                  project.characters,
+                                  affectionMap,
+                                  variablesMap
+                                );
+                              setAffectionMap(nextAffection);
+                              setVariablesMap(nextVariables);
+                              setCurrentNodeId(firstNodeOfChapter.id);
+                              setDialogueIndex(0);
+                              setScreenMode('playing');
+                              setModalMode('none');
+                              if (boostedLogs.length > 0) {
+                                setMinStatNotice(
+                                  `跳章进入 [${ch.title}] · 已补偿最低好感：${boostedLogs.join('，')}`
+                                );
+                                setTimeout(() => setMinStatNotice(null), 4000);
+                              }
+                            }}
+                            className="px-2.5 py-1 rounded bg-[#27272c] hover:bg-zinc-700 text-zinc-100 text-[11px]"
+                          >
+                            直接游玩本章
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Skip-chapter minimum stat compensation toast */}
+        {minStatNotice && (
+          <div className="absolute top-12 left-1/2 -translate-x-1/2 z-40 px-4 py-2 rounded-lg bg-[#161619]/95 border border-amber-500/40 text-amber-200 text-xs shadow-xl">
+            {minStatNotice}
+          </div>
+        )}
+
+        {/* Streaming & Memory Unload Status HUD (shown when Developer Debug is active) */}
+        {showDevDebug && streamEntries.length > 0 && (
+          <div className="absolute bottom-3 left-3 z-30 px-3 py-2 rounded-lg bg-black/80 border border-zinc-700 text-[10px] font-mono text-zinc-300 pointer-events-none space-y-0.5">
+            <div>
+              流加载与内存管理 ({(project.performanceConfig || DEFAULT_PERFORMANCE_CONFIG).compressionFormat.toUpperCase()} Lv.{(project.performanceConfig || DEFAULT_PERFORMANCE_CONFIG).compressionLevel})
+            </div>
+            <div>
+              已预载解压: {streamEntries.filter((e) => e.status !== 'unloaded').length} 场景 · 已卸载释放: {streamEntries.filter((e) => e.status === 'unloaded').length} 场景 · PNG免二次压缩: {streamEntries.reduce((s, e) => s + e.skippedPngCount, 0)} 项
             </div>
           </div>
         )}
