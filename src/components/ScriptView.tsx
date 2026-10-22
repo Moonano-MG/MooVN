@@ -10,19 +10,20 @@ import {
 interface ScriptViewProps {
   project: VNProject;
   selectedChapterId: string;
-  mode: 'ts' | 'yaml';
+  mode?: 'ts' | 'yaml';
 }
 
 export const ScriptView: React.FC<ScriptViewProps> = ({
   project,
   selectedChapterId,
-  mode,
+  mode: initialMode = 'ts',
 }) => {
+  const [currentMode, setCurrentMode] = useState<'ts' | 'yaml'>(initialMode);
   const [copied, setCopied] = useState(false);
   const [activeChapterId, setActiveChapterId] = useState(selectedChapterId);
 
   const code =
-    mode === 'ts'
+    currentMode === 'ts'
       ? generateTypeScriptEngineCode(project)
       : generateChapterYaml(project, activeChapterId || selectedChapterId);
 
@@ -33,47 +34,74 @@ export const ScriptView: React.FC<ScriptViewProps> = ({
   };
 
   return (
-    <div className="flex flex-col h-full bg-[#141418] text-[#cccccc] select-none overflow-hidden">
-      <div className="flex items-center justify-between px-3 py-2 bg-[#1f1f23] border-b border-[#2b2b30] shrink-0 text-xs">
+    <div className="flex flex-col h-full bg-[#141417] text-zinc-300 select-none overflow-hidden">
+      <div className="flex items-center justify-between px-3 py-1.5 bg-[#161619] border-b border-[#27272c] shrink-0 text-xs">
         <div className="flex items-center gap-2">
-          {mode === 'yaml' ? (
+          <div className="flex items-center bg-[#121215] p-0.5 rounded border border-[#27272c]">
+            <button
+              onClick={() => setCurrentMode('ts')}
+              className={`px-2.5 py-0.5 rounded text-[11px] font-medium transition ${
+                currentMode === 'ts'
+                  ? 'bg-zinc-200 text-zinc-950'
+                  : 'text-zinc-500 hover:text-zinc-300'
+              }`}
+            >
+              TypeScript
+            </button>
+            <button
+              onClick={() => setCurrentMode('yaml')}
+              className={`px-2.5 py-0.5 rounded text-[11px] font-medium transition ${
+                currentMode === 'yaml'
+                  ? 'bg-zinc-200 text-zinc-950'
+                  : 'text-zinc-500 hover:text-zinc-300'
+              }`}
+            >
+              YAML
+            </button>
+          </div>
+
+          {currentMode === 'yaml' ? (
             <select
               value={activeChapterId || selectedChapterId}
               onChange={(e) => setActiveChapterId(e.target.value)}
-              className="bg-[#252529] border border-[#3c3c42] rounded px-2 py-1 text-xs text-white"
+              className="px-2 py-1 text-xs"
             >
               {project.chapters.map((ch) => (
                 <option key={ch.id} value={ch.id}>
-                  chapters/{ch.yamlFileName} — {ch.title}
+                  {ch.yamlFileName} · {ch.title}
                 </option>
               ))}
             </select>
           ) : (
-            <span className="font-mono text-sky-400">src/runtime/storyEngine.ts</span>
+            <span className="font-mono text-[11px] text-zinc-500">src/runtime/storyEngine.ts</span>
           )}
         </div>
 
-        <div className="flex items-center gap-1.5">
-          {mode === 'yaml' && (
+        <div className="flex items-center gap-1">
+          {currentMode === 'yaml' && (
             <button
               onClick={() => exportChapterYaml(project, activeChapterId || selectedChapterId)}
-              className="flex items-center gap-1 px-2.5 py-1 rounded bg-[#252529] hover:bg-[#323238] text-slate-200 text-[11px]"
+              className="icon-btn"
+              title="下载 YAML"
             >
-              <Download className="w-3.5 h-3.5 text-amber-400" />
-              下载章节 YAML
+              <Download className="w-3.5 h-3.5" strokeWidth={1.6} />
             </button>
           )}
           <button
             onClick={handleCopy}
-            className="flex items-center gap-1 px-2.5 py-1 rounded bg-[#007acc] hover:bg-[#1f8ad2] text-white text-[11px]"
+            className="icon-btn"
+            title={copied ? '已复制' : '复制'}
           >
-            {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-            {copied ? '已复制' : '复制代码'}
+            {copied ? (
+              <Check className="w-3.5 h-3.5" strokeWidth={1.8} />
+            ) : (
+              <Copy className="w-3.5 h-3.5" strokeWidth={1.6} />
+            )}
           </button>
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 font-mono text-xs leading-relaxed text-slate-200 select-text">
+      <div className="flex-1 overflow-y-auto p-4 font-mono text-xs leading-relaxed text-zinc-300 select-text">
         <pre className="whitespace-pre-wrap">{code}</pre>
       </div>
     </div>

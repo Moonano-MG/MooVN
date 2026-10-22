@@ -1,211 +1,200 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --font-sans: "Inter", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
   --font-serif: "Noto Serif SC", "Songti SC", serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
-
-  --animate-fade-in: fade-in 0.45s ease both;
-  --animate-pop-in: pop-in 0.22s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
-  --animate-slide-up: slide-up 0.32s ease both;
-  --animate-toast-in: toast-in 0.28s ease both;
-  --animate-chapter-in: chapter-in 2.2s ease both;
-  --animate-caret-blink: caret-blink 0.9s step-end infinite;
-  --animate-sprite-in: sprite-in 0.4s ease both;
 }
 
-@keyframes fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-@keyframes pop-in {
-  from { opacity: 0; transform: scale(0.96) translateY(4px); }
-  to { opacity: 1; transform: scale(1) translateY(0); }
-}
-@keyframes slide-up {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-@keyframes toast-in {
-  from { opacity: 0; transform: translateY(8px) scale(0.97); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
-}
-@keyframes chapter-in {
-  0% { opacity: 0; transform: translateY(10px); letter-spacing: 0.5em; }
-  18% { opacity: 1; transform: translateY(0); }
-  80% { opacity: 1; }
-  100% { opacity: 0; }
-}
-@keyframes caret-blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
-}
-@keyframes sprite-in {
-  from { opacity: 0; transform: translateY(12px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-/* 角色补间动画 (Tween Animations) */
-@keyframes vn-breathe {
-  0%, 100% { transform: translateY(0) scale(1); }
-  50% { transform: translateY(-4px) scale(1.012); }
-}
-@keyframes vn-bounce {
-  0%, 100% { transform: translateY(0); }
-  40% { transform: translateY(-16px); }
-  70% { transform: translateY(-6px); }
-}
-@keyframes vn-float {
-  0%, 100% { transform: translateY(0) rotate(0deg); }
-  50% { transform: translateY(-10px) rotate(0.6deg); }
-}
-@keyframes vn-shake {
-  0%, 100% { transform: translateX(0); }
-  20%, 60% { transform: translateX(-6px); }
-  40%, 80% { transform: translateX(6px); }
-}
-.animate-vn-breathe { animation: vn-breathe 3.6s ease-in-out infinite; }
-.animate-vn-bounce { animation: vn-bounce 1.2s ease-in-out infinite; }
-.animate-vn-float { animation: vn-float 4.2s ease-in-out infinite; }
-.animate-vn-shake { animation: vn-shake 0.55s ease-in-out infinite; }
-
-/* 隐藏 UI 后：等待片刻慢慢显示一次，随后平滑淡出消失 */
-@keyframes hide-hint-once {
-  0% { opacity: 0; transform: translate(-50%, 6px); }
-  18% { opacity: 0; transform: translate(-50%, 6px); }
-  42% { opacity: 0.92; transform: translate(-50%, 0); }
-  75% { opacity: 0.92; transform: translate(-50%, 0); }
-  100% { opacity: 0; transform: translate(-50%, -4px); }
-}
-.animate-hide-hint-once {
-  opacity: 0;
-  animation: hide-hint-once 3.4s ease-in-out forwards;
-}
-
+:root,
 html,
 body,
 #root {
   height: 100%;
   margin: 0;
   padding: 0;
+  color-scheme: dark;
 }
 
 body {
   font-family: var(--font-sans);
-  background: #09090b;
+  background: #111113;
   color: #e4e4e7;
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
 }
 
 ::selection {
-  background: rgba(56, 189, 248, 0.3);
+  background: rgba(255, 255, 255, 0.16);
 }
 
-/* 细长滚动条 */
-.editor-scroll {
+/* ============================================================================
+   全局统一深色滚动条（彻底消除原生 HTML 纯白+灰滚动条）
+   ============================================================================ */
+* {
   scrollbar-width: thin;
-  scrollbar-color: rgba(128, 128, 140, 0.25) transparent;
+  scrollbar-color: #323238 transparent;
 }
-.editor-scroll::-webkit-scrollbar {
-  width: 7px;
-  height: 7px;
+
+*::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
 }
-.editor-scroll::-webkit-scrollbar-thumb {
-  background: rgba(128, 128, 140, 0.25);
-  border-radius: 8px;
-}
-.editor-scroll::-webkit-scrollbar-thumb:hover {
-  background: rgba(128, 128, 140, 0.4);
-}
-.editor-scroll::-webkit-scrollbar-track {
+
+*::-webkit-scrollbar-track {
   background: transparent;
 }
 
-/* 节点画布点阵底纹（深色 & 浅色自适应） */
-.canvas-dots-dark {
-  background-color: #0c0c0f;
-  background-image: radial-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1.4px);
-  background-size: 22px 22px;
+*::-webkit-scrollbar-thumb {
+  background: #2e2e34;
+  border-radius: 999px;
 }
 
-.canvas-dots-light {
-  background-color: #f4f5f8;
-  background-image: radial-gradient(rgba(15, 23, 42, 0.09) 1px, transparent 1.4px);
-  background-size: 22px 22px;
+*::-webkit-scrollbar-thumb:hover {
+  background: #484852;
 }
 
-/* 立绘柔边 */
-.sprite-soft {
-  -webkit-mask-image: radial-gradient(ellipse 88% 96% at 50% 46%, black 82%, transparent 99%);
-  mask-image: radial-gradient(ellipse 88% 96% at 50% 46%, black 82%, transparent 99%);
+*::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
-/* 输入框统一焦点态 */
-.field {
+/* ============================================================================
+   全局统一深色拖拉条 input[type="range"]（彻底消除原生纯白+灰轨道）
+   ============================================================================ */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  background: #27272c;
+  border-radius: 999px;
   outline: none;
-  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
-}
-.field:focus {
-  border-color: rgba(56, 189, 248, 0.55) !important;
-  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.14);
+  cursor: pointer;
 }
 
-/* 浅色主题全局色彩覆盖（保持与深色版一致的清爽层级） */
-.theme-light {
-  background-color: #f8fafc !important;
-  color: #18181b !important;
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  background: #27272c;
+  border-radius: 999px;
 }
-.theme-light .bg-\[\#09090b\],
-.theme-light .bg-\[\#0a0a0d\] {
-  background-color: #f8fafc !important;
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #d4d4d8;
+  border: 2px solid #18181b;
+  margin-top: -4px;
+  transition: transform 0.12s ease, background-color 0.12s ease;
 }
-.theme-light .bg-\[\#0d0d10\],
-.theme-light .bg-\[\#0e0e11\],
-.theme-light .bg-\[\#101013\] {
-  background-color: #ffffff !important;
+
+input[type="range"]::-webkit-slider-thumb:hover {
+  background: #ffffff;
+  transform: scale(1.12);
 }
-.theme-light .bg-\[\#141418\],
-.theme-light .bg-\[\#151518\],
-.theme-light .bg-\[\#17171b\] {
-  background-color: #ffffff !important;
+
+input[type="range"]::-moz-range-track {
+  height: 4px;
+  background: #27272c;
+  border-radius: 999px;
 }
-.theme-light .bg-zinc-900,
-.theme-light .bg-zinc-900\/70,
-.theme-light .bg-zinc-900\/80 {
-  background-color: #f1f5f9 !important;
+
+input[type="range"]::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #d4d4d8;
+  border: 2px solid #18181b;
+  cursor: pointer;
 }
-.theme-light .text-zinc-50,
-.theme-light .text-zinc-100,
-.theme-light .text-zinc-200 {
-  color: #18181b !important;
+
+/* ============================================================================
+   全局统一深色输入框、下拉框、复选框与颜色选择器
+   ============================================================================ */
+input[type="text"],
+input[type="number"],
+input[type="password"],
+textarea,
+select {
+  background-color: #1c1c20;
+  border: 1px solid #2c2c32;
+  color: #e4e4e7;
+  border-radius: 6px;
+  font-size: 12px;
+  outline: none;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
 }
-.theme-light .text-zinc-300,
-.theme-light .text-zinc-400 {
-  color: #52525b !important;
+
+input[type="text"]:focus,
+input[type="number"]:focus,
+input[type="password"]:focus,
+textarea:focus,
+select:focus {
+  border-color: #52525b;
+  background-color: #202025;
 }
-.theme-light .text-zinc-500,
-.theme-light .text-zinc-600 {
-  color: #71717a !important;
+
+select option {
+  background-color: #18181b;
+  color: #e4e4e7;
 }
-.theme-light .border-white\/\[0\.05\],
-.theme-light .border-white\/\[0\.06\],
-.theme-light .border-white\/\[0\.07\],
-.theme-light .border-white\/\[0\.08\],
-.theme-light .border-white\/10,
-.theme-light .border-white\/12,
-.theme-light .border-white\/15 {
-  border-color: rgba(15, 23, 42, 0.1) !important;
+
+input[type="checkbox"] {
+  accent-color: #71717a;
+  width: 13px;
+  height: 13px;
+  border-radius: 3px;
+  cursor: pointer;
 }
-.theme-light .bg-white\/\[0\.02\],
-.theme-light .bg-white\/\[0\.025\],
-.theme-light .bg-white\/\[0\.03\],
-.theme-light .bg-white\/\[0\.04\],
-.theme-light .bg-white\/\[0\.045\],
-.theme-light .bg-white\/\[0\.05\] {
-  background-color: rgba(15, 23, 42, 0.035) !important;
+
+input[type="color"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: #1c1c20;
+  border: 1px solid #2c2c32;
+  border-radius: 6px;
+  padding: 2px;
+  cursor: pointer;
 }
-.theme-light .bg-white\/\[0\.08\],
-.theme-light .bg-white\/\[0\.09\] {
-  background-color: rgba(15, 23, 42, 0.08) !important;
+
+input[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+input[type="color"]::-webkit-color-swatch {
+  border: none;
+  border-radius: 4px;
+}
+
+/* 统一无色极简图标按钮 */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 5px;
+  color: #a1a1aa;
+  background: transparent;
+  border: 1px solid transparent;
+  transition: color 0.12s ease, background-color 0.12s ease, border-color 0.12s ease;
+  cursor: pointer;
+}
+
+.icon-btn:hover:not(:disabled) {
+  color: #f4f4f5;
+  background: #27272c;
+}
+
+.icon-btn.active {
+  color: #ffffff;
+  background: #27272c;
+  border-color: #3f3f46;
+}
+
+.icon-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
 }
