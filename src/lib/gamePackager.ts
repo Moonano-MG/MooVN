@@ -1,5 +1,11 @@
-import { VNProject, ExportPlatform } from '../types';
+import { VNProject, ExportPlatform, GamePerformanceConfig } from '../types';
 import { BACKGROUND_ASSETS, CHARACTER_ASSETS, AUDIO_ASSETS } from '../data/assets';
+import {
+  DEFAULT_PERFORMANCE_CONFIG,
+  MooVNBuiltInCodec,
+  isAlreadyCompressedAssetPath,
+} from './assetCompressionEngine';
+import { writeFileToMountedMooVNFolder } from './workspaceManager';
 
 export interface MultiPlatformBuildOptions {
   platform: ExportPlatform;
@@ -8,6 +14,9 @@ export interface MultiPlatformBuildOptions {
   version: string;
   fullscreen: boolean;
   landscapeLock: boolean;
+  outputDirectoryPath?: string;
+  performanceConfig?: GamePerformanceConfig;
+  exportBaseLoaderOnly?: boolean;
 }
 
 /**
@@ -468,12 +477,71 @@ export function exportPlatformPackage(
   project: VNProject,
   options: MultiPlatformBuildOptions
 ): void {
-  const htmlRuntime = buildStandaloneGameHtml(project, options.platform);
+  const perf = options.performanceConfig || project.performanceConfig || DEFAULT_PERFORMANCE_CONFIG;
+
+  // 若启用了「仅导出主加载器 + 第一章必装包」，则只内嵌第一章节点，后续章节通过 .msvn 插件包热挂载
+  const firstChapterId = project.chapters[0]?.id || 'ch-1';
+  const effectiveProject: VNProject = options.exportBaseLoaderOnly
+    ? {
+        ...project,
+        performanceConfig: perf,
+        chapters: project.chapters.slice(0, 1),
+        nodes: project.nodes.filter((n) => n.chapterId === firstChapterId),
+      }
+    : { ...project, performanceConfig: perf };
+
+  const htmlRuntime = buildStandaloneGameHtml(effectiveProject, options.platform);
   const safeName = project.title.replace(/\s+/g, '_');
 
+  // 使用内置压缩器（xz / 7z / brotli）压缩内部剧情与配置资源，并对 .png 等已压缩资源自动跳过二次压缩
+  const compressedChaptersArchive = effectiveProject.chapters.map((ch) => {
+    const chNodes = effectiveProject.nodes.filter((n) => n.chapterId === ch.id);
+    const envelope = MooVNBuiltInCodec.compressTextPayload(
+      JSON.stringify(chNodes),
+      perf.compressionFormat,
+      perf.compressionLevel
+    );
+    return {
+      chapterId: ch.id,
+      title: ch.title,
+      isBaseRequired: ch.index === 1,
+      minCharacterAffection: ch.minCharacterAffection || {},
+      compressedEnvelope: envelope,
+    };
+  });
+
+  const pngSkipReport = {
+    skipAlreadyCompressedPng: perf.skipAlreadyCompressedPng,
+    passthroughBackgroundPngs: BACKGROUND_ASSETS.filter((b) =>
+      isAlreadyCompressedAssetPath(b.path)
+    ).length,
+    passthroughCharacterPngs: CHARACTER_ASSETS.filter((c) =>
+      isAlreadyCompressedAssetPath(c.path)
+    ).length,
+  };
+
+  const streamingAndMemoryConfig = {
+    compressionFormat: perf.compressionFormat,
+    compressionLevel: perf.compressionLevel,
+    preloadSceneDistance: perf.preloadSceneDistance,
+    unloadSceneDistance: perf.unloadSceneDistance,
+    streamPreloadScenes: perf.streamPreloadScenes,
+    decompressTarget: perf.decompressTarget,
+    workerCpuBudgetPercent: perf.workerCpuBudgetPercent,
+    modularMsvnEnabled: perf.modularMsvnEnabled,
+    exportBaseLoaderOnly: !!options.exportBaseLoaderOnly,
+    outputDirectoryPath: options.outputDirectoryPath || '',
+    pngSkipReport,
+    compressedChaptersArchive,
+  };
+
   if (options.platform === 'web') {
+    const filename = options.exportBaseLoaderOnly
+      ? `${safeName}_Web_BaseLoader_Ch1.html`
+      : `${safeName}_Web_PC_Mobile.html`;
     const blob = new Blob([htmlRuntime], { type: 'text/html;charset=utf-8' });
-    triggerDownload(blob, `${safeName}_Web_PC_Mobile.html`);
+    triggerDownload(blob, filename);
+    writeFileToMountedMooVNFolder(filename, htmlRuntime);
     return;
   }
 
@@ -484,6 +552,8 @@ export function exportPlatformPackage(
       packageId: options.packageId,
       appName: options.appName,
       versionName: options.version,
+      outputDirectoryPath: options.outputDirectoryPath || '',
+      streamingAndMemoryConfig,
       orientation: options.landscapeLock ? 'sensorLandscape' : 'unspecified',
       androidManifestXml: `<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="${options.packageId}">
@@ -526,10 +596,13 @@ echo "APK generated at src-tauri/gen/android/app/build/outputs/apk/universal/rel
       embeddedRuntimeHtml: htmlRuntime,
     };
 
-    const blob = new Blob([JSON.stringify(androidBundle, null, 2)], {
+    const jsonStr = JSON.stringify(androidBundle, null, 2);
+    const filename = `${safeName}_Android_APK_Bundle.json`;
+    const blob = new Blob([jsonStr], {
       type: 'application/json;charset=utf-8',
     });
-    triggerDownload(blob, `${safeName}_Android_APK_Bundle.json`);
+    triggerDownload(blob, filename);
+    writeFileToMountedMooVNFolder(filename, jsonStr);
     // Also download the mobile-ready touch runtime HTML
     const htmlBlob = new Blob([htmlRuntime], { type: 'text/html;charset=utf-8' });
     setTimeout(() => {
@@ -544,6 +617,8 @@ echo "APK generated at src-tauri/gen/android/app/build/outputs/apk/universal/rel
       packageId: options.packageId,
       productName: options.appName,
       version: options.version,
+      outputDirectoryPath: options.outputDirectoryPath || '',
+      streamingAndMemoryConfig,
       fullscreen: options.fullscreen,
       resolution: project.resolution,
       tauriWindowsConfig: {
@@ -565,10 +640,13 @@ echo Done! Output in src-tauri\\target\\release\\bundle\\nsis\\
 pause`,
       embeddedRuntimeHtml: htmlRuntime,
     };
-    const blob = new Blob([JSON.stringify(windowsBundle, null, 2)], {
+    const jsonStr = JSON.stringify(windowsBundle, null, 2);
+    const filename = `${safeName}_Windows_EXE_Bundle.json`;
+    const blob = new Blob([jsonStr], {
       type: 'application/json;charset=utf-8',
     });
-    triggerDownload(blob, `${safeName}_Windows_EXE_Bundle.json`);
+    triggerDownload(blob, filename);
+    writeFileToMountedMooVNFolder(filename, jsonStr);
     return;
   }
 
@@ -578,6 +656,8 @@ pause`,
     bundleIdentifier: options.packageId,
     displayName: options.appName,
     version: options.version,
+    outputDirectoryPath: options.outputDirectoryPath || '',
+    streamingAndMemoryConfig,
     landscapeLock: options.landscapeLock,
     buildCommand:
       options.platform === 'macos'
@@ -585,13 +665,13 @@ pause`,
         : 'npx tauri ios init && npx tauri ios build --export-method debugging',
     embeddedRuntimeHtml: htmlRuntime,
   };
-  const blob = new Blob([JSON.stringify(appleBundle, null, 2)], {
+  const jsonStr = JSON.stringify(appleBundle, null, 2);
+  const filename = `${safeName}_${options.platform.toUpperCase()}_Bundle.json`;
+  const blob = new Blob([jsonStr], {
     type: 'application/json;charset=utf-8',
   });
-  triggerDownload(
-    blob,
-    `${safeName}_${options.platform.toUpperCase()}_Bundle.json`
-  );
+  triggerDownload(blob, filename);
+  writeFileToMountedMooVNFolder(filename, jsonStr);
 }
 
 function triggerDownload(blob: Blob, filename: string) {

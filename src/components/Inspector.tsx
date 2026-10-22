@@ -29,6 +29,7 @@ interface InspectorProps {
   onSetStartNode: (id: string) => void;
   onUpdateCharacterProfile: (charId: string, updater: (c: CharacterProfile) => CharacterProfile) => void;
   onAddCharacterProfile: () => void;
+  onUpdateChapter?: (chapterId: string, updater: (ch: StoryChapter) => StoryChapter) => void;
 }
 
 export const Inspector: React.FC<InspectorProps> = ({
@@ -49,6 +50,7 @@ export const Inspector: React.FC<InspectorProps> = ({
   onSetStartNode,
   onUpdateCharacterProfile,
   onAddCharacterProfile,
+  onUpdateChapter,
 }) => {
   const [tab, setTab] = useState<'dialogue' | 'visual' | 'flow' | 'char'>('dialogue');
 
@@ -595,6 +597,218 @@ export const Inspector: React.FC<InspectorProps> = ({
                 />
               </div>
             </div>
+
+            {/* UI Style / Game Settings / Streaming Preload Node Controls */}
+            {(node.type === 'ui_style_switch' ||
+              node.type === 'ui_theme_switch' ||
+              node.type === 'game_settings_modify' ||
+              node.type === 'stream_preload_hint' ||
+              node.type === 'msvn_chapter_load') && (
+              <div className="p-2.5 rounded-md bg-[#1c1c20] border border-[#27272c] space-y-2.5">
+                <div className="text-[11px] font-medium text-zinc-300">
+                  界面 / 游戏设置 / 流加载节点配置
+                </div>
+
+                {(node.type === 'ui_style_switch' || node.type === 'ui_theme_switch') && (
+                  <div className="space-y-2">
+                    <div>
+                      <div className="text-[10px] text-zinc-500 mb-1">切换目标界面预设</div>
+                      <select
+                        value={node.settingsActionConfig?.targetPresetId || 'classic_blue'}
+                        onChange={(e) =>
+                          onUpdateNode((prev) => ({
+                            ...prev,
+                            settingsActionConfig: {
+                              ...(prev.settingsActionConfig || {}),
+                              targetPresetId: e.target.value as any,
+                            },
+                          }))
+                        }
+                        className="w-full px-2 py-1"
+                      >
+                        <option value="classic_blue">经典深蓝</option>
+                        <option value="glass_cyan">琉璃青空</option>
+                        <option value="sakura_romance">樱色物语</option>
+                        <option value="obsidian_gold">黑金秘典</option>
+                        <option value="minimal_cinema">极简电影</option>
+                      </select>
+                    </div>
+                    <div>
+                      <div className="flex justify-between text-[10px] text-zinc-500 mb-1">
+                        <span>对话框不透明度</span>
+                        <span>
+                          {Math.round(
+                            (node.settingsActionConfig?.dialogueBgOpacity ?? 0.85) * 100
+                          )}
+                          %
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min={0.2}
+                        max={1}
+                        step={0.05}
+                        value={node.settingsActionConfig?.dialogueBgOpacity ?? 0.85}
+                        onChange={(e) =>
+                          onUpdateNode((prev) => ({
+                            ...prev,
+                            settingsActionConfig: {
+                              ...(prev.settingsActionConfig || {}),
+                              dialogueBgOpacity: Number(e.target.value),
+                            },
+                          }))
+                        }
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {node.type === 'game_settings_modify' && (
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <div className="flex justify-between text-[10px] text-zinc-500 mb-1">
+                          <span>文字速度</span>
+                          <span>{node.settingsActionConfig?.textSpeedMs ?? 32}ms</span>
+                        </div>
+                        <input
+                          type="range"
+                          min={10}
+                          max={80}
+                          value={node.settingsActionConfig?.textSpeedMs ?? 32}
+                          onChange={(e) =>
+                            onUpdateNode((prev) => ({
+                              ...prev,
+                              settingsActionConfig: {
+                                ...(prev.settingsActionConfig || {}),
+                                textSpeedMs: Number(e.target.value),
+                              },
+                            }))
+                          }
+                        />
+                      </div>
+                      <div>
+                        <div className="flex justify-between text-[10px] text-zinc-500 mb-1">
+                          <span>音乐音量</span>
+                          <span>{node.settingsActionConfig?.bgmVolumePercent ?? 75}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min={0}
+                          max={100}
+                          value={node.settingsActionConfig?.bgmVolumePercent ?? 75}
+                          onChange={(e) =>
+                            onUpdateNode((prev) => ({
+                              ...prev,
+                              settingsActionConfig: {
+                                ...(prev.settingsActionConfig || {}),
+                                bgmVolumePercent: Number(e.target.value),
+                              },
+                            }))
+                          }
+                        />
+                      </div>
+                    </div>
+                    <label className="flex items-center gap-1.5 text-[11px] text-zinc-300 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={!!node.settingsActionConfig?.openSettingsPanel}
+                        onChange={(e) =>
+                          onUpdateNode((prev) => ({
+                            ...prev,
+                            settingsActionConfig: {
+                              ...(prev.settingsActionConfig || {}),
+                              openSettingsPanel: e.target.checked,
+                            },
+                          }))
+                        }
+                      />
+                      <span>触发此节点时自动弹出游戏设置界面</span>
+                    </label>
+                  </div>
+                )}
+
+                {(node.type === 'stream_preload_hint' ||
+                  node.type === 'msvn_chapter_load') && (
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <div className="flex justify-between text-[10px] text-zinc-500 mb-1">
+                          <span>提前解压场景</span>
+                          <span>{node.settingsActionConfig?.preloadAheadScenes ?? 4} 场景</span>
+                        </div>
+                        <input
+                          type="range"
+                          min={1}
+                          max={20}
+                          value={node.settingsActionConfig?.preloadAheadScenes ?? 4}
+                          onChange={(e) =>
+                            onUpdateNode((prev) => ({
+                              ...prev,
+                              settingsActionConfig: {
+                                ...(prev.settingsActionConfig || {}),
+                                preloadAheadScenes: Number(e.target.value),
+                              },
+                            }))
+                          }
+                        />
+                      </div>
+                      <div>
+                        <div className="flex justify-between text-[10px] text-zinc-500 mb-1">
+                          <span>卸载旧场景</span>
+                          <span>{node.settingsActionConfig?.unloadBehindScenes ?? 5} 场景</span>
+                        </div>
+                        <input
+                          type="range"
+                          min={1}
+                          max={20}
+                          value={node.settingsActionConfig?.unloadBehindScenes ?? 5}
+                          onChange={(e) =>
+                            onUpdateNode((prev) => ({
+                              ...prev,
+                              settingsActionConfig: {
+                                ...(prev.settingsActionConfig || {}),
+                                unloadBehindScenes: Number(e.target.value),
+                              },
+                            }))
+                          }
+                        />
+                      </div>
+                    </div>
+                    {node.type === 'msvn_chapter_load' && (
+                      <div>
+                        <div className="text-[10px] text-zinc-500 mb-1">
+                          目标挂载章节 (.msvn 插件包)
+                        </div>
+                        <select
+                          value={
+                            node.settingsActionConfig?.targetMsvnChapterId ||
+                            chapters[0]?.id ||
+                            'ch-1'
+                          }
+                          onChange={(e) =>
+                            onUpdateNode((prev) => ({
+                              ...prev,
+                              settingsActionConfig: {
+                                ...(prev.settingsActionConfig || {}),
+                                targetMsvnChapterId: e.target.value,
+                              },
+                            }))
+                          }
+                          className="w-full px-2 py-1"
+                        >
+                          {chapters.map((ch) => (
+                            <option key={ch.id} value={ch.id}>
+                              {ch.title}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -804,12 +1018,64 @@ export const Inspector: React.FC<InspectorProps> = ({
           </div>
         )}
 
-        {/* ==================== TAB 4: CHARACTERS (角色) ==================== */}
+        {/* ==================== TAB 4: CHARACTERS & CHAPTER MIN STATS (角色) ==================== */}
         {tab === 'char' && (
-          <div className="space-y-2">
+          <div className="space-y-3">
+            {/* Chapter Minimum Character Stats (.msvn Skip-Chapter Compensation) */}
+            {(() => {
+              const currentChapter =
+                chapters.find((c) => c.id === node.chapterId) || chapters[0];
+              if (!currentChapter) return null;
+              return (
+                <div className="p-2.5 rounded-md bg-[#1c1c20] border border-[#27272c] space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-medium text-zinc-200">
+                      本章角色最低保底数值 (.msvn 跳章防错)
+                    </span>
+                    <span className="text-[10px] text-zinc-500">
+                      {currentChapter.title.split('：')[0]}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {characters.map((char) => {
+                      const minVal =
+                        currentChapter.minCharacterAffection?.[char.id] ??
+                        char.initialAffection;
+                      return (
+                        <div
+                          key={char.id}
+                          className="flex items-center justify-between gap-1.5 px-2 py-1 rounded bg-[#141417] border border-[#27272c]"
+                        >
+                          <span className="text-[11px] text-zinc-300 truncate">
+                            {char.name.split(' ')[0]} ≥
+                          </span>
+                          <input
+                            type="number"
+                            value={minVal}
+                            onChange={(e) => {
+                              const val = Number(e.target.value);
+                              onUpdateChapter?.(currentChapter.id, (prev) => ({
+                                ...prev,
+                                minCharacterAffection: {
+                                  ...(prev.minCharacterAffection || {}),
+                                  [char.id]: val,
+                                },
+                              }));
+                            }}
+                            className="w-14 px-1.5 py-0.5 text-right font-mono text-[11px]"
+                            title={`${char.name} 进入本章的最低保底好感度`}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
+
             <div className="flex items-center justify-between">
               <span className="text-[11px] text-zinc-400">
-                角色 ({characters.length})
+                角色设定 ({characters.length})
               </span>
               <button
                 onClick={onAddCharacterProfile}

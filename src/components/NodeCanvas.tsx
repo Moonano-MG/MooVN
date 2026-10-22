@@ -186,6 +186,18 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
     if (node.type === 'condition' && node.conditionRule) {
       return `IF ${node.conditionRule.attributeKey} ${node.conditionRule.operator} ${node.conditionRule.compareValue}`;
     }
+    if (node.type === 'stream_preload_hint') {
+      return `提前解压 ${node.settingsActionConfig?.preloadAheadScenes ?? 3} 场景 · 卸载 ${node.settingsActionConfig?.unloadBehindScenes ?? 5} 场景前`;
+    }
+    if (node.type === 'msvn_chapter_load') {
+      return `挂载章节包 .msvn · 应用最低角色保底数值`;
+    }
+    if (node.type === 'ui_style_switch') {
+      return `切换界面样式 (${node.settingsActionConfig?.targetPresetId || 'classic_blue'})`;
+    }
+    if (node.type === 'game_settings_modify') {
+      return `语速 ${node.settingsActionConfig?.textSpeedMs ?? 32}ms · 音量 ${node.settingsActionConfig?.bgmVolumePercent ?? 75}%`;
+    }
     if (node.choices.length > 0) {
       return `${node.choices.length} 个分支选项`;
     }
@@ -364,21 +376,39 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
                 left: node.position.x,
                 top: node.position.y,
                 width: CARD_WIDTH,
+                borderColor: isSelected ? meta.accentColor : undefined,
+                boxShadow: isSelected ? `0 0 0 1px ${meta.accentColor}40, 0 12px 28px rgba(0,0,0,0.5)` : undefined,
               }}
-              className={`vn-node-card group absolute rounded-lg bg-[#18181c] border transition cursor-pointer ${
+              className={`vn-node-card group absolute rounded-lg bg-[#18181c] border transition cursor-pointer overflow-hidden ${
                 isSelected
-                  ? 'border-zinc-200 ring-1 ring-zinc-200/20 shadow-2xl z-20'
-                  : 'border-[#2a2a32] hover:border-zinc-600 z-10 shadow-md'
+                  ? 'z-20'
+                  : 'border-[#2a2a32] hover:border-zinc-500 z-10 shadow-md'
               }`}
             >
+              {/* Category Top Accent Strip */}
+              <div
+                style={{ backgroundColor: meta.accentColor }}
+                className="h-0.5 w-full opacity-85"
+              />
+
               {/* Input / Output Port Dots */}
               <div className="absolute -left-1.5 top-10 w-2.5 h-2.5 rounded-full bg-[#27272c] border border-zinc-500" />
-              <div className="absolute -right-1.5 top-10 w-2.5 h-2.5 rounded-full bg-zinc-300 border border-zinc-900" />
+              <div
+                style={{ backgroundColor: meta.accentColor }}
+                className="absolute -right-1.5 top-10 w-2.5 h-2.5 rounded-full border border-zinc-950"
+              />
 
-              {/* Header: Category Tag + Title + Hover Actions */}
+              {/* Header: Color-Coded Category Tag + Title + Hover Actions */}
               <div className="flex items-center justify-between px-2.5 py-1.5 border-b border-[#25252c]">
                 <div className="flex items-center gap-1.5 min-w-0">
-                  <span className="px-1.5 py-0.5 rounded bg-[#27272c] text-zinc-300 text-[10px] font-medium shrink-0">
+                  <span
+                    style={{
+                      backgroundColor: meta.badgeBg,
+                      color: meta.badgeText,
+                      borderColor: `${meta.accentColor}45`,
+                    }}
+                    className="px-1.5 py-0.5 rounded border text-[10px] font-medium shrink-0"
+                  >
                     {meta.categoryLabel}
                   </span>
                   <span className="text-xs font-medium text-zinc-100 truncate">

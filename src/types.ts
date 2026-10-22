@@ -21,7 +21,7 @@ export type WorkflowNodeType =
   | 'chapter_title'
   | 'floating_subtitle'
   | 'banner_notice'
-  // 3. 控制 (Flow Control)
+  // 3. 控制 (Flow Control & Streaming/Chapter Package)
   | 'choice'
   | 'timed_choice'
   | 'condition'
@@ -29,6 +29,8 @@ export type WorkflowNodeType =
   | 'wait_timer'
   | 'jump_chapter'
   | 'random_branch'
+  | 'stream_preload_hint'
+  | 'msvn_chapter_load'
   | 'end'
   // 4. 角色 (Character & Expression)
   | 'char_enter'
@@ -52,11 +54,13 @@ export type WorkflowNodeType =
   | 'bgm_stop'
   | 'sfx_play'
   | 'voice_play'
-  // 7. 界面 (In-Game UI)
+  // 7. 界面与设置 (In-Game UI & Settings Nodes)
   | 'ui_visibility'
   | 'popup_toast'
   | 'clue_unlock'
   | 'ui_theme_switch'
+  | 'ui_style_switch'
+  | 'game_settings_modify'
   // 8. 数据与脚本 (Data & Script Bridge)
   | 'set_variable'
   | 'script';
@@ -81,7 +85,7 @@ export interface CharacterCustomAttribute {
 
 export interface CharacterExpressionVariant {
   id: string;
-  label: string; // 例如 "微笑"、"惊讶"、"害羞"、"抱猫"
+  label: string;
   spriteId: string;
 }
 
@@ -180,6 +184,20 @@ export interface CameraActionConfig {
   durationMs: number;
 }
 
+export interface NodeSettingsActionConfig {
+  targetPresetId?: GameUIConfig['presetId'];
+  dialogueBgOpacity?: number;
+  dialogueBgColor?: string;
+  dialogueBorderColor?: string;
+  textSpeedMs?: number;
+  autoPlayDelayMs?: number;
+  bgmVolumePercent?: number;
+  openSettingsPanel?: boolean;
+  preloadAheadScenes?: number;
+  unloadBehindScenes?: number;
+  targetMsvnChapterId?: string;
+}
+
 export type VisualBlockCategory =
   | 'narrative'
   | 'screen_text'
@@ -254,6 +272,7 @@ export interface SceneNode {
   fadeConfig?: FadeActionConfig;
   screenTextConfig?: ScreenTextConfig;
   cameraConfig?: CameraActionConfig;
+  settingsActionConfig?: NodeSettingsActionConfig;
   waitDurationMs?: number;
   toastMessage?: string;
   unlockedClueTitle?: string;
@@ -281,6 +300,14 @@ export interface StoryChapter {
   subtitle: string;
   yamlFileName: string;
   description: string;
+  /**
+   * 跳过中间章节直接游玩本章节时，每个角色的最低保底好感度/数值。
+   * 第一章必装；后续章节可作为独立 .msvn 插件包按需下载与卸载。
+   */
+  minCharacterAffection?: Record<string, number>;
+  minVariables?: Record<string, number>;
+  isBaseRequired?: boolean;
+  msvnSizeEstimateMb?: number;
 }
 
 export interface GlobalVariable {
@@ -290,24 +317,38 @@ export interface GlobalVariable {
   value: number | boolean | string;
 }
 
+export type AssetCompressionFormat = 'xz' | '7z' | 'brotli';
+
+export interface GamePerformanceConfig {
+  compressionFormat: AssetCompressionFormat;
+  compressionLevel: number; // xz: 0-9 (rec 6), 7z: 0-9 (rec 5), brotli: 0-11 (rec 6)
+  skipAlreadyCompressedPng: boolean; // png等已压缩图像不再二次压缩
+  preloadSceneDistance: number; // 1 ~ 20 场景前提前解压至内存/缓存
+  unloadSceneDistance: number; // 1 ~ 20 场景后从内存卸载释放
+  streamPreloadScenes: number; // 1 ~ 20 场景磁盘流式预读
+  decompressTarget: 'memory' | 'cache_file'; // 解压到内存中 或 解压到缓存文件
+  workerCpuBudgetPercent: number; // 后台解压性能配额 (15% - 80%)，保证游玩零卡顿
+  modularMsvnEnabled: boolean; // 启用 .msvn 插件式章节包增量更新
+}
+
 export interface GameUIConfig {
   presetId: 'classic_blue' | 'glass_cyan' | 'sakura_romance' | 'obsidian_gold' | 'minimal_cinema';
   dialogueBox: {
-    bottomOffset: number; // px from bottom (0 - 120)
-    widthPercent: number; // 60 - 100%
-    heightPx: number; // 130 - 260px
-    paddingPx: number; // 14 - 36px
-    bgColor: string; // hex
-    bgOpacity: number; // 0.1 - 1.0
-    borderColor: string; // hex
-    borderWidth: number; // 0 - 6px
-    borderRadius: number; // 0 - 28px
+    bottomOffset: number;
+    widthPercent: number;
+    heightPx: number;
+    paddingPx: number;
+    bgColor: string;
+    bgOpacity: number;
+    borderColor: string;
+    borderWidth: number;
+    borderRadius: number;
     backdropBlur: boolean;
-    speakerFontSize: number; // 15 - 30px
+    speakerFontSize: number;
     speakerTagMode: 'inside' | 'floating_badge';
-    textFontSize: number; // 14 - 28px
-    textColor: string; // hex
-    lineHeight: number; // 1.3 - 2.2
+    textFontSize: number;
+    textColor: string;
+    lineHeight: number;
     controlPosition: 'bottom_right' | 'top_right' | 'bottom_center';
     visibleControls: {
       back: boolean;
@@ -344,6 +385,8 @@ export interface VNProject {
   title: string;
   author: string;
   version: string;
+  projectPath?: string;
+  isTemplatePreset?: boolean;
   resolution: { width: number; height: number };
   defaultLanguage: ScriptLanguage;
   startNodeId: string;
@@ -352,6 +395,7 @@ export interface VNProject {
   nodes: SceneNode[];
   variables: GlobalVariable[];
   uiConfig: GameUIConfig;
+  performanceConfig?: GamePerformanceConfig;
 }
 
 export interface BackgroundAsset {
@@ -421,6 +465,50 @@ export type AiApiFormat =
   | 'google_gemini'
   | 'ollama_local';
 
+export type AiCardProviderType =
+  | 'google_studio'
+  | 'openai_compatible'
+  | 'anthropic_claude'
+  | 'ollama_local'
+  | 'local_hub';
+
+export type ModelHubSource = 'modelscope_cn' | 'modelscope_intl' | 'huggingface' | 'local_disk';
+
+export interface AiModelCard {
+  id: string;
+  title: string;
+  providerType: AiCardProviderType;
+  endpointUrl: string;
+  modelName: string;
+  /**
+   * 支持填入多个 API Key 轮流调用同一个模型（Round-Robin 负载均衡与故障自动切换）
+   */
+  apiKeys: string[];
+  activeKeyCursor: number;
+  totalCalls: number;
+  enabled: boolean;
+  // 本地模型专属字段
+  hubSource?: ModelHubSource;
+  hubRepoId?: string;
+  localFileName?: string;
+  fileSizeMb?: number;
+  quantization?: string;
+  downloaded?: boolean;
+  downloadProgress?: number;
+}
+
+export interface ModelHubItem {
+  id: string;
+  repoId: string;
+  name: string;
+  source: 'modelscope_cn' | 'modelscope_intl' | 'huggingface';
+  sizeMb: number;
+  quantization: string;
+  tags: string[];
+  description: string;
+  downloadUrl: string;
+}
+
 export interface AiProviderConfig {
   mode: 'local_model' | 'api_key';
   apiFormat: AiApiFormat;
@@ -437,7 +525,45 @@ export interface AiChatMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
   timestamp: string;
+  modelCardTitle?: string;
+  usedKeyBadge?: string;
   appliedActions?: string[];
+}
+
+export interface MooVNSystemSettings {
+  platform: 'windows' | 'android' | 'ios' | 'macos' | 'web';
+  workspaceRootPath: string;
+  projectsDirectoryPath: string;
+  exportOutputDirectoryPath: string;
+  cacheDirectoryPath: string;
+  settingsFilePath: string;
+  webMountedFolderName?: string;
+  editorConfig: {
+    autoSaveIntervalSec: number;
+    coloredNodeCategories: boolean;
+    showStreamMonitorInPreview: boolean;
+    defaultScriptLang: ScriptLanguage;
+  };
+  defaultGameSettings: {
+    textSpeedMs: number;
+    autoPlayDelayMs: number;
+    bgmVolume: number;
+    sfxVolume: number;
+  };
+  performanceConfig: GamePerformanceConfig;
+}
+
+export interface SavedProjectMeta {
+  id: string;
+  title: string;
+  author: string;
+  version: string;
+  path: string;
+  updatedAt: string;
+  chaptersCount: number;
+  nodesCount: number;
+  isTemplatePreset?: boolean;
+  projectData: VNProject;
 }
 
 export type PanelId =

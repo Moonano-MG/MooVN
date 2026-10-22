@@ -20,6 +20,8 @@ import { StatusBar } from './components/StatusBar';
 import { AiAssistantPanel } from './components/AiAssistantPanel';
 import { GameUICustomizer } from './components/GameUICustomizer';
 import { ExportModal } from './components/ExportModal';
+import { ProjectLauncher } from './components/ProjectLauncher';
+import { saveProjectToWorkspace } from './lib/workspaceManager';
 import { PanelId, FloatingWindowConfig } from './types';
 
 const WINDOW_TITLES: Record<PanelId, string> = {
@@ -41,6 +43,7 @@ export function App() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [playStartNodeId, setPlayStartNodeId] = useState<string | undefined>(undefined);
   const [showExportModal, setShowExportModal] = useState(false);
+  const [showProjectLauncher, setShowProjectLauncher] = useState(true);
 
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
@@ -196,6 +199,14 @@ export function App() {
               }))
             }
             onAddCharacterProfile={editor.addCharacterProfile}
+            onUpdateChapter={(chapterId, updater) =>
+              editor.setProject((prev) => ({
+                ...prev,
+                chapters: prev.chapters.map((ch) =>
+                  ch.id === chapterId ? updater(ch) : ch
+                ),
+              }))
+            }
           />
         );
       case 'ui_customizer':
@@ -394,6 +405,10 @@ export function App() {
           setIsPlaying(true);
         }}
         onOpenExportModal={() => setShowExportModal(true)}
+        onOpenProjectLauncher={() => setShowProjectLauncher(true)}
+        onSaveProjectToWorkspace={() => {
+          saveProjectToWorkspace(editor.project);
+        }}
         onFloatPanel={(panelId) => toggleFloatWindow(panelId)}
         onResetLayout={() => {
           setFloatingWindows([]);
@@ -598,7 +613,30 @@ export function App() {
 
       {/* Multi-Platform Export Modal */}
       {showExportModal && (
-        <ExportModal project={editor.project} onClose={() => setShowExportModal(false)} />
+        <ExportModal
+          project={editor.project}
+          onClose={() => setShowExportModal(false)}
+          onUpdateProjectPerformance={(perf) =>
+            editor.setProject((prev) => ({
+              ...prev,
+              performanceConfig: perf,
+            }))
+          }
+        />
+      )}
+
+      {/* Startup / Project Center Modal */}
+      {showProjectLauncher && (
+        <ProjectLauncher
+          canClose={true}
+          onClose={() => setShowProjectLauncher(false)}
+          onOpenProject={(proj) => {
+            editor.setProject(proj);
+            editor.setSelectedChapterId(proj.chapters[0]?.id || 'ch-1');
+            editor.selectNode(proj.startNodeId);
+            setShowProjectLauncher(false);
+          }}
+        />
       )}
 
       {/* Fullscreen Visual Novel Runtime Player */}
