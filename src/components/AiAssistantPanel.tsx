@@ -1,12 +1,5 @@
 import React, { useState } from 'react';
-import {
-  Send,
-  Settings,
-  Download,
-  CheckCircle2,
-  Trash2,
-  FileCode2,
-} from 'lucide-react';
+import { Send, Download, Check, Trash2 } from 'lucide-react';
 import {
   AiApiFormat,
   AiChatMessage,
@@ -31,22 +24,22 @@ const API_FORMAT_LABELS: Record<
   { name: string; defaultEndpoint: string; defaultModel: string }
 > = {
   openai_compatible: {
-    name: 'OpenAI 兼容格式 (OpenAI / DeepSeek / vLLM)',
+    name: 'OpenAI 兼容 (OpenAI / DeepSeek)',
     defaultEndpoint: 'https://api.openai.com/v1/chat/completions',
     defaultModel: 'gpt-4o-mini',
   },
   anthropic_claude: {
-    name: 'Anthropic Claude Messages API',
+    name: 'Anthropic Claude API',
     defaultEndpoint: 'https://api.anthropic.com/v1/messages',
     defaultModel: 'claude-3-5-sonnet-latest',
   },
   google_gemini: {
-    name: 'Google Gemini GenerateContent API',
+    name: 'Google Gemini API',
     defaultEndpoint: 'https://generativelanguage.googleapis.com/v1beta/models',
     defaultModel: 'gemini-2.5-flash',
   },
   ollama_local: {
-    name: 'Ollama 本地服务接口',
+    name: 'Ollama 本地服务',
     defaultEndpoint: 'http://127.0.0.1:11434/api/chat',
     defaultModel: 'qwen2.5-coder:7b',
   },
@@ -61,8 +54,7 @@ export const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({
   onAppendDialogue,
   onSwitchBackground,
 }) => {
-  const [showConfig, setShowConfig] = useState(false);
-  const [showSpec, setShowSpec] = useState(false);
+  const [subTab, setSubTab] = useState<'chat' | 'config' | 'spec'>('chat');
 
   const [config, setConfig] = useState<AiProviderConfig>({
     mode: 'local_model',
@@ -84,78 +76,80 @@ export const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({
     {
       id: 'msg-init',
       role: 'assistant',
-      content:
-        '你好！我是 MooVN Agent。你可以直接用自然语言让我创建任何类型的节点（如屏幕文字、限时抉择、条件判断、淡入淡出、镜头震动）、编写剧情台词、新增章节或切换场景背景。',
+      content: '输入指令即可创建节点、续写对白、切换背景或新增章节。',
       timestamp: '刚刚',
     },
   ]);
 
-  const handleDownloadLocalModel = () => {
+  const handleDownloadModel = () => {
     setIsDownloading(true);
-    setDownloadProgress(0);
+    setDownloadProgress(5);
+    let p = 5;
     const timer = setInterval(() => {
-      setDownloadProgress((p) => {
-        if (p >= 100) {
-          clearInterval(timer);
-          setIsDownloading(false);
-          setConfig((prev) => ({ ...prev, localModelDownloaded: true }));
-          return 100;
-        }
-        return p + 25;
-      });
+      p += 19;
+      if (p >= 100) {
+        clearInterval(timer);
+        setDownloadProgress(100);
+        setIsDownloading(false);
+        setConfig((prev) => ({ ...prev, localModelDownloaded: true }));
+      } else {
+        setDownloadProgress(p);
+      }
     }, 180);
   };
 
-  const executeAgentActions = (userText: string): { reply: string; actions: string[] } => {
+  const executeAgentIntent = (userPrompt: string) => {
     const actions: string[] = [];
-    const lower = userText.toLowerCase();
+    const lower = userPrompt.toLowerCase();
 
-    if (lower.includes('屏幕文字') || lower.includes('字幕') || lower.includes('标题')) {
+    if (lower.includes('屏幕文字') || lower.includes('字幕') || lower.includes('大字')) {
       onAddNode('screen_text');
       actions.push('新增 [屏幕文字] 节点');
+    } else if (lower.includes('条件') || lower.includes('判断')) {
+      onAddNode('condition');
+      actions.push('新增 [条件分支] 节点');
     } else if (lower.includes('限时') || lower.includes('倒计时')) {
       onAddNode('timed_choice');
-      actions.push('新增 [控制·限时抉择] 节点');
-    } else if (lower.includes('选择') || lower.includes('分支')) {
-      onAddNode('choice');
-      actions.push('新增 [控制·分支选择] 节点');
-    } else if (lower.includes('条件') || lower.includes('好感') || lower.includes('if')) {
-      onAddNode('condition');
-      actions.push('新增 [控制·条件判断] 节点');
-    } else if (lower.includes('淡入') || lower.includes('淡出')) {
-      onAddNode('fade');
-      actions.push('新增 [视觉·淡入淡出] 节点');
+      actions.push('新增 [限时选项] 节点');
     } else if (lower.includes('震动') || lower.includes('镜头')) {
       onAddNode('camera_shake');
-      actions.push('新增 [视觉·屏幕震动] 节点');
+      actions.push('新增 [镜头震动] 节点');
+    } else if (lower.includes('闪白') || lower.includes('特效')) {
+      onAddNode('screen_flash');
+      actions.push('新增 [画面闪光] 节点');
+    } else if (lower.includes('音乐') || lower.includes('bgm')) {
+      onAddNode('bgm_play');
+      actions.push('新增 [播放音乐] 节点');
+    } else if (lower.includes('分支') || lower.includes('选项')) {
+      onAddNode('choice');
+      actions.push('新增 [玩家选项] 节点');
     } else if (lower.includes('章节')) {
       onAddChapter();
-      actions.push('创建新章节');
+      actions.push('新增章节');
     } else if (lower.includes('角色')) {
       onAddCharacter();
-      actions.push('新增角色档案');
-    } else if (lower.includes('台词') || lower.includes('对话') || lower.includes('写')) {
+      actions.push('立绘入场');
+    } else if (lower.includes('神社')) {
+      onSwitchBackground('bg-shrine-night');
+      actions.push('切换背景：千鸟居神社');
+    } else if (lower.includes('天文台')) {
+      onSwitchBackground('bg-observatory-dome');
+      actions.push('切换背景：山顶天文台');
+    } else if (lower.includes('天台')) {
+      onSwitchBackground('bg-rooftop-sunset');
+      actions.push('切换背景：学园天台');
+    } else {
       onAppendDialogue(
-        project.characters[0]?.name || '星野雪奈',
-        '「晚霞映照的钟塔下，指针终于重新开始向前走动了。」'
+        '天野 苍真',
+        `「${userPrompt.replace(/^(写一段|生成|添加|续写)/, '') || '钟声回荡在暮色里，命运的齿轮已经开始转动。'}」`
       );
-      actions.push(`向节点 (${selectedNodeId}) 追加对白`);
+      actions.push(`追加台词至 (${selectedNodeId})`);
     }
 
-    if (lower.includes('海') || lower.includes('灯塔')) {
-      onSwitchBackground('bg-lighthouse-bay-sunset');
-      actions.push('切换背景为「白羽灯塔海湾石阶·晚霞」');
-    } else if (lower.includes('温泉')) {
-      onSwitchBackground('bg-onsen-autumn');
-      actions.push('切换背景为「山岚秘境·露天汤池」');
-    }
-
-    const reply =
-      actions.length > 0
-        ? `已根据指令在当前工程中执行操作。`
-        : `已分析当前工程《${project.title}》（共 ${project.chapters.length} 章节、${project.nodes.length} 节点）。你可以直接输入「添加屏幕文字节点」「创建限时抉择」「切换温泉背景」或「续写一段雪奈台词」由我自动执行。`;
-
-    return { reply, actions };
+    return {
+      reply: `已执行：${actions.join('、')}。`,
+      actions,
+    };
   };
 
   const handleSend = () => {
@@ -163,102 +157,105 @@ export const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({
     if (!trimmed || isThinking) return;
 
     const userMsg: AiChatMessage = {
-      id: `msg-${Date.now()}`,
+      id: `user-${Date.now()}`,
       role: 'user',
       content: trimmed,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      timestamp: new Date().toLocaleTimeString().slice(0, 5),
     };
-
     setMessages((prev) => [...prev, userMsg]);
     setPromptInput('');
     setIsThinking(true);
 
     setTimeout(() => {
-      const { reply, actions } = executeAgentActions(trimmed);
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `msg-${Date.now() + 1}`,
-          role: 'assistant',
-          content: reply,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          appliedActions: actions.length > 0 ? actions : undefined,
-        },
-      ]);
+      const { reply, actions } = executeAgentIntent(trimmed);
+      const assistantMsg: AiChatMessage = {
+        id: `ai-${Date.now()}`,
+        role: 'assistant',
+        content: reply,
+        timestamp: new Date().toLocaleTimeString().slice(0, 5),
+        appliedActions: actions,
+      };
+      setMessages((prev) => [...prev, assistantMsg]);
       setIsThinking(false);
-    }, 260);
+    }, 220);
+  };
+
+  const downloadSpecFile = () => {
+    const blob = new Blob([MOOVN_AI_SPEC_MARKDOWN], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'MOOVN_AI_SPEC.md';
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   return (
-    <div className="flex flex-col h-full bg-[#18181b] text-[#cccccc] select-none overflow-hidden">
-      {/* Compact Header */}
-      <div className="flex items-center justify-between px-3 py-2 bg-[#1f1f23] border-b border-[#2b2b30] shrink-0">
-        <span className="text-xs font-semibold text-slate-200 truncate">
-          AI 助手 ({config.mode === 'local_model' ? '本地模型' : API_FORMAT_LABELS[config.apiFormat].name.split(' ')[0]})
-        </span>
-        <div className="flex items-center gap-1">
-          <button
-            onClick={() => {
-              setShowSpec(!showSpec);
-              setShowConfig(false);
-            }}
-            className={`p-1 rounded transition ${
-              showSpec ? 'bg-[#007acc] text-white' : 'text-slate-400 hover:text-white hover:bg-[#2a2d2e]'
-            }`}
-            title="查看 MOOVN_AI_SPEC.md 工程规范"
-          >
-            <FileCode2 className="w-3.5 h-3.5" />
-          </button>
-          <button
-            onClick={() => {
-              setShowConfig(!showConfig);
-              setShowSpec(false);
-            }}
-            className={`p-1 rounded transition ${
-              showConfig ? 'bg-[#007acc] text-white' : 'text-slate-400 hover:text-white hover:bg-[#2a2d2e]'
-            }`}
-            title="切换本地模型 / 4种 API Key 格式"
-          >
-            <Settings className="w-3.5 h-3.5" />
-          </button>
-          <button
-            onClick={() => setMessages(messages.slice(0, 1))}
-            className="p-1 rounded text-slate-400 hover:text-white hover:bg-[#2a2d2e]"
-            title="清空对话"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-          </button>
+    <div className="flex flex-col h-full bg-[#161619] text-zinc-300 select-none overflow-hidden">
+      {/* Sub-navigation bar */}
+      <div className="flex items-center justify-between px-2 border-b border-[#27272c] bg-[#141417] shrink-0 text-xs">
+        <div className="flex items-center">
+          {(
+            [
+              ['chat', '对话'],
+              ['config', '配置'],
+              ['spec', '规范'],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              onClick={() => setSubTab(id)}
+              className={`px-3 py-2 font-medium border-b-2 transition ${
+                subTab === id
+                  ? 'border-zinc-200 text-white bg-[#161619]'
+                  : 'border-transparent text-zinc-500 hover:text-zinc-300'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
         </div>
+
+        {subTab === 'chat' && (
+          <button
+            onClick={() => setMessages((prev) => prev.slice(0, 1))}
+            className="icon-btn"
+            title="清空记录"
+          >
+            <Trash2 className="w-3.5 h-3.5" strokeWidth={1.6} />
+          </button>
+        )}
       </div>
 
-      {/* Collapsible Settings Drawer */}
-      {showConfig && (
-        <div className="p-3 bg-[#202024] border-b border-[#2b2b30] space-y-2.5 text-xs shrink-0">
+      {/* Config Tab */}
+      {subTab === 'config' && (
+        <div className="flex-1 overflow-y-auto p-3 space-y-3 text-xs">
           <div className="grid grid-cols-2 gap-1.5">
             <button
               onClick={() => setConfig((prev) => ({ ...prev, mode: 'local_model' }))}
-              className={`py-1.5 rounded border text-[11px] font-medium ${
+              className={`py-1.5 rounded border text-center transition ${
                 config.mode === 'local_model'
-                  ? 'bg-[#094771]/50 border-[#007acc] text-white'
-                  : 'bg-[#252526] border-[#3c3c3c] text-slate-400'
+                  ? 'bg-zinc-200 text-zinc-950 border-zinc-200 font-medium'
+                  : 'bg-[#1c1c20] border-[#27272c] text-zinc-400'
               }`}
             >
-              本地模型运行
+              本地模型
             </button>
             <button
               onClick={() => setConfig((prev) => ({ ...prev, mode: 'api_key' }))}
-              className={`py-1.5 rounded border text-[11px] font-medium ${
+              className={`py-1.5 rounded border text-center transition ${
                 config.mode === 'api_key'
-                  ? 'bg-[#094771]/50 border-[#007acc] text-white'
-                  : 'bg-[#252526] border-[#3c3c3c] text-slate-400'
+                  ? 'bg-zinc-200 text-zinc-950 border-zinc-200 font-medium'
+                  : 'bg-[#1c1c20] border-[#27272c] text-zinc-400'
               }`}
             >
-              云端 API Key (4种格式)
+              云端 API
             </button>
           </div>
 
           {config.mode === 'local_model' ? (
-            <div className="space-y-2">
+            <div className="p-2.5 rounded-md bg-[#1c1c20] border border-[#27272c] space-y-2.5">
+              <div className="text-[10px] text-zinc-500">本地量化模型</div>
               <select
                 value={config.localModelId}
                 onChange={(e) =>
@@ -268,104 +265,141 @@ export const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({
                     localModelDownloaded: false,
                   }))
                 }
-                className="w-full bg-[#252526] border border-[#3c3c3c] rounded px-2 py-1 text-[11px] text-white"
+                className="w-full px-2 py-1.5"
               >
                 <option value="MooVN-StoryAgent-1.5B-Q4_K_M.gguf">
-                  MooVN-StoryAgent-1.5B-Q4_K_M.gguf (推荐)
+                  MooVN-StoryAgent-1.5B-Q4 (980 MB)
                 </option>
-                <option value="Qwen2.5-Coder-3B-Instruct-Q4.gguf">
-                  Qwen2.5-Coder-3B-Instruct-Q4.gguf
+                <option value="Qwen2.5-Coder-3B-Instruct-Q4_K_M.gguf">
+                  Qwen2.5-Coder-3B-Q4 (1.9 GB)
                 </option>
-                <option value="Llama-3.2-3B-VN-Director-Q4.gguf">
-                  Llama-3.2-3B-VN-Director-Q4.gguf
+                <option value="Llama-3.2-3B-VN-Writer-Q4.gguf">
+                  Llama-3.2-3B-VN-Writer (2.0 GB)
                 </option>
               </select>
-              {config.localModelDownloaded ? (
-                <div className="flex items-center gap-1.5 text-[11px] text-emerald-400">
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>本地模型已就绪</span>
-                </div>
-              ) : (
+
+              <div className="flex items-center justify-between pt-1">
+                <span className="text-[11px] text-zinc-400">
+                  {config.localModelDownloaded ? '已就绪' : `进度 ${downloadProgress}%`}
+                </span>
                 <button
-                  onClick={handleDownloadLocalModel}
+                  onClick={handleDownloadModel}
                   disabled={isDownloading}
-                  className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded bg-[#007acc] text-white text-[11px] font-medium"
+                  className="px-2.5 py-1 rounded bg-[#27272c] hover:bg-zinc-700 text-zinc-200 text-[11px] flex items-center gap-1"
                 >
-                  <Download className="w-3.5 h-3.5" />
-                  {isDownloading ? `下载中 ${downloadProgress}%` : '下载并加载本地模型'}
+                  <Download className="w-3 h-3" strokeWidth={1.6} />
+                  {config.localModelDownloaded ? '重新校验' : '下载'}
                 </button>
-              )}
+              </div>
             </div>
           ) : (
-            <div className="space-y-2">
-              <select
-                value={config.apiFormat}
-                onChange={(e) => {
-                  const fmt = e.target.value as AiApiFormat;
-                  setConfig((prev) => ({
-                    ...prev,
-                    apiFormat: fmt,
-                    endpointUrl: API_FORMAT_LABELS[fmt].defaultEndpoint,
-                    modelName: API_FORMAT_LABELS[fmt].defaultModel,
-                  }));
-                }}
-                className="w-full bg-[#252526] border border-[#3c3c3c] rounded px-2 py-1 text-[11px] text-white"
-              >
-                {(Object.keys(API_FORMAT_LABELS) as AiApiFormat[]).map((fmt) => (
-                  <option key={fmt} value={fmt}>
-                    {API_FORMAT_LABELS[fmt].name}
-                  </option>
-                ))}
-              </select>
-              <input
-                type="text"
-                value={config.endpointUrl}
-                onChange={(e) => setConfig((prev) => ({ ...prev, endpointUrl: e.target.value }))}
-                placeholder="API Endpoint URL"
-                className="w-full bg-[#252526] border border-[#3c3c3c] rounded px-2 py-1 text-[11px] text-white font-mono"
-              />
-              <input
-                type="password"
-                value={config.apiKey}
-                onChange={(e) => setConfig((prev) => ({ ...prev, apiKey: e.target.value }))}
-                placeholder="API Key"
-                className="w-full bg-[#252526] border border-[#3c3c3c] rounded px-2 py-1 text-[11px] text-white font-mono"
-              />
+            <div className="p-2.5 rounded-md bg-[#1c1c20] border border-[#27272c] space-y-2.5">
+              <div>
+                <div className="text-[10px] text-zinc-500 mb-1">接口协议 (4 种标准)</div>
+                <select
+                  value={config.apiFormat}
+                  onChange={(e) => {
+                    const fmt = e.target.value as AiApiFormat;
+                    setConfig((prev) => ({
+                      ...prev,
+                      apiFormat: fmt,
+                      endpointUrl: API_FORMAT_LABELS[fmt].defaultEndpoint,
+                      modelName: API_FORMAT_LABELS[fmt].defaultModel,
+                    }));
+                  }}
+                  className="w-full px-2 py-1.5"
+                >
+                  {(Object.keys(API_FORMAT_LABELS) as AiApiFormat[]).map((fmt) => (
+                    <option key={fmt} value={fmt}>
+                      {API_FORMAT_LABELS[fmt].name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <div className="text-[10px] text-zinc-500 mb-1">Endpoint URL</div>
+                <input
+                  type="text"
+                  value={config.endpointUrl}
+                  onChange={(e) => setConfig((prev) => ({ ...prev, endpointUrl: e.target.value }))}
+                  className="w-full px-2 py-1.5 font-mono"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <div className="text-[10px] text-zinc-500 mb-1">Model</div>
+                  <input
+                    type="text"
+                    value={config.modelName}
+                    onChange={(e) => setConfig((prev) => ({ ...prev, modelName: e.target.value }))}
+                    className="w-full px-2 py-1.5 font-mono"
+                  />
+                </div>
+                <div>
+                  <div className="text-[10px] text-zinc-500 mb-1">API Key</div>
+                  <input
+                    type="password"
+                    value={config.apiKey}
+                    onChange={(e) => setConfig((prev) => ({ ...prev, apiKey: e.target.value }))}
+                    placeholder="sk-..."
+                    className="w-full px-2 py-1.5 font-mono"
+                  />
+                </div>
+              </div>
             </div>
           )}
         </div>
       )}
 
-      {/* Collapsible Spec Viewer */}
-      {showSpec && (
-        <div className="flex-1 overflow-y-auto p-3 bg-[#141417]">
-          <pre className="text-[11px] leading-relaxed font-mono text-slate-300 whitespace-pre-wrap select-text">
+      {/* Spec Tab */}
+      {subTab === 'spec' && (
+        <div className="flex-1 flex flex-col overflow-hidden p-3 gap-2">
+          <div className="flex items-center justify-between shrink-0">
+            <span className="text-xs font-mono text-zinc-400">MOOVN_AI_SPEC.md</span>
+            <button
+              onClick={downloadSpecFile}
+              className="px-2.5 py-1 rounded bg-[#1c1c20] hover:bg-[#27272c] border border-[#27272c] text-zinc-200 text-xs flex items-center gap-1"
+            >
+              <Download className="w-3 h-3" strokeWidth={1.6} />
+              导出
+            </button>
+          </div>
+          <pre className="flex-1 overflow-y-auto p-2.5 rounded-md bg-[#121215] border border-[#27272c] text-[11px] text-zinc-400 font-mono whitespace-pre-wrap leading-relaxed">
             {MOOVN_AI_SPEC_MARKDOWN}
           </pre>
         </div>
       )}
 
-      {/* Chat Messages */}
-      {!showSpec && (
+      {/* Chat Tab */}
+      {subTab === 'chat' && (
         <>
-          <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
+          <div className="flex-1 overflow-y-auto p-3 space-y-2.5 text-xs">
             {messages.map((msg) => (
               <div
                 key={msg.id}
-                className={`p-2.5 rounded-lg text-xs leading-relaxed ${
+                className={`p-2.5 rounded-md border ${
                   msg.role === 'user'
-                    ? 'bg-[#094771]/55 border border-[#007acc]/40 text-white ml-4'
-                    : 'bg-[#202024] border border-[#2b2b30] text-slate-200 mr-2'
+                    ? 'bg-[#202026] border-zinc-700 text-zinc-100 ml-6'
+                    : 'bg-[#1c1c20] border-[#27272c] text-zinc-300 mr-4'
                 }`}
               >
-                <div className="whitespace-pre-wrap select-text">{msg.content}</div>
+                <div className="text-[10px] text-zinc-500 mb-1 flex justify-between">
+                  <span>{msg.role === 'user' ? '你' : 'Agent'}</span>
+                  <span>{msg.timestamp}</span>
+                </div>
+                <div className="leading-relaxed">{msg.content}</div>
                 {msg.appliedActions && msg.appliedActions.length > 0 && (
-                  <div className="mt-2 pt-1.5 border-t border-[#2b2b30] space-y-1">
+                  <div className="mt-2 pt-1.5 border-t border-[#27272c] flex flex-wrap gap-1">
                     {msg.appliedActions.map((act, i) => (
-                      <div key={i} className="flex items-center gap-1.5 text-[11px] text-emerald-400">
-                        <CheckCircle2 className="w-3 h-3 shrink-0" />
-                        <span>{act}</span>
-                      </div>
+                      <span
+                        key={i}
+                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#141417] text-zinc-300 text-[10px] border border-[#27272c]"
+                      >
+                        <Check className="w-2.5 h-2.5" strokeWidth={1.8} />
+                        {act}
+                      </span>
                     ))}
                   </div>
                 )}
@@ -373,29 +407,42 @@ export const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({
             ))}
           </div>
 
-          {/* Single Clean Input Bar */}
-          <div className="p-2.5 border-t border-[#2b2b30] bg-[#1f1f23] shrink-0">
-            <div className="flex items-end gap-1.5">
-              <textarea
-                rows={2}
+          <div className="p-2.5 border-t border-[#27272c] bg-[#141417] space-y-2 shrink-0">
+            <div className="flex flex-wrap gap-1">
+              {[
+                ['+屏幕字', '创建一个屏幕文字节点'],
+                ['+选项', '创建一个玩家选项节点'],
+                ['+震动', '创建一个镜头震动节点'],
+                ['切天台', '切换到学园天台背景'],
+              ].map(([label, cmd]) => (
+                <button
+                  key={label}
+                  onClick={() => setPromptInput(cmd)}
+                  className="px-2 py-0.5 rounded bg-[#1c1c20] hover:bg-[#27272c] text-zinc-400 hover:text-zinc-200 text-[10px] border border-[#27272c] transition"
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <input
+                type="text"
                 value={promptInput}
                 onChange={(e) => setPromptInput(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSend();
-                  }
+                  if (e.key === 'Enter') handleSend();
                 }}
-                placeholder="输入指令（例如：添加屏幕文字节点 / 创建限时抉择 / 切换温泉背景）..."
-                className="flex-1 bg-[#252526] border border-[#3c3c3c] rounded px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-[#007acc] resize-none"
+                placeholder={`节点 (${project.nodes.find((n) => n.id === selectedNodeId)?.title || selectedNodeId}) 指令...`}
+                className="flex-1 px-2.5 py-1.5 text-xs"
               />
               <button
                 onClick={handleSend}
-                disabled={!promptInput.trim() || isThinking}
-                className="p-2 rounded bg-[#007acc] hover:bg-[#1f8ad2] disabled:opacity-40 text-white transition shrink-0"
-                title="发送指令"
+                disabled={isThinking || !promptInput.trim()}
+                className="icon-btn w-8 h-8 bg-zinc-200 hover:bg-white disabled:opacity-40 text-zinc-950"
+                title="发送"
               >
-                <Send className="w-3.5 h-3.5" />
+                <Send className="w-3.5 h-3.5" strokeWidth={1.8} />
               </button>
             </div>
           </div>

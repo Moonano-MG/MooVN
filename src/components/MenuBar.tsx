@@ -4,18 +4,20 @@ import {
   Undo2,
   Redo2,
   FolderOpen,
-  FileDown,
+  Download,
   RotateCcw,
-  FileSpreadsheet,
-  Smartphone,
-  LayoutGrid,
+  Share,
 } from 'lucide-react';
 import { VNProject, PanelId, DockZoneId } from '../types';
 import { exportProjectJson, exportChapterYaml } from '../lib/projectUtils';
 
+export type WorkspaceNavMode = 'graph' | 'stage' | 'ui' | 'code' | 'ai';
+
 interface MenuBarProps {
   project: VNProject;
   selectedChapterId: string;
+  activeNav: WorkspaceNavMode;
+  onSelectNav: (nav: WorkspaceNavMode) => void;
   canUndo: boolean;
   canRedo: boolean;
   onUndo: () => void;
@@ -25,13 +27,23 @@ interface MenuBarProps {
   onStartPreview: () => void;
   onOpenExportModal: () => void;
   onFloatPanel: (panelId: PanelId) => void;
-  onMovePanelToDock: (panelId: PanelId, zone: DockZoneId) => void;
+  onMovePanelToDock?: (panelId: PanelId, zone: DockZoneId) => void;
   onResetLayout: () => void;
 }
+
+const NAV_ITEMS: { id: WorkspaceNavMode; label: string }[] = [
+  { id: 'graph', label: '流程图' },
+  { id: 'stage', label: '舞台' },
+  { id: 'ui', label: '界面' },
+  { id: 'code', label: '脚本' },
+  { id: 'ai', label: 'AI' },
+];
 
 export const MenuBar: React.FC<MenuBarProps> = ({
   project,
   selectedChapterId,
+  activeNav,
+  onSelectNav,
   canUndo,
   canRedo,
   onUndo,
@@ -43,7 +55,7 @@ export const MenuBar: React.FC<MenuBarProps> = ({
   onFloatPanel,
   onResetLayout,
 }) => {
-  const [openMenu, setOpenMenu] = useState<'file' | 'edit' | 'window' | null>(null);
+  const [openMenu, setOpenMenu] = useState<'file' | 'window' | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const menuContainerRef = useRef<HTMLDivElement>(null);
 
@@ -68,7 +80,7 @@ export const MenuBar: React.FC<MenuBarProps> = ({
           onImportProject(parsed);
         }
       } catch {
-        alert('导入失败：请检查工程文件格式');
+        alert('工程文件格式无效');
       }
     };
     reader.readAsText(file);
@@ -76,150 +88,87 @@ export const MenuBar: React.FC<MenuBarProps> = ({
   };
 
   return (
-    <header className="h-9 bg-[#1f1f23] border-b border-[#2b2b30] px-2 flex items-center justify-between select-none shrink-0 z-40 text-xs">
-      {/* Left: Pure VS Code Menu Items (NO project name in top-left!) */}
+    <header className="h-10 bg-[#161619] border-b border-[#27272c] px-3 flex items-center justify-between select-none shrink-0 z-40 text-xs">
+      {/* Left: Menus + Monochrome Undo/Redo Icons (No project name in top-left!) */}
       <div className="flex items-center gap-1" ref={menuContainerRef}>
-        {/* 文件 Menu */}
         <div className="relative">
           <button
             onClick={() => setOpenMenu(openMenu === 'file' ? null : 'file')}
             className={`px-2.5 py-1 rounded text-xs transition ${
               openMenu === 'file'
-                ? 'bg-[#37373d] text-white'
-                : 'text-[#cccccc] hover:bg-[#2a2d2e] hover:text-white'
+                ? 'bg-[#27272c] text-zinc-100'
+                : 'text-zinc-400 hover:bg-[#222227] hover:text-zinc-100'
             }`}
           >
-            文件(F)
+            文件
           </button>
           {openMenu === 'file' && (
-            <div className="absolute left-0 top-full mt-1 w-52 rounded-md bg-[#252526] border border-[#454545] shadow-2xl py-1 z-50 text-xs">
+            <div className="absolute left-0 top-full mt-1 w-44 rounded-md bg-[#1c1c20] border border-[#2e2e34] shadow-2xl py-1 z-50 text-xs">
               <button
                 onClick={() => {
                   fileInputRef.current?.click();
                   setOpenMenu(null);
                 }}
-                className="w-full px-3 py-1.5 text-left text-[#cccccc] hover:bg-[#04395e] hover:text-white flex items-center gap-2"
+                className="w-full px-3 py-1.5 text-left text-zinc-300 hover:bg-[#27272c] hover:text-white flex items-center gap-2"
               >
-                <FolderOpen className="w-3.5 h-3.5 text-sky-400" />
-                打开工程 (.json)...
+                <FolderOpen className="w-3.5 h-3.5 text-zinc-400" strokeWidth={1.6} />
+                打开工程
               </button>
               <button
                 onClick={() => {
                   exportProjectJson(project);
                   setOpenMenu(null);
                 }}
-                className="w-full px-3 py-1.5 text-left text-[#cccccc] hover:bg-[#04395e] hover:text-white flex items-center gap-2"
+                className="w-full px-3 py-1.5 text-left text-zinc-300 hover:bg-[#27272c] hover:text-white flex items-center gap-2"
               >
-                <FileDown className="w-3.5 h-3.5 text-emerald-400" />
-                保存工程快照 (.json)
+                <Download className="w-3.5 h-3.5 text-zinc-400" strokeWidth={1.6} />
+                保存 JSON
               </button>
               <button
                 onClick={() => {
                   exportChapterYaml(project, selectedChapterId);
                   setOpenMenu(null);
                 }}
-                className="w-full px-3 py-1.5 text-left text-[#cccccc] hover:bg-[#04395e] hover:text-white flex items-center gap-2"
+                className="w-full px-3 py-1.5 text-left text-zinc-300 hover:bg-[#27272c] hover:text-white flex items-center gap-2"
               >
-                <FileSpreadsheet className="w-3.5 h-3.5 text-amber-400" />
-                导出当前章节 (.yaml)
+                <Download className="w-3.5 h-3.5 text-zinc-400" strokeWidth={1.6} />
+                导出章节 YAML
               </button>
-              <div className="my-1 border-t border-[#3c3c3c]" />
-              <button
-                onClick={() => {
-                  onOpenExportModal();
-                  setOpenMenu(null);
-                }}
-                className="w-full px-3 py-1.5 text-left text-[#cccccc] hover:bg-[#04395e] hover:text-white flex items-center gap-2"
-              >
-                <Smartphone className="w-3.5 h-3.5 text-purple-400" />
-                多平台游戏构建导出...
-              </button>
-              <div className="my-1 border-t border-[#3c3c3c]" />
+              <div className="my-1 border-t border-[#27272c]" />
               <button
                 onClick={() => {
                   onResetDefault();
                   setOpenMenu(null);
                 }}
-                className="w-full px-3 py-1.5 text-left text-rose-300 hover:bg-rose-500/20 flex items-center gap-2"
+                className="w-full px-3 py-1.5 text-left text-zinc-400 hover:bg-[#27272c] hover:text-white flex items-center gap-2"
               >
-                <RotateCcw className="w-3.5 h-3.5" />
-                重置为默认完整工程
+                <RotateCcw className="w-3.5 h-3.5 text-zinc-400" strokeWidth={1.6} />
+                重置工程
               </button>
             </div>
           )}
         </div>
 
-        {/* 编辑 Menu */}
-        <div className="relative">
-          <button
-            onClick={() => setOpenMenu(openMenu === 'edit' ? null : 'edit')}
-            className={`px-2.5 py-1 rounded text-xs transition ${
-              openMenu === 'edit'
-                ? 'bg-[#37373d] text-white'
-                : 'text-[#cccccc] hover:bg-[#2a2d2e] hover:text-white'
-            }`}
-          >
-            编辑(E)
-          </button>
-          {openMenu === 'edit' && (
-            <div className="absolute left-0 top-full mt-1 w-44 rounded-md bg-[#252526] border border-[#454545] shadow-2xl py-1 z-50 text-xs">
-              <button
-                disabled={!canUndo}
-                onClick={() => {
-                  onUndo();
-                  setOpenMenu(null);
-                }}
-                className="w-full px-3 py-1.5 text-left text-[#cccccc] hover:bg-[#04395e] hover:text-white disabled:opacity-35 flex items-center justify-between"
-              >
-                <span className="flex items-center gap-2">
-                  <Undo2 className="w-3.5 h-3.5" />
-                  撤销
-                </span>
-                <span className="text-[10px] text-slate-400">Ctrl+Z</span>
-              </button>
-              <button
-                disabled={!canRedo}
-                onClick={() => {
-                  onRedo();
-                  setOpenMenu(null);
-                }}
-                className="w-full px-3 py-1.5 text-left text-[#cccccc] hover:bg-[#04395e] hover:text-white disabled:opacity-35 flex items-center justify-between"
-              >
-                <span className="flex items-center gap-2">
-                  <Redo2 className="w-3.5 h-3.5" />
-                  重做
-                </span>
-                <span className="text-[10px] text-slate-400">Ctrl+Y</span>
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* 窗口与布局 Menu */}
         <div className="relative">
           <button
             onClick={() => setOpenMenu(openMenu === 'window' ? null : 'window')}
             className={`px-2.5 py-1 rounded text-xs transition ${
               openMenu === 'window'
-                ? 'bg-[#37373d] text-white'
-                : 'text-[#cccccc] hover:bg-[#2a2d2e] hover:text-white'
+                ? 'bg-[#27272c] text-zinc-100'
+                : 'text-zinc-400 hover:bg-[#222227] hover:text-zinc-100'
             }`}
           >
-            窗口与布局(W)
+            窗口
           </button>
           {openMenu === 'window' && (
-            <div className="absolute left-0 top-full mt-1 w-56 rounded-md bg-[#252526] border border-[#454545] shadow-2xl py-1 z-50 text-xs">
-              <div className="px-3 py-1 text-[10px] text-slate-400">
-                任意面板均可拖拽至左/中/右/底分栏或弹出为自由移动窗口
-              </div>
-              <div className="my-1 border-t border-[#3c3c3c]" />
+            <div className="absolute left-0 top-full mt-1 w-44 rounded-md bg-[#1c1c20] border border-[#2e2e34] shadow-2xl py-1 z-50 text-xs">
               {(
                 [
-                  ['stage', '弹出「舞台预览」为自由窗口'],
-                  ['ui_customizer', '弹出「游戏UI自定义」为自由窗口'],
-                  ['inspector', '弹出「属性检查器」为自由窗口'],
-                  ['ai_agent', '弹出「AI 助手」为自由窗口'],
-                  ['explorer', '弹出「资源管理器」为自由窗口'],
+                  ['stage', '浮动：舞台'],
+                  ['ui_customizer', '浮动：界面'],
+                  ['inspector', '浮动：属性'],
+                  ['ai_agent', '浮动：AI'],
+                  ['explorer', '浮动：资源'],
                 ] as const
               ).map(([id, label]) => (
                 <button
@@ -228,26 +177,43 @@ export const MenuBar: React.FC<MenuBarProps> = ({
                     onFloatPanel(id);
                     setOpenMenu(null);
                   }}
-                  className="w-full px-3 py-1.5 text-left text-[#cccccc] hover:bg-[#04395e] hover:text-white flex items-center gap-2"
+                  className="w-full px-3 py-1.5 text-left text-zinc-300 hover:bg-[#27272c] hover:text-white"
                 >
-                  <LayoutGrid className="w-3.5 h-3.5 text-sky-400" />
                   {label}
                 </button>
               ))}
-              <div className="my-1 border-t border-[#3c3c3c]" />
+              <div className="my-1 border-t border-[#27272c]" />
               <button
                 onClick={() => {
                   onResetLayout();
                   setOpenMenu(null);
                 }}
-                className="w-full px-3 py-1.5 text-left text-amber-300 hover:bg-[#04395e] flex items-center gap-2"
+                className="w-full px-3 py-1.5 text-left text-zinc-400 hover:bg-[#27272c] hover:text-white"
               >
-                <RotateCcw className="w-3.5 h-3.5" />
-                重置工作台窗口布局
+                重置布局
               </button>
             </div>
           )}
         </div>
+
+        <div className="h-3.5 w-px bg-[#27272c] mx-1" />
+
+        <button
+          disabled={!canUndo}
+          onClick={onUndo}
+          className="icon-btn"
+          title="撤销 (Ctrl+Z)"
+        >
+          <Undo2 className="w-3.5 h-3.5" strokeWidth={1.6} />
+        </button>
+        <button
+          disabled={!canRedo}
+          onClick={onRedo}
+          className="icon-btn"
+          title="重做 (Ctrl+Y)"
+        >
+          <Redo2 className="w-3.5 h-3.5" strokeWidth={1.6} />
+        </button>
 
         <input
           ref={fileInputRef}
@@ -258,23 +224,44 @@ export const MenuBar: React.FC<MenuBarProps> = ({
         />
       </div>
 
-      {/* Right: Multi-Platform Build & Play Actions */}
-      <div className="flex items-center gap-2">
+      {/* Center: Clean Primary Navigation Bar (导航栏) */}
+      <nav className="flex items-center bg-[#111113] border border-[#27272c] rounded-lg p-0.5 gap-0.5">
+        {NAV_ITEMS.map((item) => {
+          const active = activeNav === item.id;
+          return (
+            <button
+              key={item.id}
+              onClick={() => onSelectNav(item.id)}
+              className={`px-3.5 py-1 rounded-md text-xs font-medium transition ${
+                active
+                  ? 'bg-[#27272c] text-white shadow-sm'
+                  : 'text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              {item.label}
+            </button>
+          );
+        })}
+      </nav>
+
+      {/* Right: Concise Monochrome Export & Run Buttons */}
+      <div className="flex items-center gap-1.5">
         <button
           onClick={onOpenExportModal}
-          className="flex items-center gap-1.5 px-3 py-1 rounded bg-[#2a2d2e] hover:bg-[#37373d] text-slate-100 border border-[#3c3c3c] text-xs font-medium transition"
-          title="支持导出 Android / Windows / macOS / iOS / Web"
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-[#202025] hover:bg-[#27272c] text-zinc-200 border border-[#2e2e34] text-xs transition"
+          title="多平台打包导出 (Android / Windows / macOS / iOS / Web)"
         >
-          <Smartphone className="w-3.5 h-3.5 text-emerald-400" />
-          多平台打包 (Android / PC / iOS)
+          <Share className="w-3.5 h-3.5 text-zinc-400" strokeWidth={1.6} />
+          <span>导出</span>
         </button>
 
         <button
           onClick={onStartPreview}
-          className="flex items-center gap-1.5 px-3.5 py-1 rounded bg-[#007acc] hover:bg-[#1f8ad2] text-white text-xs font-semibold transition"
+          className="flex items-center gap-1.5 px-3 py-1 rounded-md bg-zinc-100 hover:bg-white text-zinc-950 text-xs font-semibold transition"
+          title="运行游戏"
         >
-          <Play className="w-3.5 h-3.5 fill-current" />
-          运行游戏
+          <Play className="w-3 h-3 fill-current" strokeWidth={1.6} />
+          <span>运行</span>
         </button>
       </div>
     </header>

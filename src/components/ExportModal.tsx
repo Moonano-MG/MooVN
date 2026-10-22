@@ -1,14 +1,5 @@
 import React, { useState } from 'react';
-import {
-  X,
-  Smartphone,
-  Monitor,
-  Apple,
-  Globe,
-  Download,
-  CheckCircle2,
-  PackageCheck,
-} from 'lucide-react';
+import { X, Smartphone, Monitor, Apple, Globe, Download, Check } from 'lucide-react';
 import { ExportPlatform, VNProject } from '../types';
 import { exportPlatformPackage } from '../lib/gamePackager';
 
@@ -21,43 +12,37 @@ const PLATFORMS: {
   id: ExportPlatform;
   name: string;
   badge: string;
-  desc: string;
   icon: React.ReactNode;
 }[] = [
   {
     id: 'android',
-    name: 'Android 移动端',
-    badge: 'APK / AAB / 触屏运行时',
-    desc: '生成 Android 原生构建包（含 AndroidManifest.xml、横屏触控锁定、Tauri/Capacitor APK 构建脚本与移动端独立运行时）',
-    icon: <Smartphone className="w-5 h-5 text-emerald-400" />,
+    name: 'Android',
+    badge: 'APK / AAB 触屏包',
+    icon: <Smartphone className="w-4 h-4" strokeWidth={1.6} />,
   },
   {
     id: 'windows',
-    name: 'Windows 桌面端',
-    badge: 'Windows 10/11 x64 (.exe / MSI)',
-    desc: '生成 Windows 桌面端原生工程包与一键构建脚本（支持 NSIS 安装程序与免安装便携运行包）',
-    icon: <Monitor className="w-5 h-5 text-sky-400" />,
+    name: 'Windows',
+    badge: 'x64 (.exe / MSI)',
+    icon: <Monitor className="w-4 h-4" strokeWidth={1.6} />,
   },
   {
     id: 'macos',
-    name: 'macOS 桌面端',
-    badge: 'Apple Silicon & Intel (.dmg / .app)',
-    desc: '生成 macOS Universal 通用架构应用包与签名构建配置',
-    icon: <Apple className="w-5 h-5 text-slate-200" />,
+    name: 'macOS',
+    badge: 'Universal (.dmg)',
+    icon: <Apple className="w-4 h-4" strokeWidth={1.6} />,
   },
   {
     id: 'ios',
-    name: 'iOS / iPadOS 移动端',
-    badge: 'iPhone & iPad (.ipa / Xcode)',
-    desc: '生成 iOS 全屏横屏视觉小说工程配置与构建清单',
-    icon: <Smartphone className="w-5 h-5 text-purple-400" />,
+    name: 'iOS',
+    badge: 'iPhone / iPad (.ipa)',
+    icon: <Smartphone className="w-4 h-4" strokeWidth={1.6} />,
   },
   {
     id: 'web',
-    name: 'Web 全平台独立包',
-    badge: 'PC & Mobile H5',
-    desc: '导出零依赖单文件可运行视觉小说游戏（自动剔除编辑器与开发者调试面板）',
-    icon: <Globe className="w-5 h-5 text-amber-400" />,
+    name: 'Web',
+    badge: 'H5 独立单文件',
+    icon: <Globe className="w-4 h-4" strokeWidth={1.6} />,
   },
 ];
 
@@ -84,27 +69,19 @@ export const ExportModal: React.FC<ExportModalProps> = ({ project, onClose }) =>
 
   return (
     <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 select-none">
-      <div className="w-full max-w-3xl bg-[#1e1e1e] border border-[#3c3c3c] rounded-xl shadow-2xl overflow-hidden flex flex-col">
+      <div className="w-full max-w-xl bg-[#161619] border border-[#27272c] rounded-lg shadow-2xl overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-3.5 bg-[#252526] border-b border-[#333333]">
-          <div className="flex items-center gap-2.5">
-            <PackageCheck className="w-5 h-5 text-[#007acc]" />
-            <span className="text-sm font-bold text-white">多平台游戏打包与构建中心</span>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-1 rounded text-slate-400 hover:text-white hover:bg-[#333333]"
-          >
-            <X className="w-4 h-4" />
+        <div className="flex items-center justify-between px-4 py-2.5 bg-[#121215] border-b border-[#27272c]">
+          <span className="text-xs font-medium text-zinc-200">导出发布包</span>
+          <button onClick={onClose} className="icon-btn" title="关闭">
+            <X className="w-3.5 h-3.5" strokeWidth={1.6} />
           </button>
         </div>
 
-        <div className="grid grid-cols-12 min-h-[410px]">
-          {/* Left: Platform Selector */}
-          <div className="col-span-5 bg-[#18181b] border-r border-[#2b2b30] p-3 space-y-2">
-            <div className="text-[11px] font-semibold text-slate-400 px-1 mb-1">
-              选择目标发布平台
-            </div>
+        {/* Body */}
+        <div className="p-4 grid grid-cols-12 gap-4 text-xs">
+          {/* Left: Platform list */}
+          <div className="col-span-5 space-y-1.5">
             {PLATFORMS.map((p) => (
               <button
                 key={p.id}
@@ -112,124 +89,95 @@ export const ExportModal: React.FC<ExportModalProps> = ({ project, onClose }) =>
                   setSelectedPlatform(p.id);
                   setExportedPlatform(null);
                 }}
-                className={`w-full flex items-start gap-3 p-2.5 rounded-lg border text-left transition ${
+                className={`w-full px-3 py-2 rounded-md border text-left transition flex items-center gap-2.5 ${
                   selectedPlatform === p.id
-                    ? 'bg-[#094771]/45 border-[#007acc] text-white'
-                    : 'bg-[#202024] border-[#2b2b30] text-slate-300 hover:border-slate-600'
+                    ? 'bg-zinc-200 text-zinc-950 border-zinc-200 font-medium'
+                    : 'bg-[#1c1c20] border-[#27272c] text-zinc-300 hover:border-zinc-500'
                 }`}
               >
-                <div className="mt-0.5 shrink-0">{p.icon}</div>
+                <span className="shrink-0">{p.icon}</span>
                 <div className="min-w-0 flex-1">
-                  <div className="text-xs font-bold">{p.name}</div>
-                  <div className="text-[10px] text-sky-400 mt-0.5">{p.badge}</div>
+                  <div className="text-xs leading-tight">{p.name}</div>
+                  <div
+                    className={`text-[10px] truncate ${
+                      selectedPlatform === p.id ? 'text-zinc-700' : 'text-zinc-500'
+                    }`}
+                  >
+                    {p.badge}
+                  </div>
                 </div>
               </button>
             ))}
           </div>
 
-          {/* Right: Configuration */}
-          <div className="col-span-7 p-5 flex flex-col justify-between space-y-4">
-            <div className="space-y-4">
-              {(() => {
-                const active = PLATFORMS.find((p) => p.id === selectedPlatform)!;
-                return (
-                  <div className="p-3 rounded-lg bg-[#252526] border border-[#333333]">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-white">{active.name}</span>
-                      <span className="text-[10px] px-2 py-0.5 rounded bg-[#007acc]/20 text-sky-300 border border-[#007acc]/40">
-                        {active.badge}
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-slate-400 mt-1.5 leading-relaxed">
-                      {active.desc}
-                    </p>
-                  </div>
-                );
-              })()}
+          {/* Right: Config */}
+          <div className="col-span-7 flex flex-col justify-between space-y-3">
+            <div className="p-3 rounded-md bg-[#1c1c20] border border-[#27272c] space-y-2.5">
+              <div>
+                <div className="text-[10px] text-zinc-500 mb-1">应用名称</div>
+                <input
+                  type="text"
+                  value={appName}
+                  onChange={(e) => setAppName(e.target.value)}
+                  className="w-full px-2.5 py-1.5"
+                />
+              </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block text-[11px] text-slate-400 mb-1">
-                    应用名称 (App Name)
-                  </label>
-                  <input
-                    type="text"
-                    value={appName}
-                    onChange={(e) => setAppName(e.target.value)}
-                    className="w-full bg-[#252526] border border-[#3c3c3c] rounded px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-[#007acc]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] text-slate-400 mb-1">
-                    包名标识 (Package / Bundle ID)
-                  </label>
+                  <div className="text-[10px] text-zinc-500 mb-1">包名 (Bundle ID)</div>
                   <input
                     type="text"
                     value={packageId}
                     onChange={(e) => setPackageId(e.target.value)}
-                    className="w-full bg-[#252526] border border-[#3c3c3c] rounded px-2.5 py-1.5 text-xs text-white font-mono focus:outline-none focus:border-[#007acc]"
+                    className="w-full px-2 py-1.5 font-mono"
                   />
                 </div>
                 <div>
-                  <label className="block text-[11px] text-slate-400 mb-1">发行版本号</label>
+                  <div className="text-[10px] text-zinc-500 mb-1">版本号</div>
                   <input
                     type="text"
                     value={version}
                     onChange={(e) => setVersion(e.target.value)}
-                    className="w-full bg-[#252526] border border-[#3c3c3c] rounded px-2.5 py-1.5 text-xs text-white font-mono focus:outline-none focus:border-[#007acc]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] text-slate-400 mb-1">画面标准分辨率</label>
-                  <input
-                    type="text"
-                    readOnly
-                    value={`${project.resolution.width} × ${project.resolution.height} (16:9 HD)`}
-                    className="w-full bg-[#18181b] border border-[#2b2b30] rounded px-2.5 py-1.5 text-xs text-slate-400"
+                    className="w-full px-2 py-1.5 font-mono"
                   />
                 </div>
               </div>
 
-              <div className="space-y-2 pt-1">
-                <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={landscapeLock}
-                    onChange={(e) => setLandscapeLock(e.target.checked)}
-                    className="accent-[#007acc]"
-                  />
-                  <span>移动端强制横屏沉浸模式（Android / iOS Landscape Lock）</span>
-                </label>
-                <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+              <div className="flex items-center gap-3 pt-1">
+                <label className="flex items-center gap-1.5 text-[11px] text-zinc-300 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={fullscreen}
                     onChange={(e) => setFullscreen(e.target.checked)}
-                    className="accent-[#007acc]"
                   />
-                  <span>正式发行版自动剥离「开发者调试」面板与编辑器调试信息</span>
+                  <span>默认全屏</span>
+                </label>
+                <label className="flex items-center gap-1.5 text-[11px] text-zinc-300 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={landscapeLock}
+                    onChange={(e) => setLandscapeLock(e.target.checked)}
+                  />
+                  <span>横屏锁定</span>
                 </label>
               </div>
             </div>
 
-            <div className="pt-3 border-t border-[#2b2b30] flex items-center justify-between">
-              {exportedPlatform === selectedPlatform ? (
-                <div className="flex items-center gap-1.5 text-xs text-emerald-400">
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>已生成并下载 {selectedPlatform.toUpperCase()} 平台发行包！</span>
-                </div>
-              ) : (
-                <div className="text-[11px] text-slate-500">
-                  同时支持通过仓库 GitHub Actions 自动编译全平台安装包
+            <div className="space-y-2">
+              {exportedPlatform === selectedPlatform && (
+                <div className="px-2.5 py-1.5 rounded bg-[#1c1c20] border border-[#27272c] text-zinc-300 text-[11px] flex items-center gap-1.5">
+                  <Check className="w-3.5 h-3.5" strokeWidth={1.8} />
+                  <span>已开始下载 {selectedPlatform.toUpperCase()} 构建包</span>
                 </div>
               )}
 
               <button
                 onClick={handleExport}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#007acc] hover:bg-[#1f8ad2] text-white text-xs font-bold transition shadow-lg"
+                className="w-full py-2 rounded-md bg-zinc-200 hover:bg-white text-zinc-950 font-medium text-xs transition flex items-center justify-center gap-1.5"
               >
-                <Download className="w-4 h-4" />
-                导出 {PLATFORMS.find((p) => p.id === selectedPlatform)?.name} 发行包
+                <Download className="w-3.5 h-3.5" strokeWidth={1.8} />
+                导出 {PLATFORMS.find((p) => p.id === selectedPlatform)?.name}
               </button>
             </div>
           </div>
