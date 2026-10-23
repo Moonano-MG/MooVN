@@ -58,17 +58,24 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
   onAddNode,
   onDeleteNode,
 }) => {
-  const [ isMobileViewport, setIsMobileViewport ] = useState<boolean>(() =>
-    typeof window !== 'undefined' ? window.innerWidth < 768 : false
-  );
-  // On mobile (<768px), default to 'flow' (Touch Card Flow) so users can effortlessly edit, connect, and add nodes with one thumb; can switch to 'canvas' (2D Free Canvas) anytime.
+  const checkMobileViewport = () => {
+    if (typeof window === 'undefined') return false;
+    const touchUA = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '');
+    const coarse = window.matchMedia?.('(pointer: coarse)').matches;
+    return (
+      window.innerWidth < 960 ||
+      window.innerHeight < 540 ||
+      (touchUA && window.innerWidth < 1280) ||
+      Boolean(coarse && window.innerWidth < 1100)
+    );
+  };
+
+  const [isMobileViewport, setIsMobileViewport] = useState<boolean>(checkMobileViewport);
   const [mobileViewMode, setMobileViewMode] = useState<'flow' | 'canvas'>(() =>
-    typeof window !== 'undefined' && window.innerWidth < 768 ? 'flow' : 'canvas'
+    checkMobileViewport() ? 'flow' : 'canvas'
   );
 
-  const [zoom, setZoom] = useState(() =>
-    typeof window !== 'undefined' && window.innerWidth < 768 ? 0.72 : 0.92
-  );
+  const [zoom, setZoom] = useState(() => (checkMobileViewport() ? 0.72 : 0.92));
   const [pan, setPan] = useState({ x: 24, y: 48 });
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
@@ -87,7 +94,7 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
 
   useEffect(() => {
     const onResize = () => {
-      const mobile = window.innerWidth < 768;
+      const mobile = checkMobileViewport();
       setIsMobileViewport(mobile);
     };
     window.addEventListener('resize', onResize);
