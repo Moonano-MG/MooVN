@@ -1,672 +1,814 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Download,
   ExternalLink,
-  Play,
-  ChevronDown,
-  ChevronRight,
+  Globe,
+  HelpCircle,
+  Monitor,
+  Smartphone,
+  Apple,
+  Terminal,
   Code2,
+  Package,
+  FileArchive,
+  Layers,
+  Sparkles,
+  ShieldCheck,
+  Maximize2,
+  X,
+  Cpu,
+  Workflow,
+  AlertTriangle,
 } from 'lucide-react';
 
-const GITHUB_OWNER = 'Moonano-MG';
-const GITHUB_REPO = 'MooVN';
-const GITHUB_REPO_URL = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}`;
-const GITHUB_ISSUES_URL = `${GITHUB_REPO_URL}/issues`;
-
-export type ReleaseChannel = 'Stable' | 'Beta' | 'Alpha' | 'Dev';
-
-export type PlatformKey = 'Windows' | 'Android' | 'iOS' | 'macOS' | 'Linux';
-
-export interface ArchVariant {
-  arch: string;
-  installUrl?: string;
-  installSize?: number;
-  zipUrl?: string;
-  zipSize?: number;
-  directUrl?: string;
-  directSize?: number;
-}
-
-export interface ParsedReleaseItem {
-  id: number | string;
-  tagName: string;
-  name: string;
-  channel: ReleaseChannel;
-  publishedAt: string;
-  htmlUrl: string;
-  zipballUrl: string;
-  tarballUrl: string;
-  platforms: Record<PlatformKey, ArchVariant[]>;
-}
-
 interface OfficialPortalProps {
-  onLaunchWebStudio: () => void;
+  onEnterStudio?: () => void;
 }
 
-const PLATFORM_ORDER: PlatformKey[] = [
-  'Windows',
-  'Android',
-  'iOS',
-  'macOS',
-  'Linux',
+interface IpRateStatus {
+  ipMasked: string;
+  allowed: boolean;
+  downloadRemaining: number;
+  downloadLimit: number;
+  resetInSeconds: number;
+  error?: string;
+}
+
+const EDITOR_SCREENSHOTS = [
+  {
+    id: 'workbench',
+    title: '多维分栏创作工作台',
+    badge: '可视化节点 + 实时舞台 + 脚本同步',
+    src: '/screenshots/editor-workbench.png',
+    desc: '在一个窗口内同时编排剧情节点画布、预览 16:9 场景舞台立绘演出、调节角色好感度属性并实时生成多语言脚本。',
+    highlights: ['自由拖拽与多向分栏布局', '角色立绘与差分表情实时舞台预览', '好感度与自定义属性检查器'],
+  },
+  {
+    id: 'nodes',
+    title: '凹槽逻辑积木与 55 类专用节点',
+    badge: '9 大色系分类 · 多层循环与条件嵌套',
+    src: '/screenshots/editor-nodes-scratch.png',
+    desc: '内置 9 大色系 55 种视觉小说专用节点，支持重复执行循环、条件判断分支等凹槽容器的多层嵌套与可视化连线。',
+    highlights: ['55 种视觉小说叙事与演出节点', '支持多层循环与条件分支容器嵌套', '支持独立游戏包、章节包与工程导出'],
+  },
+  {
+    id: 'stage',
+    title: '16:9 蓝色经典视觉小说舞台与分支交互',
+    badge: '高清立绘合成 · 选项分支 · 存档系统',
+    src: '/screenshots/editor-stage-preview.png',
+    desc: '内置 16:9 蓝色经典游戏界面模板，支持多角色透明立绘叠加、左上方单行自适应分支选项、自动/快进与多页签存档。',
+    highlights: ['16:9 响应式蓝色经典对话框模板', '多角色立绘位置拖拽与滤镜特效', '多文件夹页签存档与读档界面'],
+  },
 ];
 
-const DEFAULT_ARCH_SUMMARY: Record<PlatformKey, string> = {
-  Windows: 'ARM64、x64、x86',
-  Android: 'ARM64-v8a、ARMv7a、x86_64',
-  iOS: 'ARM64',
-  macOS: 'ARM64、x64',
-  Linux: 'x64、ARM64',
-};
+export const OfficialPortal: React.FC<OfficialPortalProps> = () => {
+  const repoUrl = 'https://github.com/Moonano-MG/MooVN';
+  const branchTreeUrl = 'https://github.com/Moonano-MG/MooVN/tree/v0.1.0-dev';
+  const studioFolderUrl = 'https://github.com/Moonano-MG/MooVN/tree/v0.1.0-dev/MooVN%20Studio';
+  const sourceZipUrl =
+    'https://codeload.github.com/Moonano-MG/MooVN/zip/refs/heads/v0.1.0-dev';
 
-function detectChannel(tag: string, name: string, prerelease: boolean): ReleaseChannel {
-  const text = `${tag} ${name}`.toLowerCase();
-  if (text.includes('alpha')) return 'Alpha';
-  if (text.includes('beta') || text.includes('rc')) return 'Beta';
-  if (text.includes('dev') || text.includes('nightly')) return 'Dev';
-  if (text.includes('stable')) return 'Stable';
-  return prerelease ? 'Alpha' : 'Stable';
-}
-
-function parseAssetsIntoPlatforms(
-  assets: Array<{
-    name: string;
-    size: number;
-    browser_download_url: string;
-  }>
-): Record<PlatformKey, ArchVariant[]> {
-  const windowsMap: Record<string, ArchVariant> = {
-    ARM64: { arch: 'ARM64' },
-    x64: { arch: 'x64' },
-    x86: { arch: 'x86' },
-  };
-  const androidList: ArchVariant[] = [];
-  const iosList: ArchVariant[] = [];
-  const macosList: ArchVariant[] = [];
-  const linuxList: ArchVariant[] = [];
-
-  for (const a of assets || []) {
-    const lower = a.name.toLowerCase();
-    const isZip = lower.endsWith('.zip') || lower.endsWith('.7z') || lower.includes('portable');
-
-    // Windows
-    if (
-      lower.includes('win') ||
-      lower.endsWith('.exe') ||
-      lower.endsWith('.msi')
-    ) {
-      let arch: 'ARM64' | 'x64' | 'x86' = 'x64';
-      if (lower.includes('arm64') || lower.includes('aarch64')) {
-        arch = 'ARM64';
-      } else if (
-        lower.includes('x86') ||
-        lower.includes('ia32') ||
-        lower.includes('i686') ||
-        lower.includes('win32')
-      ) {
-        arch = 'x86';
-      }
-      if (isZip) {
-        windowsMap[arch].zipUrl = a.browser_download_url;
-        windowsMap[arch].zipSize = a.size;
-      } else {
-        windowsMap[arch].installUrl = a.browser_download_url;
-        windowsMap[arch].installSize = a.size;
-      }
-      continue;
-    }
-
-    // Android
-    if (lower.includes('android') || lower.endsWith('.apk') || lower.endsWith('.aab')) {
-      let arch = 'ARM64-v8a';
-      if (lower.includes('armv7') || lower.includes('armeabi')) arch = 'ARMv7a';
-      else if (lower.includes('x86_64') || lower.includes('x86')) arch = 'x86_64';
-      androidList.push({
-        arch,
-        directUrl: a.browser_download_url,
-        directSize: a.size,
-      });
-      continue;
-    }
-
-    // iOS
-    if (lower.includes('ios') || lower.endsWith('.ipa')) {
-      iosList.push({
-        arch: 'ARM64',
-        directUrl: a.browser_download_url,
-        directSize: a.size,
-      });
-      continue;
-    }
-
-    // macOS
-    if (
-      lower.includes('mac') ||
-      lower.includes('darwin') ||
-      lower.includes('osx') ||
-      lower.endsWith('.dmg') ||
-      lower.endsWith('.app.tar.gz')
-    ) {
-      const arch =
-        lower.includes('arm64') || lower.includes('aarch64')
-          ? 'ARM64'
-          : 'x64';
-      macosList.push({
-        arch,
-        directUrl: a.browser_download_url,
-        directSize: a.size,
-      });
-      continue;
-    }
-
-    // Linux
-    if (
-      lower.includes('linux') ||
-      lower.endsWith('.appimage') ||
-      lower.endsWith('.deb') ||
-      lower.endsWith('.rpm') ||
-      lower.endsWith('.tar.gz')
-    ) {
-      const arch =
-        lower.includes('arm64') || lower.includes('aarch64')
-          ? 'ARM64'
-          : 'x64';
-      linuxList.push({
-        arch,
-        directUrl: a.browser_download_url,
-        directSize: a.size,
-      });
-    }
-  }
-
-  return {
-    Windows: [windowsMap.ARM64, windowsMap.x64, windowsMap.x86],
-    Android:
-      androidList.length > 0
-        ? androidList
-        : [{ arch: 'ARM64-v8a' }, { arch: 'ARMv7a' }, { arch: 'x86_64' }],
-    iOS: iosList.length > 0 ? iosList : [{ arch: 'ARM64' }],
-    macOS:
-      macosList.length > 0
-        ? macosList
-        : [{ arch: 'ARM64' }, { arch: 'x64' }],
-    Linux:
-      linuxList.length > 0
-        ? linuxList
-        : [{ arch: 'x64' }, { arch: 'ARM64' }],
-  };
-}
-
-const EMPTY_PLATFORMS: Record<PlatformKey, ArchVariant[]> = {
-  Windows: [{ arch: 'ARM64' }, { arch: 'x64' }, { arch: 'x86' }],
-  Android: [{ arch: 'ARM64-v8a' }, { arch: 'ARMv7a' }, { arch: 'x86_64' }],
-  iOS: [{ arch: 'ARM64' }],
-  macOS: [{ arch: 'ARM64' }, { arch: 'x64' }],
-  Linux: [{ arch: 'x64' }, { arch: 'ARM64' }],
-};
-
-/**
- * 平台折叠下载列表：
- * 严格按顺序：Windows (ARM64、x64、x86，含 Install 与 ZIP 两种方式) -> Android -> iOS -> macOS -> Linux -> 源代码
- */
-const PlatformDownloadList: React.FC<{
-  release: ParsedReleaseItem | null;
-  defaultOpenWindows?: boolean;
-}> = ({ release, defaultOpenWindows = false }) => {
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({
-    Windows: defaultOpenWindows,
-    Android: false,
-    iOS: false,
-    macOS: false,
-    Linux: false,
+  const [activeShotIndex, setActiveShotIndex] = useState(0);
+  const [lightboxShot, setLightboxShot] = useState<(typeof EDITOR_SCREENSHOTS)[0] | null>(null);
+  const [rateStatus, setRateStatus] = useState<IpRateStatus>({
+    ipMasked: '检测中...',
+    allowed: true,
+    downloadRemaining: 6,
+    downloadLimit: 6,
+    resetInSeconds: 600,
   });
-
-  const platforms = release ? release.platforms : EMPTY_PLATFORMS;
-
-  const toggle = (key: string) => {
-    setExpanded((prev) => ({ ...prev, [key]: !prev[key] }));
-  };
-
-  return (
-    <div className="space-y-1.5">
-      {PLATFORM_ORDER.map((os) => {
-        const isOpen = !!expanded[os];
-        const variants = platforms[os] || [];
-
-        return (
-          <div
-            key={os}
-            className="rounded-lg bg-[#141418] border border-[#24242b] overflow-hidden"
-          >
-            <button
-              type="button"
-              onClick={() => toggle(os)}
-              className="w-full px-3.5 py-2.5 flex items-center justify-between text-left hover:bg-[#1b1b21] transition"
-            >
-              <div className="flex items-center gap-2 min-w-0">
-                {isOpen ? (
-                  <ChevronDown className="w-3.5 h-3.5 text-zinc-300 shrink-0" />
-                ) : (
-                  <ChevronRight className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
-                )}
-                <span className="text-xs font-semibold text-zinc-100">{os}:</span>
-                <span className="text-xs text-zinc-400 font-mono truncate">
-                  {DEFAULT_ARCH_SUMMARY[os]}
-                </span>
-              </div>
-              <span className="text-[11px] text-zinc-500 shrink-0 ml-2">
-                {release ? release.tagName : '待发布'}
-              </span>
-            </button>
-
-            {isOpen && (
-              <div className="px-3.5 pb-3 pt-2 border-t border-[#1f1f26]">
-                {os === 'Windows' ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                    {variants.map((v) => (
-                      <div
-                        key={v.arch}
-                        className="p-2.5 rounded-md bg-[#19191f] border border-[#272730] flex flex-col justify-between gap-2"
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-mono font-semibold text-zinc-100">
-                            Windows {v.arch}
-                          </span>
-                        </div>
-                        <div className="grid grid-cols-2 gap-1.5">
-                          {v.installUrl ? (
-                            <a
-                              href={v.installUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="px-2 py-1.5 rounded bg-zinc-100 hover:bg-white text-zinc-950 font-medium text-[11px] flex items-center justify-center gap-1 transition"
-                            >
-                              <Download className="w-3 h-3" />
-                              <span>Install</span>
-                            </a>
-                          ) : (
-                            <span className="px-2 py-1.5 rounded bg-[#222229] text-zinc-500 text-[11px] flex items-center justify-center gap-1 cursor-not-allowed">
-                              <Download className="w-3 h-3" />
-                              <span>Install</span>
-                            </span>
-                          )}
-
-                          {v.zipUrl ? (
-                            <a
-                              href={v.zipUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="px-2 py-1.5 rounded bg-[#24242c] hover:bg-[#2e2e38] border border-[#343440] text-zinc-100 font-medium text-[11px] flex items-center justify-center gap-1 transition"
-                            >
-                              <Download className="w-3 h-3" />
-                              <span>ZIP</span>
-                            </a>
-                          ) : (
-                            <span className="px-2 py-1.5 rounded bg-[#222229] text-zinc-500 text-[11px] flex items-center justify-center gap-1 cursor-not-allowed">
-                              <Download className="w-3 h-3" />
-                              <span>ZIP</span>
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="flex flex-wrap gap-2">
-                    {variants.map((v) =>
-                      v.directUrl ? (
-                        <a
-                          key={v.arch}
-                          href={v.directUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="px-3 py-1.5 rounded-md bg-[#1c1c23] hover:bg-[#262630] border border-[#2e2e3a] text-xs text-zinc-100 font-mono flex items-center gap-1.5 transition"
-                        >
-                          <Download className="w-3.5 h-3.5 text-zinc-300" />
-                          <span>{v.arch}</span>
-                        </a>
-                      ) : (
-                        <span
-                          key={v.arch}
-                          className="px-3 py-1.5 rounded-md bg-[#19191f] border border-[#24242c] text-xs text-zinc-500 font-mono flex items-center gap-1.5 cursor-not-allowed"
-                        >
-                          <Download className="w-3.5 h-3.5" />
-                          <span>{v.arch}</span>
-                        </span>
-                      )
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        );
-      })}
-
-      {/* 源代码 */}
-      <div className="pt-1 flex flex-wrap items-center justify-between gap-2 px-1">
-        <div className="flex items-center gap-1.5 text-xs text-zinc-400">
-          <Code2 className="w-3.5 h-3.5 text-zinc-400" />
-          <span>源代码:</span>
-        </div>
-        <div className="flex items-center gap-2">
-          {release ? (
-            <>
-              <a
-                href={release.zipballUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="px-2.5 py-1 rounded bg-[#16161b] hover:bg-[#22222a] border border-[#272730] text-xs text-zinc-200 font-mono transition"
-              >
-                ZIP
-              </a>
-              <a
-                href={release.tarballUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="px-2.5 py-1 rounded bg-[#16161b] hover:bg-[#22222a] border border-[#272730] text-xs text-zinc-200 font-mono transition"
-              >
-                TAR.GZ
-              </a>
-            </>
-          ) : (
-            <>
-              <span className="px-2.5 py-1 rounded bg-[#141418] border border-[#222228] text-xs text-zinc-600 font-mono cursor-not-allowed">
-                ZIP
-              </span>
-              <span className="px-2.5 py-1 rounded bg-[#141418] border border-[#222228] text-xs text-zinc-600 font-mono cursor-not-allowed">
-                TAR.GZ
-              </span>
-            </>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-export const OfficialPortal: React.FC<OfficialPortalProps> = ({
-  onLaunchWebStudio,
-}) => {
-  const [releases, setReleases] = useState<ParsedReleaseItem[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [historyFilter, setHistoryFilter] = useState<ReleaseChannel>('Stable');
+  const [rateAlert, setRateAlert] = useState<string | null>(null);
+  const [checkingDownload, setCheckingDownload] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    const fetchReleases = async () => {
-      setLoading(true);
-      try {
-        const res = await fetch(
-          `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases?per_page=100`,
-          { headers: { Accept: 'application/vnd.github+json' } }
-        );
-        if (res.ok) {
-          const data = await res.json();
-          if (!cancelled && Array.isArray(data)) {
-            const parsed: ParsedReleaseItem[] = data.map((r: any) => {
-              const tag = r.tag_name || '';
-              return {
-                id: r.id,
-                tagName: tag,
-                name: r.name || tag,
-                channel: detectChannel(tag, r.name || '', !!r.prerelease),
-                publishedAt: r.published_at || r.created_at || '',
-                htmlUrl: r.html_url || `${GITHUB_REPO_URL}/releases`,
-                zipballUrl:
-                  r.zipball_url ||
-                  `${GITHUB_REPO_URL}/archive/refs/tags/${encodeURIComponent(tag)}.zip`,
-                tarballUrl:
-                  r.tarball_url ||
-                  `${GITHUB_REPO_URL}/archive/refs/tags/${encodeURIComponent(tag)}.tar.gz`,
-                platforms: parseAssetsIntoPlatforms(r.assets || []),
-              };
-            });
-            setReleases(parsed);
-          }
+    fetch('/api/rate-limit?action=status', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled) return;
+        if (data && typeof data.downloadRemaining === 'number') {
+          setRateStatus({
+            ipMasked: data.ipMasked || '当前客户端 IP',
+            allowed: data.allowed !== false,
+            downloadRemaining: data.downloadRemaining,
+            downloadLimit: data.downloadLimit || 6,
+            resetInSeconds: data.resetInSeconds || 600,
+            error: data.error,
+          });
         }
-      } catch {
-        // keep empty list if offline
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    };
-    fetchReleases();
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setRateStatus((prev) => ({ ...prev, ipMasked: '受保护客户端 IP' }));
+        }
+      });
     return () => {
       cancelled = true;
     };
   }, []);
 
-  const latestStable = useMemo(
-    () => releases.find((r) => r.channel === 'Stable') || null,
-    [releases]
-  );
-  const latestBeta = useMemo(
-    () => releases.find((r) => r.channel === 'Beta') || null,
-    [releases]
-  );
-  const latestAlpha = useMemo(
-    () => releases.find((r) => r.channel === 'Alpha') || null,
-    [releases]
-  );
-  const historyReleases = useMemo(
-    () => releases.filter((r) => r.channel === historyFilter),
-    [releases, historyFilter]
-  );
+  const handleRateLimitedDownload = async (
+    e: React.MouseEvent<HTMLAnchorElement>,
+    targetKey: string,
+    targetUrl: string
+  ) => {
+    e.preventDefault();
+    if (checkingDownload) return;
+    setCheckingDownload(targetKey);
+    setRateAlert(null);
+
+    try {
+      const res = await fetch(
+        `/api/rate-limit?action=download&target=${encodeURIComponent(targetKey)}`,
+        {
+          method: 'POST',
+          cache: 'no-store',
+        }
+      );
+      const data = await res.json();
+      if (typeof data.downloadRemaining === 'number') {
+        setRateStatus({
+          ipMasked: data.ipMasked || rateStatus.ipMasked,
+          allowed: data.allowed !== false,
+          downloadRemaining: data.downloadRemaining,
+          downloadLimit: data.downloadLimit || 6,
+          resetInSeconds: data.resetInSeconds || 600,
+          error: data.error,
+        });
+      }
+
+      if (res.status === 429 || data.allowed === false) {
+        setRateAlert(
+          data.error ||
+            `当前 IP (${data.ipMasked || rateStatus.ipMasked}) 下载请求过于频繁，已触发服务端 IP 限流保护（清除缓存无效）。请稍后再试。`
+        );
+        setCheckingDownload(null);
+        return;
+      }
+
+      window.open(targetUrl, '_blank', 'noopener,noreferrer');
+    } catch {
+      window.open(targetUrl, '_blank', 'noopener,noreferrer');
+    } finally {
+      setCheckingDownload(null);
+    }
+  };
+
+  const windowsArchs = [
+    {
+      arch: 'x64',
+      desc: '64位主流桌面处理器 (Intel / AMD)',
+      installName: 'Windows x64 Install (.msi / .exe)',
+      zipName: 'Windows x64 ZIP 免安装便携包 (.zip)',
+    },
+    {
+      arch: 'ARM64',
+      desc: 'ARM64 架构设备 (Snapdragon X / Windows on ARM)',
+      installName: 'Windows ARM64 Install (.msi / .exe)',
+      zipName: 'Windows ARM64 ZIP 免安装便携包 (.zip)',
+    },
+    {
+      arch: 'x86',
+      desc: '32位传统桌面处理器兼容架构',
+      installName: 'Windows x86 Install (.msi / .exe)',
+      zipName: 'Windows x86 ZIP 免安装便携包 (.zip)',
+    },
+  ];
+
+  const activeShot = EDITOR_SCREENSHOTS[activeShotIndex] || EDITOR_SCREENSHOTS[0];
 
   return (
-    <div className="h-screen overflow-y-auto bg-[#0f0f12] text-zinc-100 flex flex-col">
-      {/* 顶部导航栏：仅保留 品牌、下载、MooVN网页体验、问题反馈、GitHub */}
-      <header className="sticky top-0 z-40 h-14 bg-[#0f0f12]/90 backdrop-blur-md border-b border-[#222228] px-4 sm:px-8 flex items-center justify-between shrink-0">
-        <a
-          href="#"
-          className="flex items-center gap-2.5 text-white font-semibold text-sm tracking-tight"
-        >
-          <span className="w-6 h-6 rounded bg-zinc-100 text-zinc-950 font-bold text-xs flex items-center justify-center">
-            M
-          </span>
-          <span>MooVN Studio</span>
-        </a>
+    <div className="min-h-screen bg-[#050c1a] text-slate-100 flex flex-col selection:bg-sky-500 selection:text-white relative overflow-x-hidden">
+      {/* Rich Blue Ambient Background Layers */}
+      <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
+        <div className="absolute -top-40 left-1/2 -translate-x-1/2 w-[980px] h-[520px] rounded-full bg-gradient-to-b from-blue-600/25 via-sky-500/12 to-transparent blur-3xl" />
+        <div className="absolute top-[38%] -left-48 w-[560px] h-[560px] rounded-full bg-blue-700/15 blur-3xl" />
+        <div className="absolute top-[55%] -right-48 w-[620px] h-[620px] rounded-full bg-sky-500/15 blur-3xl" />
+        <div
+          className="absolute inset-0 opacity-[0.14]"
+          style={{
+            backgroundImage:
+              'linear-gradient(to right, rgba(56, 189, 248, 0.16) 1px, transparent 1px), linear-gradient(to bottom, rgba(56, 189, 248, 0.16) 1px, transparent 1px)',
+            backgroundSize: '48px 48px',
+          }}
+        />
+      </div>
 
-        <nav className="flex items-center gap-1 sm:gap-2 text-xs">
-          <a
-            href="#download"
-            className="px-3 py-1.5 rounded-md text-zinc-300 hover:text-white hover:bg-[#1a1a20] transition"
-          >
-            下载
+      {/* Top Navigation Bar */}
+      <header className="sticky top-0 z-40 border-b border-sky-400/20 bg-[#071226]/85 backdrop-blur-xl">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-3">
+          <a href="#" className="flex items-center gap-3 group">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-sky-400 via-blue-500 to-blue-700 flex items-center justify-center font-black text-white text-sm shadow-lg shadow-blue-600/35 ring-1 ring-sky-300/40">
+              M
+            </div>
+            <div className="flex flex-col">
+              <span className="text-base font-bold tracking-tight text-white group-hover:text-sky-300 transition-colors">
+                MooVN Studio
+              </span>
+              <span className="text-[10px] text-sky-300/80 font-medium hidden sm:inline">
+                跨平台视觉小说创作工作台
+              </span>
+            </div>
           </a>
-          <button
-            type="button"
-            onClick={onLaunchWebStudio}
-            className="px-3 py-1.5 rounded-md text-zinc-300 hover:text-white hover:bg-[#1a1a20] transition cursor-pointer"
-          >
-            MooVN网页体验
-          </button>
-          <a
-            href={GITHUB_ISSUES_URL}
-            target="_blank"
-            rel="noreferrer"
-            className="px-3 py-1.5 rounded-md text-zinc-300 hover:text-white hover:bg-[#1a1a20] transition flex items-center gap-1"
-          >
-            <span>问题</span>
-          </a>
-          <a
-            href={GITHUB_REPO_URL}
-            target="_blank"
-            rel="noreferrer"
-            className="px-3 py-1.5 rounded-md text-zinc-300 hover:text-white hover:bg-[#1a1a20] transition flex items-center gap-1"
-          >
-            <span>GitHub</span>
-            <ExternalLink className="w-3 h-3" />
-          </a>
-        </nav>
-      </header>
 
-      {/* 第一屏中央：MooVN 简短介绍语 + 核心操作入口 */}
-      <section className="min-h-[68vh] flex flex-col items-center justify-center text-center px-4 py-16 border-b border-[#1c1c22]">
-        <div className="max-w-2xl mx-auto space-y-6">
-          <h1 className="text-3xl sm:text-5xl font-bold tracking-tight text-white">
-            MooVN Studio
-          </h1>
-          <p className="text-sm sm:text-base text-zinc-400 leading-relaxed">
-            轻量、直观的跨平台视觉小说创作工具。
-          </p>
-          <div className="pt-2 flex flex-wrap items-center justify-center gap-3">
+          <nav className="flex items-center gap-1 sm:gap-2 text-sm">
+            <a
+              href="#intro"
+              className="px-3 py-1.5 rounded-lg text-slate-200 hover:text-white hover:bg-blue-500/15 transition-colors"
+            >
+              介绍
+            </a>
             <a
               href="#download"
-              className="px-5 py-2.5 rounded-lg bg-zinc-100 hover:bg-white text-zinc-950 font-semibold text-xs sm:text-sm flex items-center gap-2 transition"
+              className="px-3 py-1.5 rounded-lg text-slate-200 hover:text-white hover:bg-blue-500/15 transition-colors"
             >
-              <Download className="w-4 h-4" />
-              <span>下载客户端</span>
+              下载
             </a>
-            <button
-              type="button"
-              onClick={onLaunchWebStudio}
-              className="px-5 py-2.5 rounded-lg bg-[#1b1b22] hover:bg-[#24242d] border border-[#2e2e38] text-zinc-100 font-semibold text-xs sm:text-sm flex items-center gap-2 transition cursor-pointer"
+            <a
+              href="/studio.html"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white font-semibold transition-all shadow-md shadow-blue-600/30 flex items-center gap-1.5 cursor-pointer"
+              title="在新窗口中打开 MooVN Studio Web 编辑器（独立加载，不额外消耗官网浏览流量）"
             >
-              <Play className="w-4 h-4 fill-current" />
+              <Globe className="w-3.5 h-3.5" />
               <span>MooVN网页体验</span>
-            </button>
-          </div>
+              <ExternalLink className="w-3 h-3 opacity-85" />
+            </a>
+            <a
+              href={`${repoUrl}/issues`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-3 py-1.5 rounded-lg text-slate-200 hover:text-white hover:bg-blue-500/15 transition-colors flex items-center gap-1"
+            >
+              <HelpCircle className="w-3.5 h-3.5 text-sky-400" />
+              <span>问题</span>
+            </a>
+            <a
+              href={repoUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-3 py-1.5 rounded-lg text-slate-200 hover:text-white hover:bg-blue-500/15 transition-colors flex items-center gap-1"
+            >
+              <span>GitHub</span>
+              <ExternalLink className="w-3.5 h-3.5 text-sky-400" />
+            </a>
+          </nav>
         </div>
-      </section>
+      </header>
 
-      {/* 下载区：严格按要求的 3 区块与平台顺序排版 */}
-      <main
-        id="download"
-        className="max-w-4xl w-full mx-auto px-4 sm:px-8 py-12 space-y-6 flex-1"
-      >
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-bold text-white">下载</h2>
-          {loading && (
-            <span className="text-xs text-zinc-500">正在检查发布版本...</span>
-          )}
-        </div>
-
-        {/* 1. 最新稳定版本(推荐) */}
-        <div className="rounded-xl bg-[#111115] border border-[#23232a] p-5 space-y-4">
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-bold text-white">
-              最新稳定版本(推荐)
-            </span>
-            <span className="text-xs font-mono text-zinc-400">
-              {latestStable ? latestStable.tagName : '暂无稳定版发布'}
-            </span>
-          </div>
-
-          <PlatformDownloadList
-            release={latestStable}
-            defaultOpenWindows={true}
-          />
-        </div>
-
-        {/* 2. 最新Beta与Alpha */}
-        <div className="rounded-xl bg-[#111115] border border-[#23232a] p-5 space-y-4">
-          <div className="text-sm font-bold text-white">最新Beta与Alpha</div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* 左：Beta */}
-            <div className="rounded-lg bg-[#0d0d10] border border-[#202027] p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-zinc-200">Beta</span>
-                <span className="text-xs font-mono text-zinc-400">
-                  {latestBeta ? latestBeta.tagName : '暂无发布'}
-                </span>
-              </div>
-              <PlatformDownloadList
-                release={latestBeta}
-                defaultOpenWindows={true}
-              />
+      {/* Main Content */}
+      <main className="relative z-10 flex-1">
+        {/* Hero Center Section */}
+        <section className="relative overflow-hidden py-16 sm:py-24 px-4 sm:px-6 border-b border-sky-400/15">
+          <div className="max-w-4xl mx-auto text-center">
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-blue-500/15 border border-sky-400/30 text-sky-300 text-xs font-medium mb-6 shadow-inner shadow-sky-400/10">
+              <Sparkles className="w-3.5 h-3.5 text-sky-400" />
+              <span>可视化节点编排 · 实时立绘舞台 · 多语言脚本同步 · 跨平台导出</span>
             </div>
 
-            {/* 右：Alpha */}
-            <div className="rounded-lg bg-[#0d0d10] border border-[#202027] p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-zinc-200">Alpha</span>
-                <span className="text-xs font-mono text-zinc-400">
-                  {latestAlpha ? latestAlpha.tagName : '暂无发布'}
-                </span>
-              </div>
-              <PlatformDownloadList
-                release={latestAlpha}
-                defaultOpenWindows={true}
-              />
+            <h1 className="text-4xl sm:text-6xl font-extrabold tracking-tight text-white mb-6 leading-tight">
+              <span className="bg-gradient-to-r from-white via-sky-200 to-blue-400 bg-clip-text text-transparent">
+                MooVN Studio
+              </span>
+            </h1>
+
+            <p className="text-base sm:text-xl text-blue-100/85 max-w-2xl mx-auto leading-relaxed mb-10">
+              面向视觉小说与互动叙事创作者的跨平台集成开发工作台。
+              <br className="hidden sm:inline" />
+              支持可视化逻辑节点与凹槽积木嵌套、16:9 实时舞台预览以及桌面与移动端工程导出。
+            </p>
+
+            <div className="flex flex-wrap items-center justify-center gap-4">
+              <a
+                href="#download"
+                className="px-7 py-3.5 rounded-xl bg-gradient-to-r from-blue-600 via-blue-500 to-sky-500 hover:from-blue-500 hover:to-sky-400 text-white font-semibold text-sm flex items-center gap-2.5 shadow-xl shadow-blue-600/35 ring-1 ring-sky-300/40 transition-all"
+              >
+                <Download className="w-4 h-4" />
+                <span>立即下载</span>
+              </a>
+
+              <a
+                href="/studio.html"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-7 py-3.5 rounded-xl bg-[#0d1f3d]/90 hover:bg-[#132c54] border border-sky-400/35 text-sky-100 font-semibold text-sm flex items-center gap-2.5 shadow-lg shadow-blue-950/50 transition-all cursor-pointer"
+              >
+                <Globe className="w-4 h-4 text-sky-400" />
+                <span>MooVN网页体验 (新窗口打开)</span>
+                <ExternalLink className="w-3.5 h-3.5 text-sky-400" />
+              </a>
+
+              <a
+                href="#intro"
+                className="px-6 py-3.5 rounded-xl bg-blue-950/40 hover:bg-blue-900/50 border border-blue-400/25 text-blue-200 font-medium text-sm flex items-center gap-2 transition-colors"
+              >
+                <Layers className="w-4 h-4 text-sky-400" />
+                <span>了解工作台特性</span>
+              </a>
             </div>
           </div>
-        </div>
+        </section>
 
-        {/* 3. 历史版本：Stable、Beta、Alpha、Dev */}
-        <div className="rounded-xl bg-[#111115] border border-[#23232a] p-5 space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <span className="text-sm font-bold text-white">历史版本</span>
-            <div className="flex items-center gap-1 bg-[#0c0c0f] p-1 rounded-lg border border-[#202027]">
-              {(['Stable', 'Beta', 'Alpha', 'Dev'] as const).map((ch) => (
+        {/* Introduction & Real Editor Screenshots Section (Above Download Interface) */}
+        <section
+          id="intro"
+          className="max-w-6xl mx-auto px-4 sm:px-6 py-16 sm:py-20 border-b border-sky-400/15"
+        >
+          <div className="text-center mb-12">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-sky-500/15 border border-sky-400/30 text-sky-300 text-xs font-semibold mb-3">
+              <Layers className="w-3.5 h-3.5" />
+              <span>工作台核心特性与实机界面</span>
+            </div>
+            <h2 className="text-2xl sm:text-3xl font-bold text-white mb-3">
+              为什么选择 MooVN Studio 创作视觉小说
+            </h2>
+            <p className="text-sm sm:text-base text-blue-200/75 max-w-2xl mx-auto">
+              将流程图节点连线、多层循环与条件凹槽积木、实时场景舞台和脚本编译器融为一体，让剧本创作与演出编排直观高效。
+            </p>
+          </div>
+
+          {/* 3 Blue Feature Pillar Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-12">
+            <div className="rounded-2xl border border-sky-400/25 bg-gradient-to-b from-[#0c1d3b]/90 to-[#081326]/90 p-6 shadow-lg shadow-blue-950/40">
+              <div className="w-10 h-10 rounded-xl bg-sky-500/20 border border-sky-400/35 flex items-center justify-center text-sky-300 mb-4">
+                <Workflow className="w-5 h-5" />
+              </div>
+              <h3 className="text-base font-bold text-white mb-2">
+                可视化剧情节点与凹槽积木
+              </h3>
+              <p className="text-xs text-blue-100/75 leading-relaxed">
+                涵盖流程控制、循环与条件、叙事对话、屏幕演出、角色好感度、镜头特效、音频配音等 9 大分类 55 种专用节点，支持多层循环与分支容器嵌套。
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-sky-400/25 bg-gradient-to-b from-[#0c1d3b]/90 to-[#081326]/90 p-6 shadow-lg shadow-blue-950/40">
+              <div className="w-10 h-10 rounded-xl bg-blue-500/20 border border-blue-400/35 flex items-center justify-center text-sky-300 mb-4">
+                <Monitor className="w-5 h-5" />
+              </div>
+              <h3 className="text-base font-bold text-white mb-2">
+                16:9 实时舞台与蓝色经典模板
+              </h3>
+              <p className="text-xs text-blue-100/75 leading-relaxed">
+                在编辑器内直接拖拽角色立绘坐标、切换表情差分、预览天气粒子与转场动画，内置经典蓝色对话框与多页签存档界面。
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-sky-400/25 bg-gradient-to-b from-[#0c1d3b]/90 to-[#081326]/90 p-6 shadow-lg shadow-blue-950/40">
+              <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-400/35 flex items-center justify-center text-sky-300 mb-4">
+                <Cpu className="w-5 h-5" />
+              </div>
+              <h3 className="text-base font-bold text-white mb-2">
+                多语言脚本同步与多端导出
+              </h3>
+              <p className="text-xs text-blue-100/75 leading-relaxed">
+                节点树可实时双向编译为 TypeScript、JavaScript、Lua、Teal、Python 与 YAML 脚本，并支持桌面端、移动端与网页端打包导出。
+              </p>
+            </div>
+          </div>
+
+          {/* Interactive Editor Screenshot Showcase */}
+          <div className="rounded-2xl border border-sky-400/30 bg-gradient-to-b from-[#0b1b36] to-[#071124] p-4 sm:p-6 shadow-2xl shadow-blue-950/60">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
+              <div>
+                <span className="text-xs font-semibold text-sky-400 uppercase tracking-wider">
+                  MooVN Studio 编辑器实机截图
+                </span>
+                <h3 className="text-lg sm:text-xl font-bold text-white mt-0.5">
+                  {activeShot.title}
+                </h3>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                {EDITOR_SCREENSHOTS.map((shot, idx) => (
+                  <button
+                    key={shot.id}
+                    type="button"
+                    onClick={() => setActiveShotIndex(idx)}
+                    className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                      idx === activeShotIndex
+                        ? 'bg-gradient-to-r from-sky-500 to-blue-600 text-white shadow-md shadow-blue-600/30'
+                        : 'bg-[#102447] text-blue-200 hover:text-white hover:bg-[#16305e] border border-sky-400/20'
+                    }`}
+                  >
+                    {idx + 1}. {shot.title}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Main Featured Screenshot Frame */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+              <div className="lg:col-span-8">
+                <div
+                  onClick={() => setLightboxShot(activeShot)}
+                  className="group relative rounded-xl overflow-hidden border border-sky-400/35 bg-[#050b16] shadow-xl cursor-zoom-in"
+                >
+                  <img
+                    src={activeShot.src}
+                    alt={activeShot.title}
+                    className="w-full h-auto block transition-transform duration-300 group-hover:scale-[1.01]"
+                  />
+                  <div className="absolute bottom-3 right-3 px-3 py-1.5 rounded-lg bg-[#071226]/90 border border-sky-400/40 text-sky-200 text-xs font-medium flex items-center gap-1.5 backdrop-blur-md">
+                    <Maximize2 className="w-3.5 h-3.5 text-sky-400" />
+                    <span>点击放大查看高清截图</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="lg:col-span-4 flex flex-col justify-between space-y-4">
+                <div className="rounded-xl border border-sky-400/25 bg-[#0d1f3d]/70 p-5">
+                  <div className="inline-block px-2.5 py-1 rounded-md bg-sky-500/20 border border-sky-400/30 text-sky-300 text-[11px] font-semibold mb-3">
+                    {activeShot.badge}
+                  </div>
+                  <h4 className="text-base font-bold text-white mb-2">
+                    {activeShot.title}
+                  </h4>
+                  <p className="text-xs text-blue-100/80 leading-relaxed mb-4">
+                    {activeShot.desc}
+                  </p>
+                  <ul className="space-y-2">
+                    {activeShot.highlights.map((item) => (
+                      <li
+                        key={item}
+                        className="flex items-center gap-2 text-xs text-sky-200"
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-sky-400 shrink-0" />
+                        <span>{item}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <a
+                  href="/studio.html"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-lg shadow-blue-600/30 transition-all"
+                >
+                  <Globe className="w-4 h-4" />
+                  <span>在新窗口中打开 MooVN Studio Web 编辑器</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+              </div>
+            </div>
+
+            {/* Thumbnail Strip */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6 pt-5 border-t border-sky-400/15">
+              {EDITOR_SCREENSHOTS.map((shot, idx) => (
                 <button
-                  key={ch}
+                  key={shot.id}
                   type="button"
-                  onClick={() => setHistoryFilter(ch)}
-                  className={`px-3 py-1 rounded text-xs font-medium transition ${
-                    historyFilter === ch
-                      ? 'bg-zinc-100 text-zinc-950 font-semibold'
-                      : 'text-zinc-400 hover:text-zinc-200'
+                  onClick={() => setActiveShotIndex(idx)}
+                  className={`text-left rounded-xl overflow-hidden border transition-all cursor-pointer flex flex-col ${
+                    idx === activeShotIndex
+                      ? 'border-sky-400 ring-2 ring-sky-400/35 bg-[#10254a]'
+                      : 'border-sky-400/20 bg-[#09162d] hover:border-sky-400/50 opacity-85 hover:opacity-100'
                   }`}
                 >
-                  {ch}
+                  <img
+                    src={shot.src}
+                    alt={shot.title}
+                    className="w-full h-32 object-cover object-top border-b border-sky-400/20"
+                  />
+                  <div className="p-3">
+                    <div className="text-xs font-bold text-white truncate">
+                      {shot.title}
+                    </div>
+                    <div className="text-[11px] text-sky-300/80 truncate mt-0.5">
+                      {shot.badge}
+                    </div>
+                  </div>
                 </button>
               ))}
             </div>
           </div>
+        </section>
 
-          {historyReleases.length === 0 ? (
-            <div className="py-8 text-center text-xs text-zinc-500 border border-dashed border-[#22222a] rounded-lg">
-              当前 {historyFilter} 通道暂无历史发布版本
+        {/* Download Section */}
+        <section id="download" className="max-w-6xl mx-auto px-4 sm:px-6 py-16">
+          <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
+            <div>
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/15 border border-sky-400/30 text-sky-300 text-xs font-semibold mb-3">
+                <Download className="w-3.5 h-3.5" />
+                <span>多平台安装包与源码获取</span>
+              </div>
+              <h2 className="text-2xl sm:text-3xl font-bold text-white mb-2">
+                下载 MooVN Studio
+              </h2>
+              <p className="text-sm text-blue-200/75">
+                选择适合你操作系统与处理器架构的版本，或直接下载工程源码。
+              </p>
             </div>
-          ) : (
-            <div className="space-y-3">
-              {historyReleases.map((rel) => (
-                <div
-                  key={rel.id}
-                  className="p-4 rounded-lg bg-[#0d0d10] border border-[#202027] space-y-3"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-mono font-bold text-zinc-100">
-                      {rel.tagName}
-                    </span>
-                    <span className="text-[11px] text-zinc-500">
-                      {rel.publishedAt
-                        ? new Date(rel.publishedAt).toLocaleDateString()
-                        : ''}
-                    </span>
-                  </div>
-                  <PlatformDownloadList
-                    release={rel}
-                    defaultOpenWindows={false}
-                  />
+
+            {/* Per-IP Rate Limit Protection Badge */}
+            <div className="rounded-xl border border-sky-400/30 bg-[#0b1c38]/90 px-4 py-2.5 flex items-center gap-3 self-start md:self-auto">
+              <ShieldCheck className="w-4 h-4 text-sky-400 shrink-0" />
+              <div className="text-xs">
+                <div className="text-sky-200 font-semibold">
+                  服务端 IP 防刷限流保护已启用 ({rateStatus.ipMasked})
                 </div>
-              ))}
+                <div className="text-[11px] text-blue-300/80">
+                  当前 IP 剩余下载配额:{' '}
+                  <span className="font-bold text-sky-300">
+                    {rateStatus.downloadRemaining} / {rateStatus.downloadLimit}
+                  </span>{' '}
+                  次 (每 10 分钟窗口，清除浏览器缓存不重置)
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {rateAlert && (
+            <div className="mb-6 rounded-xl border border-amber-400/50 bg-amber-950/60 px-4 py-3 text-xs text-amber-200 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                <span>{rateAlert}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRateAlert(null)}
+                className="text-amber-300 hover:text-white px-2 py-0.5 rounded"
+              >
+                关闭
+              </button>
             </div>
           )}
-        </div>
+
+          <div className="space-y-6">
+            {/* 1. Windows (ARM64, x64, x86 with Install & ZIP) */}
+            <div className="rounded-2xl border border-sky-400/30 bg-gradient-to-b from-[#0b1c38]/95 to-[#071226]/95 p-6 shadow-xl shadow-blue-950/50">
+              <div className="flex items-center gap-3 mb-5">
+                <div className="w-10 h-10 rounded-xl bg-blue-500/20 border border-sky-400/35 flex items-center justify-center text-sky-300">
+                  <Monitor className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white">Windows</h3>
+                  <p className="text-xs text-blue-200/75">
+                    支持 ARM64、x64、x86 三种处理器架构，每种架构均提供安装程序 (Install) 与免安装压缩包 (ZIP) 两种方式
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {windowsArchs.map((item) => (
+                  <div
+                    key={item.arch}
+                    className="rounded-xl border border-sky-400/25 bg-[#0d2142]/75 p-4 flex flex-col justify-between hover:border-sky-400/50 transition-colors"
+                  >
+                    <div className="mb-4">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-base font-bold text-white">
+                          Windows {item.arch}
+                        </span>
+                        <span className="px-2 py-0.5 rounded bg-sky-500/20 border border-sky-400/35 text-sky-300 text-[11px] font-mono">
+                          {item.arch}
+                        </span>
+                      </div>
+                      <p className="text-xs text-blue-200/70">{item.desc}</p>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <a
+                        href={studioFolderUrl}
+                        onClick={(e) =>
+                          handleRateLimitedDownload(
+                            e,
+                            `win-${item.arch}-install`,
+                            studioFolderUrl
+                          )
+                        }
+                        title={item.installName}
+                        className="px-3 py-2.5 rounded-lg bg-gradient-to-r from-blue-600 to-sky-500 hover:from-blue-500 hover:to-sky-400 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-all shadow-md shadow-blue-600/25"
+                      >
+                        <Package className="w-3.5 h-3.5" />
+                        <span>Install</span>
+                      </a>
+                      <a
+                        href={sourceZipUrl}
+                        onClick={(e) =>
+                          handleRateLimitedDownload(
+                            e,
+                            `win-${item.arch}-zip`,
+                            sourceZipUrl
+                          )
+                        }
+                        title={item.zipName}
+                        className="px-3 py-2.5 rounded-lg bg-[#132c56] hover:bg-[#19386b] border border-sky-400/30 text-sky-100 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
+                      >
+                        <FileArchive className="w-3.5 h-3.5 text-sky-400" />
+                        <span>ZIP</span>
+                      </a>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* 2. Android -> 3. iOS -> 4. macOS -> 5. Linux -> 6. 源代码 */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+              {/* Android */}
+              <div className="rounded-2xl border border-sky-400/25 bg-gradient-to-b from-[#0b1c38]/90 to-[#071226]/90 p-5 flex flex-col justify-between hover:border-sky-400/50 transition-colors">
+                <div>
+                  <div className="w-9 h-9 rounded-xl bg-emerald-500/15 border border-emerald-400/35 flex items-center justify-center text-emerald-300 mb-3">
+                    <Smartphone className="w-4 h-4" />
+                  </div>
+                  <h3 className="text-base font-bold text-white mb-1">Android</h3>
+                  <p className="text-xs text-blue-200/70 mb-4">
+                    Android 移动端安装包 (.apk / .aab)
+                  </p>
+                </div>
+                <a
+                  href={studioFolderUrl}
+                  onClick={(e) =>
+                    handleRateLimitedDownload(e, 'android-apk', studioFolderUrl)
+                  }
+                  className="w-full px-3 py-2.5 rounded-lg bg-[#12284e] hover:bg-[#183463] border border-sky-400/30 text-sky-100 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
+                >
+                  <Download className="w-3.5 h-3.5 text-sky-400" />
+                  <span>下载 Android 版</span>
+                </a>
+              </div>
+
+              {/* iOS */}
+              <div className="rounded-2xl border border-sky-400/25 bg-gradient-to-b from-[#0b1c38]/90 to-[#071226]/90 p-5 flex flex-col justify-between hover:border-sky-400/50 transition-colors">
+                <div>
+                  <div className="w-9 h-9 rounded-xl bg-sky-500/15 border border-sky-400/35 flex items-center justify-center text-sky-300 mb-3">
+                    <Apple className="w-4 h-4" />
+                  </div>
+                  <h3 className="text-base font-bold text-white mb-1">iOS</h3>
+                  <p className="text-xs text-blue-200/70 mb-4">
+                    iPhone / iPad 移动端工程与安装包 (.ipa)
+                  </p>
+                </div>
+                <a
+                  href={studioFolderUrl}
+                  onClick={(e) =>
+                    handleRateLimitedDownload(e, 'ios-ipa', studioFolderUrl)
+                  }
+                  className="w-full px-3 py-2.5 rounded-lg bg-[#12284e] hover:bg-[#183463] border border-sky-400/30 text-sky-100 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
+                >
+                  <Download className="w-3.5 h-3.5 text-sky-400" />
+                  <span>下载 iOS 版</span>
+                </a>
+              </div>
+
+              {/* macOS */}
+              <div className="rounded-2xl border border-sky-400/25 bg-gradient-to-b from-[#0b1c38]/90 to-[#071226]/90 p-5 flex flex-col justify-between hover:border-sky-400/50 transition-colors">
+                <div>
+                  <div className="w-9 h-9 rounded-xl bg-blue-500/15 border border-blue-400/35 flex items-center justify-center text-blue-300 mb-3">
+                    <Apple className="w-4 h-4" />
+                  </div>
+                  <h3 className="text-base font-bold text-white mb-1">macOS</h3>
+                  <p className="text-xs text-blue-200/70 mb-4">
+                    Apple Silicon (M系列) 与 Intel 通用镜像 (.dmg)
+                  </p>
+                </div>
+                <a
+                  href={studioFolderUrl}
+                  onClick={(e) =>
+                    handleRateLimitedDownload(e, 'macos-dmg', studioFolderUrl)
+                  }
+                  className="w-full px-3 py-2.5 rounded-lg bg-[#12284e] hover:bg-[#183463] border border-sky-400/30 text-sky-100 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
+                >
+                  <Download className="w-3.5 h-3.5 text-sky-400" />
+                  <span>下载 macOS 版</span>
+                </a>
+              </div>
+
+              {/* Linux */}
+              <div className="rounded-2xl border border-sky-400/25 bg-gradient-to-b from-[#0b1c38]/90 to-[#071226]/90 p-5 flex flex-col justify-between hover:border-sky-400/50 transition-colors">
+                <div>
+                  <div className="w-9 h-9 rounded-xl bg-amber-500/15 border border-amber-400/35 flex items-center justify-center text-amber-300 mb-3">
+                    <Terminal className="w-4 h-4" />
+                  </div>
+                  <h3 className="text-base font-bold text-white mb-1">Linux</h3>
+                  <p className="text-xs text-blue-200/70 mb-4">
+                    x86_64 与 ARM64 桌面发行版 (.AppImage / .deb)
+                  </p>
+                </div>
+                <a
+                  href={studioFolderUrl}
+                  onClick={(e) =>
+                    handleRateLimitedDownload(e, 'linux-appimage', studioFolderUrl)
+                  }
+                  className="w-full px-3 py-2.5 rounded-lg bg-[#12284e] hover:bg-[#183463] border border-sky-400/30 text-sky-100 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
+                >
+                  <Download className="w-3.5 h-3.5 text-sky-400" />
+                  <span>下载 Linux 版</span>
+                </a>
+              </div>
+
+              {/* 源代码 */}
+              <div className="rounded-2xl border border-sky-400/35 bg-gradient-to-b from-[#0f254a] to-[#091730] p-5 flex flex-col justify-between hover:border-sky-400/60 transition-colors">
+                <div>
+                  <div className="w-9 h-9 rounded-xl bg-sky-500/20 border border-sky-400/40 flex items-center justify-center text-sky-300 mb-3">
+                    <Code2 className="w-4 h-4" />
+                  </div>
+                  <h3 className="text-base font-bold text-white mb-1">源代码</h3>
+                  <p className="text-xs text-blue-200/75 mb-4">
+                    获取完整工程源码压缩包与 GitHub 仓库分支
+                  </p>
+                </div>
+                <div className="flex flex-col gap-2">
+                  <a
+                    href={sourceZipUrl}
+                    onClick={(e) =>
+                      handleRateLimitedDownload(e, 'source-zip', sourceZipUrl)
+                    }
+                    className="w-full px-3 py-2 rounded-lg bg-gradient-to-r from-blue-600 to-sky-500 hover:from-blue-500 hover:to-sky-400 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-all"
+                  >
+                    <FileArchive className="w-3.5 h-3.5" />
+                    <span>下载源码 ZIP</span>
+                  </a>
+                  <a
+                    href={branchTreeUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full px-3 py-1.5 rounded-lg bg-[#12284e] hover:bg-[#183463] border border-sky-400/25 text-sky-200 text-[11px] font-medium flex items-center justify-center gap-1 transition-colors"
+                  >
+                    <span>浏览 GitHub 仓库</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
       </main>
 
-      {/* 简洁页脚 */}
-      <footer className="border-t border-[#1c1c22] py-6 px-4 sm:px-8 text-xs text-zinc-500">
-        <div className="max-w-4xl mx-auto flex items-center justify-between">
-          <span>MooVN Studio</span>
-          <div className="flex items-center gap-4">
+      {/* Lightbox Modal for Screenshots */}
+      {lightboxShot && (
+        <div
+          onClick={() => setLightboxShot(null)}
+          className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="max-w-5xl w-full rounded-2xl border border-sky-400/40 bg-[#071226] overflow-hidden shadow-2xl"
+          >
+            <div className="px-5 py-3.5 border-b border-sky-400/25 flex items-center justify-between">
+              <div>
+                <h4 className="text-sm font-bold text-white">
+                  {lightboxShot.title}
+                </h4>
+                <p className="text-xs text-sky-300/80">{lightboxShot.badge}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setLightboxShot(null)}
+                className="p-1.5 rounded-lg bg-blue-950/80 hover:bg-blue-900 text-sky-200 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <img
+              src={lightboxShot.src}
+              alt={lightboxShot.title}
+              className="w-full h-auto block"
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Footer */}
+      <footer className="relative z-10 border-t border-sky-400/20 bg-[#040914] py-8 px-4 sm:px-6 text-xs text-blue-200/60">
+        <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-2.5">
+            <div className="w-6 h-6 rounded-md bg-gradient-to-br from-sky-400 to-blue-600 flex items-center justify-center text-white font-bold text-xs">
+              M
+            </div>
+            <span className="text-blue-100/80 font-medium">MooVN Studio</span>
+          </div>
+          <div className="flex items-center gap-6">
+            <a href="#intro" className="hover:text-sky-300 transition-colors">
+              介绍
+            </a>
+            <a href="#download" className="hover:text-sky-300 transition-colors">
+              下载
+            </a>
             <a
-              href={GITHUB_ISSUES_URL}
+              href="/studio.html"
               target="_blank"
-              rel="noreferrer"
-              className="hover:text-zinc-300 transition"
+              rel="noopener noreferrer"
+              className="hover:text-sky-300 transition-colors flex items-center gap-1"
+            >
+              <span>MooVN网页体验</span>
+              <ExternalLink className="w-3 h-3" />
+            </a>
+            <a
+              href={`${repoUrl}/issues`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-sky-300 transition-colors"
             >
               问题反馈
             </a>
             <a
-              href={GITHUB_REPO_URL}
+              href={repoUrl}
               target="_blank"
-              rel="noreferrer"
-              className="hover:text-zinc-300 transition"
+              rel="noopener noreferrer"
+              className="hover:text-sky-300 transition-colors"
             >
               GitHub
             </a>

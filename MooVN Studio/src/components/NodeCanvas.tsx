@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Plus,
   Trash2,
@@ -9,6 +9,10 @@ import {
   Code2,
   Repeat,
   GitBranch,
+  ArrowDown,
+  Smartphone,
+  Map as MapIcon,
+  Link2,
 } from 'lucide-react';
 import {
   SceneNode,
@@ -16,12 +20,9 @@ import {
   CharacterProfile,
   StoryChapter,
   VisualScriptBlock,
-  VisualBlockKind,
-  VisualBlockCategory,
   NodeCategory,
-  NestedChildNode,
 } from '../types';
-import { getBackgroundById } from '../data/assets';
+import { getBackgroundById, BACKGROUND_ASSETS } from '../data/assets';
 import { NODE_CATEGORIES, NODE_REGISTRY, getNodeMeta } from '../data/nodeRegistry';
 import { generateSingleNodeCode } from '../lib/nodeCodeCompiler';
 import { ScratchBlockTree } from './ScratchBlockTree';
@@ -46,62 +47,29 @@ interface NodeCanvasProps {
   onRemoveVisualBlock: (nodeId: string, blockId: string) => void;
 }
 
-const BLOCK_ITEMS: {
-  kind: VisualBlockKind;
-  category: VisualBlockCategory;
-  label: string;
-  defaultParams: Record<string, string | number | boolean>;
-}[] = [
-  { kind: 'say', category: 'narrative', label: '台词', defaultParams: { speaker: '星野雪奈', text: '台词内容' } },
-  { kind: 'screen_text', category: 'screen_text', label: '屏幕字', defaultParams: { text: '屏幕字幕', x: 50, y: 45 } },
-  { kind: 'fade_target', category: 'visual', label: '淡入淡出', defaultParams: { target: 'screen', direction: 'in', durationMs: 800 } },
-  { kind: 'switch_expr', category: 'character', label: '表情', defaultParams: { character: 'yukina', spriteId: 'char-yukina-3' } },
-  { kind: 'move_char_tween', category: 'character', label: '位移', defaultParams: { character: 'yukina', targetX: 50, targetY: 55 } },
-  { kind: 'modify_affection', category: 'control', label: '好感', defaultParams: { character: 'yukina', delta: 10 } },
-  { kind: 'camera_effect', category: 'visual', label: '镜头', defaultParams: { zoom: 1.2, shake: 'medium' } },
-  { kind: 'call_bridge_script', category: 'script', label: '脚本', defaultParams: { lang: 'lua', fn: 'onStep' } },
-];
-
-const QUICK_CHILD_TYPES: {
-  type: WorkflowNodeType;
-  label: string;
-  defaultParams: Record<string, string | number | boolean>;
-  isNestedContainer?: boolean;
-}[] = [
-  { type: 'dialogue', label: '+ 台词节点', defaultParams: { speaker: '星野 雪奈', text: '循环内的演出台词' } },
-  { type: 'math_operation', label: '+ 数学运算', defaultParams: { targetVar: 'clueCount', mathOp: '+=', operandValue: 1 } },
-  { type: 'affection_change', label: '+ 好感变更', defaultParams: { charId: 'yukina', delta: 5 } },
-  { type: 'camera_shake', label: '+ 镜头震动', defaultParams: { intensity: 'medium', durationMs: 400 } },
-  { type: 'wait_timer', label: '+ 延时等待', defaultParams: { durationMs: 600 } },
-  {
-    type: 'repeat_loop',
-    label: '+ 嵌套重复',
-    defaultParams: { repeatCount: 2 },
-    isNestedContainer: true,
-  },
-  {
-    type: 'if_else_container',
-    label: '+ 嵌套如果',
-    defaultParams: { conditionExpr: 'ctx.affection.yukina >= 50' },
-    isNestedContainer: true,
-  },
-];
-
 export const NodeCanvas: React.FC<NodeCanvasProps> = ({
   nodes,
   chapters,
   startNodeId,
   selectedNodeId,
+  selectedChapterId,
   onSelectNode,
   onUpdateNode,
   onAddNode,
   onDeleteNode,
-  onAddVisualBlock,
-  onUpdateVisualBlock,
-  onRemoveVisualBlock,
 }) => {
-  const [zoom, setZoom] = useState(0.92);
-  const [pan, setPan] = useState({ x: 32, y: 32 });
+  const [ isMobileViewport, setIsMobileViewport ] = useState<boolean>(() =>
+    typeof window !== 'undefined' ? window.innerWidth < 768 : false
+  );
+  // On mobile (<768px), default to 'flow' (Touch Card Flow) so users can effortlessly edit, connect, and add nodes with one thumb; can switch to 'canvas' (2D Free Canvas) anytime.
+  const [mobileViewMode, setMobileViewMode] = useState<'flow' | 'canvas'>(() =>
+    typeof window !== 'undefined' && window.innerWidth < 768 ? 'flow' : 'canvas'
+  );
+
+  const [zoom, setZoom] = useState(() =>
+    typeof window !== 'undefined' && window.innerWidth < 768 ? 0.72 : 0.92
+  );
+  const [pan, setPan] = useState({ x: 24, y: 48 });
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
@@ -111,17 +79,45 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
   const [openCodeNodeId, setOpenCodeNodeId] = useState<string | null>(null);
   const [canvasScriptLang, setCanvasScriptLang] = useState<'javascript' | 'typescript'>('typescript');
   const [showAddMenu, setShowAddMenu] = useState(false);
-  const [activeCat, setActiveCat] = useState<NodeCategory>('loop_logic');
+  const [activeCat, setActiveCat] = useState<NodeCategory>('narrative');
+  const [connectingFromNodeId, setConnectingFromNodeId] = useState<string | null>(null);
 
+  const pinchDistRef = useRef<number | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const onResize = () => {
+      const mobile = window.innerWidth < 768;
+      setIsMobileViewport(mobile);
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   const visibleNodes =
     filterChapter === 'all' ? nodes : nodes.filter((n) => n.chapterId === filterChapter);
+
+  const fitCanvasToNodes = () => {
+    if (visibleNodes.length === 0) {
+      setZoom(isMobileViewport ? 0.75 : 0.92);
+      setPan({ x: 24, y: 48 });
+      return;
+    }
+    const minX = Math.min(...visibleNodes.map((n) => n.position.x));
+    const minY = Math.min(...visibleNodes.map((n) => n.position.y));
+    const targetZoom = isMobileViewport ? 0.72 : 0.9;
+    setZoom(targetZoom);
+    setPan({
+      x: Math.round(20 - minX * targetZoom),
+      y: Math.round(56 - minY * targetZoom),
+    });
+  };
 
   const handleMouseDownCanvas = (e: React.MouseEvent) => {
     if ((e.target as HTMLElement).closest('.vn-node-card')) return;
     if ((e.target as HTMLElement).closest('.canvas-Floating-ui')) return;
     setShowAddMenu(false);
+    setConnectingFromNodeId(null);
     setIsPanning(true);
     setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
   };
@@ -144,11 +140,23 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
   const handleMouseUp = () => {
     setIsPanning(false);
     setDraggingNodeId(null);
+    pinchDistRef.current = null;
   };
 
   const handleTouchStartCanvas = (e: React.TouchEvent) => {
-    if ((e.target as HTMLElement).closest('.vn-node-card')) return;
     if ((e.target as HTMLElement).closest('.canvas-Floating-ui')) return;
+
+    // Two-finger pinch-to-zoom support on mobile
+    if (e.touches.length === 2) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      pinchDistRef.current = Math.hypot(dx, dy);
+      setIsPanning(false);
+      setDraggingNodeId(null);
+      return;
+    }
+
+    if ((e.target as HTMLElement).closest('.vn-node-card')) return;
     const t = e.touches[0];
     if (!t) return;
     setShowAddMenu(false);
@@ -157,6 +165,16 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
   };
 
   const handleTouchMoveCanvas = (e: React.TouchEvent) => {
+    if (e.touches.length === 2 && pinchDistRef.current !== null) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      const dist = Math.hypot(dx, dy);
+      const scaleDelta = dist / Math.max(1, pinchDistRef.current);
+      pinchDistRef.current = dist;
+      setZoom((z) => Math.min(1.5, Math.max(0.38, +(z * scaleDelta).toFixed(2))));
+      return;
+    }
+
     const t = e.touches[0];
     if (!t) return;
     if (isPanning) {
@@ -174,7 +192,20 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
   };
 
   const startDragNode = (e: React.MouseEvent, node: SceneNode) => {
+    const targetEl = e.target as HTMLElement;
+    if (targetEl.closest('button, input, select, textarea, a')) return;
     e.stopPropagation();
+
+    if (connectingFromNodeId && connectingFromNodeId !== node.id) {
+      onUpdateNode(connectingFromNodeId, (prev) => ({
+        ...prev,
+        nextNodeId: node.id,
+      }));
+      setConnectingFromNodeId(null);
+      onSelectNode(node.id);
+      return;
+    }
+
     onSelectNode(node.id);
     setDraggingNodeId(node.id);
     setDragOffset({
@@ -184,7 +215,23 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
   };
 
   const startTouchDragNode = (e: React.TouchEvent, node: SceneNode) => {
+    const targetEl = e.target as HTMLElement;
+    // Allow buttons, inputs, selects, and textareas inside node cards to be tapped normally on mobile!
+    if (targetEl.closest('button, input, select, textarea, a')) {
+      return;
+    }
     e.stopPropagation();
+
+    if (connectingFromNodeId && connectingFromNodeId !== node.id) {
+      onUpdateNode(connectingFromNodeId, (prev) => ({
+        ...prev,
+        nextNodeId: node.id,
+      }));
+      setConnectingFromNodeId(null);
+      onSelectNode(node.id);
+      return;
+    }
+
     const t = e.touches[0];
     if (!t) return;
     onSelectNode(node.id);
@@ -259,142 +306,353 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
     }
   });
 
-  // Helper to recursively append a child inside a NestedChildNode tree
-  const addNestedSubChild = (
-    list: NestedChildNode[],
-    parentChildId: string,
-    newSub: NestedChildNode
-  ): NestedChildNode[] => {
-    return list.map((item) => {
-      if (item.id === parentChildId) {
-        return {
-          ...item,
-          childrenNodes: [...(item.childrenNodes || []), newSub],
-        };
-      }
-      if (item.childrenNodes && item.childrenNodes.length > 0) {
-        return {
-          ...item,
-          childrenNodes: addNestedSubChild(item.childrenNodes, parentChildId, newSub),
-        };
-      }
-      return item;
-    });
-  };
-
-  const removeNestedChildById = (
-    list: NestedChildNode[],
-    targetId: string
-  ): NestedChildNode[] => {
-    return list
-      .filter((item) => item.id !== targetId)
-      .map((item) => ({
-        ...item,
-        childrenNodes: item.childrenNodes
-          ? removeNestedChildById(item.childrenNodes, targetId)
-          : undefined,
-      }));
-  };
-
-  // Recursive Scratch-Style Nested Child Slot Renderer on Canvas
-  const renderNestedChildrenSlot = (
-    node: SceneNode,
-    children: NestedChildNode[],
-    depth = 0
-  ) => {
+  // ============================================================================
+  // MOBILE TOUCH CARD FLOW VIEW (Designed specifically for effortless phone editing)
+  // ============================================================================
+  if (isMobileViewport && mobileViewMode === 'flow') {
     return (
-      <div
-        className="space-y-1 pl-2 border-l-2 py-1"
-        style={{
-          borderColor: depth === 0 ? '#10b981' : '#38bdf8',
-        }}
-      >
-        {children.map((ch) => {
-          const chMeta = getNodeMeta(ch.type);
-          const isSubContainer =
-            ch.type === 'repeat_loop' ||
-            ch.type === 'while_loop' ||
-            ch.type === 'if_else_container' ||
-            ch.type === 'parallel_container';
-          return (
-            <div
-              key={ch.id}
-              onClick={(e) => e.stopPropagation()}
-              className="rounded bg-[#131318] border border-[#292933] p-1.5 text-[10px] space-y-1"
+      <div className="relative w-full h-full flex flex-col bg-[#0e1117] text-zinc-100 overflow-hidden">
+        {/* Top Mobile Canvas Toolbar */}
+        <div className="shrink-0 px-3 py-2 bg-[#141821] border-b border-[#262d3d] flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <select
+              value={filterChapter}
+              onChange={(e) => setFilterChapter(e.target.value)}
+              className="px-2 py-1.5 rounded-md bg-[#1c2230] border border-[#2e374d] text-xs text-zinc-100 max-w-[130px] truncate"
             >
-              <div className="flex items-center justify-between gap-1">
-                <div className="flex items-center gap-1 min-w-0">
-                  <span
-                    style={{
-                      backgroundColor: chMeta.badgeBg,
-                      color: chMeta.badgeText,
-                    }}
-                    className="px-1 py-0.2 rounded text-[9px] font-medium shrink-0"
-                  >
-                    {chMeta.title}
-                  </span>
-                  <span className="text-zinc-300 truncate">
-                    {ch.type === 'repeat_loop'
-                      ? `× ${ch.params.repeatCount ?? 2} 次`
-                      : ch.type === 'if_else_container'
-                      ? `${ch.params.conditionExpr || '条件'}`
-                      : ch.type === 'math_operation'
-                      ? `${ch.params.targetVar} ${ch.params.mathOp} ${ch.params.operandValue}`
-                      : String(ch.params.text || ch.params.intensity || ch.title)}
-                  </span>
-                </div>
-                <button
-                  onClick={() =>
-                    onUpdateNode(node.id, (prev) => ({
-                      ...prev,
-                      childrenNodes: removeNestedChildById(prev.childrenNodes || [], ch.id),
-                    }))
-                  }
-                  className="text-zinc-500 hover:text-rose-400"
-                  title="移除此子节点"
-                >
-                  <Trash2 className="w-2.5 h-2.5" strokeWidth={1.6} />
-                </button>
-              </div>
+              <option value="all">全部章节 ({nodes.length})</option>
+              {chapters.map((ch) => (
+                <option key={ch.id} value={ch.id}>
+                  {ch.title}
+                </option>
+              ))}
+            </select>
 
-              {/* If this child is ITSELF a container node, render its nested children & '+ 子节点' button recursively! */}
-              {isSubContainer && (
-                <div className="pt-0.5 space-y-1">
-                  {renderNestedChildrenSlot(node, ch.childrenNodes || [], depth + 1)}
-                  <div className="flex flex-wrap gap-1 pt-0.5">
-                    {QUICK_CHILD_TYPES.slice(0, 4).map((qt) => (
-                      <button
-                        key={qt.type}
-                        onClick={() => {
-                          const newSub: NestedChildNode = {
-                            id: `sub-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
-                            type: qt.type,
-                            title: qt.label.replace('+ ', ''),
-                            params: { ...qt.defaultParams },
-                          };
-                          onUpdateNode(node.id, (prev) => ({
-                            ...prev,
-                            childrenNodes: addNestedSubChild(
-                              prev.childrenNodes || [],
-                              ch.id,
-                              newSub
-                            ),
-                          }));
-                        }}
-                        className="px-1 py-0.2 rounded bg-[#1f1f27] hover:bg-[#292934] text-emerald-300 border border-emerald-500/30 text-[9px]"
+            <button
+              type="button"
+              onClick={() => setShowAddMenu((v) => !v)}
+              className="px-2.5 py-1.5 rounded-md bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold flex items-center gap-1 shrink-0 shadow-sm"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>新增节点</span>
+            </button>
+          </div>
+
+          {/* Switch between Mobile Touch Flow & 2D Free Canvas */}
+          <div className="flex items-center rounded-lg bg-[#0b0e14] p-0.5 border border-[#262d3d] shrink-0">
+            <button
+              type="button"
+              onClick={() => setMobileViewMode('flow')}
+              className="px-2 py-1 rounded-md bg-sky-500/20 text-sky-300 border border-sky-400/30 text-[11px] font-semibold flex items-center gap-1"
+            >
+              <Smartphone className="w-3 h-3" />
+              <span>触控流</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setMobileViewMode('canvas');
+                setTimeout(fitCanvasToNodes, 30);
+              }}
+              className="px-2 py-1 rounded-md text-zinc-400 hover:text-zinc-200 text-[11px] flex items-center gap-1"
+            >
+              <MapIcon className="w-3 h-3" />
+              <span>2D画布</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Quick-Add Node Drawer on Mobile */}
+        {showAddMenu && (
+          <div className="shrink-0 bg-[#171c28] border-b border-[#2c3548] p-2.5 max-h-64 overflow-y-auto space-y-2">
+            <div className="flex flex-wrap gap-1">
+              {NODE_CATEGORIES.map((cat) => (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => setActiveCat(cat.id)}
+                  style={{
+                    borderColor: activeCat === cat.id ? cat.color : 'transparent',
+                    backgroundColor: activeCat === cat.id ? `${cat.color}28` : '#11151f',
+                  }}
+                  className="px-2 py-1 rounded border text-[11px] font-medium text-zinc-100 flex items-center gap-1"
+                >
+                  <span
+                    style={{ backgroundColor: cat.color }}
+                    className="w-2 h-2 rounded-full"
+                  />
+                  {cat.label}
+                </button>
+              ))}
+            </div>
+            <div className="grid grid-cols-2 gap-1.5">
+              {NODE_REGISTRY.filter((n) => n.category === activeCat).map((meta) => (
+                <button
+                  key={meta.type}
+                  type="button"
+                  onClick={() => {
+                    onAddNode(meta.type);
+                    setShowAddMenu(false);
+                  }}
+                  className="p-2 rounded-lg bg-[#10141d] border border-[#283142] text-left flex flex-col gap-0.5 active:bg-[#1e2638]"
+                >
+                  <span style={{ color: meta.badgeText }} className="text-xs font-bold">
+                    {meta.title}
+                  </span>
+                  <span className="text-[10px] text-zinc-400 line-clamp-1">
+                    {meta.description}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Scrollable Touch Node Card Flow */}
+        <div className="flex-1 overflow-y-auto p-3 space-y-3 pb-20">
+          {visibleNodes.map((node, index) => {
+            const meta = getNodeMeta(node.type);
+            const isSelected = node.id === selectedNodeId;
+            const isStart = node.id === startNodeId;
+            const firstDlg = node.dialogues[0];
+
+            return (
+              <React.Fragment key={node.id}>
+                <div
+                  onClick={() => onSelectNode(node.id)}
+                  style={{
+                    borderColor: isSelected ? meta.accentColor : '#283040',
+                    borderLeftWidth: '4px',
+                    borderLeftColor: meta.accentColor,
+                  }}
+                  className={`rounded-xl border bg-[#141822] p-3 shadow-md transition ${
+                    isSelected ? 'ring-1 ring-sky-400/50 bg-[#171d2b]' : ''
+                  }`}
+                >
+                  {/* Card Header */}
+                  <div className="flex items-center justify-between gap-2 mb-2.5">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300 font-mono text-[10px]">
+                        #{index + 1}
+                      </span>
+                      <span
+                        style={{ backgroundColor: meta.accentColor, color: '#09090b' }}
+                        className="px-1.5 py-0.5 rounded text-[10px] font-bold shrink-0"
                       >
-                        {qt.label}
+                        {meta.title}
+                      </span>
+                      {isStart && (
+                        <span className="px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-300 border border-sky-400/30 text-[10px] font-semibold shrink-0">
+                          起点
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setOpenBlockNodeId(openBlockNodeId === node.id ? null : node.id);
+                        }}
+                        className="px-2 py-1 rounded bg-[#1f2637] text-amber-300 text-[11px] flex items-center gap-1"
+                      >
+                        <Blocks className="w-3 h-3" />
+                        <span>积木</span>
                       </button>
-                    ))}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDeleteNode(node.id);
+                        }}
+                        className="p-1.5 rounded bg-rose-500/15 text-rose-300 hover:bg-rose-500/25"
+                        title="删除节点"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Direct Inline Mobile Editor Fields */}
+                  <div className="space-y-2" onClick={(e) => e.stopPropagation()}>
+                    <div className="grid grid-cols-12 gap-2">
+                      <div className="col-span-7">
+                        <label className="block text-[10px] text-zinc-400 mb-0.5">
+                          节点标题
+                        </label>
+                        <input
+                          type="text"
+                          value={node.title}
+                          onChange={(e) =>
+                            onUpdateNode(node.id, (prev) => ({
+                              ...prev,
+                              title: e.target.value,
+                            }))
+                          }
+                          className="w-full px-2.5 py-1.5 rounded-lg bg-[#0d1017] border border-[#283142] text-xs text-zinc-100"
+                        />
+                      </div>
+                      <div className="col-span-5">
+                        <label className="block text-[10px] text-zinc-400 mb-0.5">
+                          场景背景
+                        </label>
+                        <select
+                          value={node.backgroundId}
+                          onChange={(e) =>
+                            onUpdateNode(node.id, (prev) => ({
+                              ...prev,
+                              backgroundId: e.target.value,
+                            }))
+                          }
+                          className="w-full px-2 py-1.5 rounded-lg bg-[#0d1017] border border-[#283142] text-xs text-zinc-100"
+                        >
+                          {BACKGROUND_ASSETS.map((b) => (
+                            <option key={b.id} value={b.id}>
+                              {b.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Dialogue Quick Edit on Mobile */}
+                    {(node.type === 'dialogue' ||
+                      node.type === 'inner_monologue' ||
+                      node.type === 'narration' ||
+                      firstDlg) && (
+                      <div className="rounded-lg bg-[#0d1017] border border-[#252d3d] p-2 space-y-1.5">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-sky-400 font-semibold shrink-0">
+                            说话人:
+                          </span>
+                          <input
+                            type="text"
+                            value={firstDlg?.speakerName || '旁白'}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              onUpdateNode(node.id, (prev) => {
+                                const dlgs =
+                                  prev.dialogues.length > 0
+                                    ? prev.dialogues.map((d, i) =>
+                                        i === 0 ? { ...d, speakerName: val } : d
+                                      )
+                                    : [
+                                        {
+                                          id: `dlg-${Date.now()}`,
+                                          speakerId: 'custom',
+                                          speakerName: val,
+                                          speakerColor: '#38bdf8',
+                                          text: '',
+                                        },
+                                      ];
+                                return { ...prev, dialogues: dlgs };
+                              });
+                            }}
+                            className="flex-1 px-2 py-1 rounded bg-[#161b26] border border-[#2c3548] text-xs text-zinc-100"
+                          />
+                        </div>
+                        <textarea
+                          rows={2}
+                          value={firstDlg?.text || ''}
+                          placeholder="输入此节点的角色台词或旁白内容..."
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            onUpdateNode(node.id, (prev) => {
+                              const dlgs =
+                                prev.dialogues.length > 0
+                                  ? prev.dialogues.map((d, i) =>
+                                      i === 0 ? { ...d, text: val } : d
+                                    )
+                                  : [
+                                      {
+                                        id: `dlg-${Date.now()}`,
+                                        speakerId: 'custom',
+                                        speakerName: '旁白',
+                                        speakerColor: '#38bdf8',
+                                        text: val,
+                                      },
+                                    ];
+                              return { ...prev, dialogues: dlgs };
+                            });
+                          }}
+                          className="w-full px-2.5 py-1.5 rounded bg-[#161b26] border border-[#2c3548] text-xs text-zinc-100 resize-none"
+                        />
+                      </div>
+                    )}
+
+                    {/* Container C-Block Editor on Mobile */}
+                    {(meta.isContainer || openBlockNodeId === node.id) && (
+                      <div className="rounded-lg bg-[#0d1017] border border-emerald-500/30 p-2">
+                        <ScratchBlockTree
+                          compact
+                          blocks={node.childrenNodes || []}
+                          onChange={(nextBlocks) =>
+                            onUpdateNode(node.id, (prev) => ({
+                              ...prev,
+                              childrenNodes: nextBlocks,
+                            }))
+                          }
+                        />
+                      </div>
+                    )}
+
+                    {/* Next Node Connection Selector & One-Tap Append */}
+                    <div className="flex items-center justify-between gap-2 pt-1">
+                      <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                        <Link2 className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                        <span className="text-[11px] text-zinc-400 shrink-0">下一节点:</span>
+                        <select
+                          value={node.nextNodeId || ''}
+                          onChange={(e) =>
+                            onUpdateNode(node.id, (prev) => ({
+                              ...prev,
+                              nextNodeId: e.target.value || null,
+                            }))
+                          }
+                          className="flex-1 min-w-0 px-2 py-1 rounded bg-[#0d1017] border border-[#283142] text-xs text-sky-200 truncate"
+                        >
+                          <option value="">-- 无 (章节末尾/分支) --</option>
+                          {nodes
+                            .filter((n) => n.id !== node.id)
+                            .map((n) => (
+                              <option key={n.id} value={n.id}>
+                                {n.title}
+                              </option>
+                            ))}
+                        </select>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onSelectNode(node.id);
+                          onAddNode('dialogue', {
+                            x: node.position.x + 300,
+                            y: node.position.y,
+                          });
+                        }}
+                        className="px-2.5 py-1 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 border border-sky-400/30 text-sky-300 text-[11px] font-semibold shrink-0"
+                      >
+                        + 追加节点
+                      </button>
+                    </div>
                   </div>
                 </div>
-              )}
-            </div>
-          );
-        })}
+
+                {/* Flow Arrow Indicator */}
+                {index < visibleNodes.length - 1 && (
+                  <div className="flex justify-center py-0.5">
+                    <ArrowDown className="w-4 h-4 text-sky-500/60" />
+                  </div>
+                )}
+              </React.Fragment>
+            );
+          })}
+        </div>
       </div>
     );
-  };
+  }
 
   return (
     <div
@@ -414,12 +672,23 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
       }}
     >
       {/* Minimal Floating Top Bar */}
-      <div className="canvas-Floating-ui absolute top-3 left-3 right-3 z-30 flex items-center justify-between pointer-events-none">
-        <div className="flex items-center gap-1.5 bg-[#18181c]/95 border border-[#2c2c34] rounded-md p-1 pointer-events-auto shadow-md">
+      <div className="canvas-Floating-ui absolute top-2.5 left-2.5 right-2.5 z-30 flex flex-wrap items-center justify-between gap-1.5 pointer-events-none">
+        <div className="flex flex-wrap items-center gap-1.5 bg-[#18181c]/95 border border-[#2c2c34] rounded-md p-1 pointer-events-auto shadow-md">
+          {isMobileViewport && (
+            <button
+              type="button"
+              onClick={() => setMobileViewMode('flow')}
+              className="px-2 py-1 rounded bg-sky-500/20 border border-sky-400/40 text-sky-300 text-[11px] font-semibold flex items-center gap-1"
+            >
+              <Smartphone className="w-3 h-3" />
+              <span>返回触控流</span>
+            </button>
+          )}
+
           <select
             value={filterChapter}
             onChange={(e) => setFilterChapter(e.target.value)}
-            className="!bg-transparent !border-none px-2 py-0.5 text-xs text-zinc-200"
+            className="!bg-transparent !border-none px-1.5 py-0.5 text-xs text-zinc-200 max-w-[130px] sm:max-w-none"
           >
             <option value="all">全部章节 ({nodes.length})</option>
             {chapters.map((ch) => (
@@ -440,10 +709,20 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
             添加节点
           </button>
 
-          <div className="w-px h-3.5 bg-[#2c2c34]" />
+          {connectingFromNodeId && (
+            <button
+              type="button"
+              onClick={() => setConnectingFromNodeId(null)}
+              className="px-2 py-0.5 rounded bg-sky-500/25 border border-sky-400 text-sky-200 text-[11px] animate-pulse"
+            >
+              请点击目标节点完成连线 (取消)
+            </button>
+          )}
+
+          <div className="w-px h-3.5 bg-[#2c2c34] hidden sm:block" />
 
           {/* JS / TS Node Script Mode Switcher */}
-          <div className="flex items-center rounded bg-[#131317] p-0.5 border border-[#27272c]">
+          <div className="hidden sm:flex items-center rounded bg-[#131317] p-0.5 border border-[#27272c]">
             <button
               onClick={() => setCanvasScriptLang('javascript')}
               className={`px-1.5 py-0.5 rounded text-[10px] font-mono transition ${
@@ -472,7 +751,7 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
         {/* Monochrome Zoom Controls */}
         <div className="flex items-center gap-0.5 bg-[#18181c]/95 border border-[#2c2c34] rounded-md p-1 pointer-events-auto shadow-md">
           <button
-            onClick={() => setZoom((z) => Math.max(0.4, +(z - 0.1).toFixed(2)))}
+            onClick={() => setZoom((z) => Math.max(0.38, +(z - 0.1).toFixed(2)))}
             className="icon-btn"
             title="缩小"
           >
@@ -489,12 +768,9 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
             <ZoomIn className="w-3.5 h-3.5" strokeWidth={1.6} />
           </button>
           <button
-            onClick={() => {
-              setZoom(0.92);
-              setPan({ x: 32, y: 32 });
-            }}
+            onClick={fitCanvasToNodes}
             className="icon-btn"
-            title="重置视图"
+            title="自适应居中视图"
           >
             <Maximize2 className="w-3.5 h-3.5" strokeWidth={1.6} />
           </button>
@@ -669,6 +945,20 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
+                      setConnectingFromNodeId(
+                        connectingFromNodeId === node.id ? null : node.id
+                      );
+                    }}
+                    className={`icon-btn !w-5 !h-5 ${
+                      connectingFromNodeId === node.id ? '!text-sky-300 bg-sky-500/20' : ''
+                    }`}
+                    title="点击连线至下一节点"
+                  >
+                    <Link2 className="w-3 h-3" strokeWidth={1.6} />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
                       setOpenCodeNodeId(isCodeOpen ? null : node.id);
                     }}
                     className={`icon-btn !w-5 !h-5 ${
@@ -683,7 +973,7 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
                       e.stopPropagation();
                       setOpenBlockNodeId(isBlocksOpen ? null : node.id);
                     }}
-                    className="icon-btn !w-5 !h-5 opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="icon-btn !w-5 !h-5 opacity-90 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
                     title="积木脚本"
                   >
                     <Blocks className="w-3 h-3" strokeWidth={1.6} />
@@ -693,7 +983,7 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
                       e.stopPropagation();
                       onDeleteNode(node.id);
                     }}
-                    className="icon-btn !w-5 !h-5 opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="icon-btn !w-5 !h-5 opacity-90 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
                     title="删除节点"
                   >
                     <Trash2 className="w-3 h-3" strokeWidth={1.6} />
@@ -703,13 +993,12 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
 
               {/* ==================== SPECIALIZED NODE BODY BY TYPE ==================== */}
               <div className="px-2.5 py-2 space-y-1.5">
-                {/* 1. SCRATCH-STYLE CONTAINER NODES (Repeat / While / ForEach / If-Else / Parallel / TryCatch) */}
+                {/* 1. CONTAINER NODES (Repeat / While / ForEach / If-Else / Parallel / TryCatch) */}
                 {meta.isContainer ? (
                   <div
                     onClick={(e) => e.stopPropagation()}
                     className="space-y-1.5 text-[11px]"
                   >
-                    {/* Container Header Parameter Control */}
                     <div className="flex items-center justify-between gap-1.5 px-2 py-1 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-200">
                       <span className="flex items-center gap-1 font-medium">
                         <Repeat className="w-3 h-3" strokeWidth={1.8} />
@@ -761,7 +1050,6 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
                       )}
                     </div>
 
-                    {/* Authentic Scratch C-Shaped Indented Mouth with Multi-Level Puzzle Blocks */}
                     <div
                       style={{ borderLeftColor: meta.accentColor }}
                       className="border-l-[10px] pl-2 py-1.5 bg-black/25 rounded-r"
@@ -783,7 +1071,6 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
                   node.type === 'string_format' ||
                   node.type === 'array_operation' ||
                   node.type === 'function_call' ? (
-                  /* 2. FINE LOGIC & VARIABLE NODES */
                   <div className="px-2 py-1.5 rounded bg-[#131318] border border-[#292932] font-mono text-[11px] text-emerald-300 truncate">
                     {node.type === 'math_operation'
                       ? `${node.logicConfig?.targetVar || 'clueCount'} ${
@@ -806,7 +1093,6 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
                         }(...)`}
                   </div>
                 ) : node.type === 'condition' && node.conditionRule ? (
-                  /* 3. CONDITION BRANCH NODE */
                   <div className="space-y-1 text-[10px] font-mono">
                     <div className="px-2 py-1 rounded bg-amber-500/10 border border-amber-500/30 text-amber-200 truncate">
                       IF {node.conditionRule.attributeKey} {node.conditionRule.operator}{' '}
@@ -822,7 +1108,6 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
                     </div>
                   </div>
                 ) : node.choices.length > 0 ? (
-                  /* 4. PLAYER CHOICE / TIMED CHOICE NODE */
                   <div className="space-y-1">
                     {node.choices.slice(0, 3).map((ch, idx) => (
                       <div
@@ -837,7 +1122,6 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
                     ))}
                   </div>
                 ) : node.screenTextConfig ? (
-                  /* 5. SCREEN TEXT / CHAPTER TITLE NODE */
                   <div className="px-2 py-1.5 rounded bg-purple-500/15 border border-purple-500/35 text-[11px] text-purple-200 space-y-0.5">
                     <div className="truncate font-medium">{node.screenTextConfig.text}</div>
                     <div className="text-[9px] text-purple-300/80 font-mono">
@@ -846,7 +1130,6 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
                     </div>
                   </div>
                 ) : meta.category === 'audio' ? (
-                  /* 6. AUDIO NODES (BGM / SFX / VOICE) */
                   <div className="px-2 py-1.5 rounded bg-orange-500/15 border border-orange-500/35 text-[11px] text-orange-200 font-mono truncate">
                     {node.type === 'bgm_stop'
                       ? '■ 淡出停止当前背景音乐'
@@ -855,7 +1138,6 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
                       : `♪ 曲轨: ${node.bgmId}`}
                   </div>
                 ) : meta.category === 'character' ? (
-                  /* 7. CHARACTER NODES (Enter / Exit / Move / Expression / Affection) */
                   <div className="px-2 py-1.5 rounded bg-pink-500/15 border border-pink-500/35 text-[11px] text-pink-200 truncate">
                     {node.type === 'affection_change'
                       ? `♥ 好感度变更: ${node.affectionTargetCharId || 'yukina'} ${
@@ -868,7 +1150,6 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
                         }%)`}
                   </div>
                 ) : meta.category === 'visual' ? (
-                  /* 8. VISUAL & CAMERA NODES */
                   <div className="px-2 py-1.5 rounded bg-teal-500/15 border border-teal-500/35 text-[11px] text-teal-200 truncate">
                     {node.type === 'camera_pan_zoom'
                       ? `推拉镜头 Zoom: ${node.cameraConfig?.zoom ?? 1.25}x`
@@ -889,7 +1170,6 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
                       : `场景切换 → ${bg.name}`}
                   </div>
                 ) : meta.category === 'ui' ? (
-                  /* 9. IN-GAME UI & SETTINGS NODES */
                   <div className="px-2 py-1.5 rounded bg-blue-500/15 border border-blue-500/35 text-[11px] text-blue-200 truncate">
                     {node.type === 'popup_toast'
                       ? `弹窗: ${node.toastMessage || '获得关键道具'}`
@@ -902,7 +1182,6 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
                       : `${meta.title}: ${meta.description}`}
                   </div>
                 ) : meta.category === 'control' ? (
-                  /* 10. CONTROL FLOW NODES */
                   <div className="px-2 py-1.5 rounded bg-amber-500/15 border border-amber-500/35 text-[11px] text-amber-200 font-mono truncate">
                     {node.type === 'wait_timer'
                       ? `await sleep(${node.waitDurationMs ?? 1500}ms)`
@@ -917,12 +1196,10 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
                       : `${meta.title}: → ${node.nextNodeId || '下一节点'}`}
                   </div>
                 ) : meta.category === 'script' ? (
-                  /* 11. CUSTOM SCRIPT NODE */
                   <div className="px-2 py-1.5 rounded bg-lime-500/15 border border-lime-500/35 text-[10px] text-lime-200 font-mono truncate">
                     {(node.customScript || '// 自定义 TS/JS 脚本').split('\n')[0]}
                   </div>
                 ) : (
-                  /* 12. NARRATIVE DIALOGUE / MONOLOGUE NODES */
                   <div className="px-2 py-1.5 rounded bg-sky-500/12 border border-sky-500/30 text-[11px] text-sky-100 truncate">
                     {node.dialogues[0]
                       ? `${node.dialogues[0].speakerName}：${node.dialogues[0].text}`
@@ -957,14 +1234,14 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
                 </div>
               )}
 
-              {/* Authentic Interlocking Scratch Puzzle Block Stack Drawer on Any Node */}
+              {/* Interlocking Puzzle Block Stack Drawer on Any Node */}
               {isBlocksOpen && (
                 <div
                   onClick={(e) => e.stopPropagation()}
                   className="p-2.5 border-t border-[#25252c] bg-[#121217] rounded-b-lg space-y-2"
                 >
                   <div className="text-[10px] font-medium text-amber-300 flex items-center justify-between">
-                    <span>Scratch 积木栈 (支持多重嵌套 C 型槽)</span>
+                    <span>嵌套逻辑积木栈</span>
                     <span className="text-zinc-500 font-mono">
                       {(node.childrenNodes || []).length} 块积木
                     </span>

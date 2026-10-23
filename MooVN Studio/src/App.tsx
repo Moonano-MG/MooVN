@@ -48,7 +48,7 @@ import { saveProjectToWorkspace } from './lib/workspaceManager';
 const PANEL_TITLES: Record<PanelId, string> = {
   explorer: '工程资源与章节',
   node_library: '节点与积木库',
-  canvas: 'Dify + Scratch 节点画布',
+  canvas: '可视化节点画布',
   stage: '场景舞台',
   ui_customizer: '界面定制',
   ts_code: '多语言脚本 (TS/JS/Lua/Teal/Python)',
@@ -78,56 +78,67 @@ const ALL_WINDOW_IDS: PanelId[] = [
 const ACTIVITY_RAIL_ITEMS: {
   id: PanelId;
   label: string;
+  shortLabel: string;
   icon: React.ReactNode;
 }[] = [
   {
     id: 'explorer',
     label: '工程资源与章节',
+    shortLabel: '章节目录',
     icon: <FolderTree className="w-4 h-4" strokeWidth={1.7} />,
   },
   {
     id: 'node_library',
     label: '彩色分类节点与积木库',
+    shortLabel: '节点库',
     icon: <Blocks className="w-4 h-4" strokeWidth={1.7} />,
   },
   {
     id: 'canvas',
-    label: 'Dify + Scratch 节点画布',
+    label: '可视化节点画布',
+    shortLabel: '剧情编排',
     icon: <Workflow className="w-4 h-4" strokeWidth={1.7} />,
   },
   {
     id: 'stage',
     label: '场景舞台演播',
+    shortLabel: '场景舞台',
     icon: <MonitorPlay className="w-4 h-4" strokeWidth={1.7} />,
   },
   {
     id: 'inspector',
     label: '节点专属属性与积木检查器',
+    shortLabel: '属性编辑',
     icon: <Sliders className="w-4 h-4" strokeWidth={1.7} />,
   },
   {
     id: 'ts_code',
     label: '多语言脚本编译器',
+    shortLabel: '多语言脚本',
     icon: <Code2 className="w-4 h-4" strokeWidth={1.7} />,
   },
   {
     id: 'terminal',
     label: '终端与编译诊断',
+    shortLabel: '终端诊断',
     icon: <Terminal className="w-4 h-4" strokeWidth={1.7} />,
   },
   {
     id: 'ai_agent',
     label: 'AI 助手窗口',
+    shortLabel: 'AI 助手',
     icon: <Bot className="w-4 h-4" strokeWidth={1.7} />,
   },
   {
     id: 'asset_studio',
     label: '智能抠图与 AI 生图',
+    shortLabel: '素材工坊',
     icon: <Scissors className="w-4 h-4" strokeWidth={1.7} />,
   },
   {
     id: 'ui_customizer',
     label: '游戏界面定制',
+    shortLabel: '界面定制',
     icon: <Palette className="w-4 h-4" strokeWidth={1.7} />,
   },
 ];
@@ -344,7 +355,11 @@ function dockPanelIntoTree(
   );
 }
 
-export function App() {
+export function App({
+  initialMode,
+}: {
+  initialMode?: 'portal' | 'studio';
+} = {}) {
   const {
     project,
     setProject,
@@ -387,7 +402,24 @@ export function App() {
   const [editorTheme, setEditorTheme] = useState<'dark' | 'light'>('dark');
 
   // 网站分 2 部分：
-  const [siteSection, setSiteSection] = useState<'portal' | 'studio'>('studio');
+  // 1) 'portal' (默认进入 Vercel 时的引导与 GitHub Release 客户端下载站 + GitHub Issues 客服中心)
+  // 2) 'studio' (网页版 MooVN Studio 完整 IDE 工作台)
+  const [siteSection, setSiteSection] = useState<'portal' | 'studio'>(() => {
+    if (initialMode) return initialMode;
+    if (typeof window !== 'undefined') {
+      const isTauri = Boolean((window as unknown as Record<string, unknown>).__TAURI_INTERNALS__);
+      const params = new URLSearchParams(window.location.search);
+      if (
+        isTauri ||
+        window.location.pathname.includes('studio') ||
+        params.get('mode') === 'studio' ||
+        window.location.hash === '#studio'
+      ) {
+        return 'studio';
+      }
+    }
+    return 'studio';
+  });
 
   // 移动端自适应检测 (< 768px 自动切换为单面板全屏触控工作台)
   const [isMobile, setIsMobile] = useState<boolean>(() =>
@@ -834,9 +866,19 @@ export function App() {
             startNodeId={project.startNodeId}
             defaultTab={id === 'node_library' ? 'nodes' : 'chapters'}
             onSelectChapter={setSelectedChapterId}
-            onSelectNode={setSelectedNodeId}
+            onSelectNode={(nid) => {
+              setSelectedNodeId(nid);
+              if (isMobile) {
+                setMobileActivePanel('canvas');
+              }
+            }}
             onAddChapter={addChapter}
-            onAddNode={(type) => addNode(type)}
+            onAddNode={(type) => {
+              addNode(type);
+              if (isMobile) {
+                setMobileActivePanel('canvas');
+              }
+            }}
             onAssignBackground={(bgId) => {
               if (!selectedNode) return;
               updateNode(selectedNode.id, (prev) => ({
@@ -1344,7 +1386,7 @@ export function App() {
     floatingWindows.some((f) => f.id === id);
 
   if (siteSection === 'portal') {
-    return <OfficialPortal onLaunchWebStudio={() => setSiteSection('studio')} />;
+    return <OfficialPortal onEnterStudio={() => setSiteSection('studio')} />;
   }
 
   return (
@@ -1378,22 +1420,46 @@ export function App() {
         onPlayPreview={() => setIsPlayingPreview(true)}
         onOpenExportModal={() => setIsExportModalOpen(true)}
         onOpenProjectLauncher={() => setIsLauncherOpen(true)}
-        onOpenOfficialPortal={() => setSiteSection('portal')}
+        onOpenOfficialPortal={() => {
+          if (
+            typeof window !== 'undefined' &&
+            window.location.pathname.includes('studio')
+          ) {
+            window.open('/', '_blank', 'noopener,noreferrer');
+          } else {
+            setSiteSection('portal');
+          }
+        }}
       />
 
       {isMobile ? (
         /* ==================== MOBILE SINGLE-PANE TOUCH WORKBENCH ==================== */
         <div className="flex-1 flex flex-col overflow-hidden relative">
-          <div className="h-8 px-3 bg-[#16161a] border-b border-[#27272c] flex items-center justify-between text-xs shrink-0">
-            <span className="font-medium text-zinc-100 truncate">
-              {PANEL_TITLES[mobileActivePanel]}
-            </span>
-            <div className="flex items-center gap-1.5">
+          <div className="min-h-9 py-1 px-2.5 bg-[#16161a] border-b border-[#27272c] flex items-center justify-between gap-2 text-xs shrink-0">
+            <div className="flex items-center gap-1.5 min-w-0 flex-1">
+              <span className="font-semibold text-sky-300 shrink-0">
+                {PANEL_TITLES[mobileActivePanel]}
+              </span>
+              <span className="text-zinc-600">·</span>
+              <select
+                value={selectedNodeId}
+                onChange={(e) => setSelectedNodeId(e.target.value)}
+                className="px-2 py-0.5 rounded bg-[#202027] border border-[#2f2f3a] text-[11px] text-zinc-100 truncate max-w-[145px]"
+                title="快速切换当前编辑节点"
+              >
+                {project.nodes.map((n, idx) => (
+                  <option key={n.id} value={n.id}>
+                    #{idx + 1} {n.title}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-center gap-1 shrink-0">
               <button
                 onClick={() =>
                   setEditorTheme((t) => (t === 'dark' ? 'light' : 'dark'))
                 }
-                className="p-1 rounded bg-[#222228] text-zinc-300"
+                className="p-1.5 rounded bg-[#222228] text-zinc-300"
                 title="切换黑白界面风格"
               >
                 {editorTheme === 'dark' ? (
@@ -1404,7 +1470,7 @@ export function App() {
               </button>
               <button
                 onClick={() => setIsSettingsOpen(true)}
-                className="p-1 rounded bg-[#222228] text-zinc-300"
+                className="p-1.5 rounded bg-[#222228] text-zinc-300"
                 title="设置"
               >
                 <Settings className="w-3.5 h-3.5" />
@@ -1417,22 +1483,22 @@ export function App() {
           </div>
 
           {/* Mobile Bottom Touch Navigation Bar */}
-          <nav className="h-12 bg-[#141417] border-t border-[#27272c] flex items-center overflow-x-auto px-1.5 gap-1 shrink-0">
+          <nav className="h-14 bg-[#12141c] border-t border-[#262b3b] flex items-center overflow-x-auto px-1.5 gap-1 shrink-0">
             {ACTIVITY_RAIL_ITEMS.map((item) => {
               const active = mobileActivePanel === item.id;
               return (
                 <button
                   key={item.id}
                   onClick={() => setMobileActivePanel(item.id)}
-                  className={`px-2.5 py-1.5 rounded-md flex flex-col items-center justify-center gap-0.5 shrink-0 transition ${
+                  className={`min-w-[58px] px-2 py-1.5 rounded-lg flex flex-col items-center justify-center gap-1 shrink-0 transition ${
                     active
-                      ? 'bg-zinc-200 text-zinc-950 font-semibold'
-                      : 'text-zinc-400 hover:text-zinc-200'
+                      ? 'bg-sky-500 text-white font-semibold shadow-md shadow-sky-600/30'
+                      : 'text-zinc-400 hover:text-zinc-200 bg-[#191c26]'
                   }`}
                 >
                   {item.icon}
-                  <span className="text-[10px] leading-none">
-                    {item.label.slice(0, 4)}
+                  <span className="text-[10px] leading-none whitespace-nowrap">
+                    {item.shortLabel}
                   </span>
                 </button>
               );

@@ -501,9 +501,11 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
   return (
     <div className="fixed inset-0 z-50 bg-black flex flex-col select-none overflow-hidden">
       {/* Top Bar */}
-      <div className="h-9 bg-[#18181b] border-b border-[#2b2b30] px-4 flex items-center justify-between text-xs text-slate-300 shrink-0">
-        <div className="flex items-center gap-3">
-          <span className="font-semibold text-white">{project.title}</span>
+      <div className="min-h-9 py-1 bg-[#18181b] border-b border-[#2b2b30] px-2.5 sm:px-4 flex flex-wrap items-center justify-between gap-1.5 text-xs text-slate-300 shrink-0">
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-3">
+          <span className="font-semibold text-white truncate max-w-[120px] sm:max-w-none">
+            {project.title}
+          </span>
           {screenMode === 'playing' && (
             <>
               <button
@@ -531,7 +533,7 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
                 className="flex items-center gap-1 px-2 py-0.5 rounded bg-[#252529] hover:bg-[#323238] text-slate-200 transition"
               >
                 <BookOpen className="w-3 h-3 text-fuchsia-400" />
-                档案词条 ({unlockedClues.length})
+                <span className="hidden sm:inline">档案词条</span> ({unlockedClues.length})
               </button>
               <button
                 onClick={() => setScreenMode('main_menu')}
@@ -544,10 +546,10 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
           )}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2">
           <button
             onClick={() => setModalMode('msvn')}
-            className="flex items-center gap-1 px-2 py-0.5 rounded bg-[#252529] hover:bg-[#323238] text-slate-200 border border-[#383840] transition"
+            className="hidden sm:flex items-center gap-1 px-2 py-0.5 rounded bg-[#252529] hover:bg-[#323238] text-slate-200 border border-[#383840] transition"
             title="插件式章节包 (.msvn) 挂载与卸载"
           >
             <Layers className="w-3 h-3" />
@@ -556,7 +558,7 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
 
           <button
             onClick={() => setShowDevDebug((d) => !d)}
-            className={`flex items-center gap-1 px-2 py-0.5 rounded border transition ${
+            className={`hidden sm:flex items-center gap-1 px-2 py-0.5 rounded border transition ${
               showDevDebug
                 ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'
                 : 'bg-[#252529] border-[#383840] text-slate-400 hover:text-white'
@@ -583,7 +585,7 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
             className="flex items-center gap-1 px-2.5 py-0.5 rounded bg-rose-600/20 hover:bg-rose-600/35 text-rose-300 border border-rose-500/30 transition"
           >
             <X className="w-3.5 h-3.5" />
-            返回编辑器
+            返回
           </button>
         </div>
       </div>
@@ -606,7 +608,7 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
           >
             <div
               style={{ backgroundColor: ui.mainMenu.panelColor }}
-              className="w-[34%] min-w-[300px] max-w-[440px] h-full flex flex-col justify-between px-11 py-14 relative z-20"
+              className="w-[62%] sm:w-[34%] sm:min-w-[300px] max-w-[440px] h-full flex flex-col justify-between px-5 py-8 sm:px-11 sm:py-14 relative z-20"
             >
               <div>
                 <div
