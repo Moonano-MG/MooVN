@@ -573,45 +573,50 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
                 left: node.position.x,
                 top: node.position.y,
                 width: meta.isContainer ? 276 : CARD_WIDTH,
-                borderColor: isSelected ? meta.accentColor : `${meta.accentColor}45`,
+                borderColor: isSelected ? meta.accentColor : `${meta.accentColor}75`,
+                borderLeftWidth: '4px',
+                borderLeftColor: meta.accentColor,
+                background: `linear-gradient(180deg, ${meta.accentColor}16 0%, #17171c 100%)`,
                 boxShadow: isSelected
-                  ? `0 0 0 1px ${meta.accentColor}65, 0 12px 28px rgba(0,0,0,0.55)`
-                  : undefined,
+                  ? `0 0 0 2px ${meta.accentColor}85, 0 14px 32px rgba(0,0,0,0.65)`
+                  : `0 6px 18px rgba(0,0,0,0.45)`,
               }}
-              className={`vn-node-card group absolute rounded-lg bg-[#18181c] border transition cursor-pointer overflow-hidden ${
-                isSelected ? 'z-20' : 'hover:border-zinc-400 z-10 shadow-md'
+              className={`vn-node-card group absolute rounded-lg border transition cursor-pointer overflow-hidden ${
+                isSelected ? 'z-20' : 'hover:brightness-110 z-10'
               }`}
             >
-              {/* Category Top Color Accent Strip */}
-              <div
-                style={{ backgroundColor: meta.accentColor }}
-                className="h-1 w-full"
-              />
-
               {/* Input / Output Port Dots */}
-              <div className="absolute -left-1.5 top-10 w-2.5 h-2.5 rounded-full bg-[#27272c] border border-zinc-400" />
+              <div
+                style={{ borderColor: meta.accentColor }}
+                className="absolute -left-1.5 top-10 w-2.5 h-2.5 rounded-full bg-[#18181c] border-2"
+              />
               <div
                 style={{ backgroundColor: meta.accentColor }}
                 className="absolute -right-1.5 top-10 w-2.5 h-2.5 rounded-full border border-zinc-950"
               />
 
-              {/* Header: Color-Coded Category Tag + Title + JS/TS Code & Block Buttons */}
+              {/* Header: Rich Category-Colored Gradient Header */}
               <div
-                style={{ backgroundColor: `${meta.accentColor}12` }}
-                className="flex items-center justify-between px-2.5 py-1.5 border-b border-[#25252c]"
+                style={{
+                  background: `linear-gradient(90deg, ${meta.accentColor}38 0%, ${meta.accentColor}14 100%)`,
+                  borderBottomColor: `${meta.accentColor}40`,
+                }}
+                className="flex items-center justify-between px-2.5 py-1.5 border-b"
               >
                 <div className="flex items-center gap-1.5 min-w-0">
                   <span
                     style={{
-                      backgroundColor: meta.badgeBg,
-                      color: meta.badgeText,
-                      borderColor: `${meta.accentColor}55`,
+                      backgroundColor: meta.accentColor,
+                      color: '#09090b',
                     }}
-                    className="px-1.5 py-0.5 rounded border text-[10px] font-semibold shrink-0"
+                    className="px-1.5 py-0.5 rounded text-[10px] font-bold shrink-0"
                   >
                     {meta.categoryLabel}
                   </span>
-                  <span className="text-xs font-medium text-zinc-100 truncate">
+                  <span
+                    style={{ color: meta.badgeText }}
+                    className="text-xs font-semibold truncate"
+                  >
                     {node.title}
                   </span>
                 </div>
@@ -814,16 +819,92 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
                   </div>
                 ) : node.screenTextConfig ? (
                   /* 5. SCREEN TEXT / CHAPTER TITLE NODE */
-                  <div className="px-2 py-1.5 rounded bg-purple-500/10 border border-purple-500/30 text-[11px] text-purple-200 space-y-0.5">
+                  <div className="px-2 py-1.5 rounded bg-purple-500/15 border border-purple-500/35 text-[11px] text-purple-200 space-y-0.5">
                     <div className="truncate font-medium">{node.screenTextConfig.text}</div>
-                    <div className="text-[9px] text-purple-300/75 font-mono">
+                    <div className="text-[9px] text-purple-300/80 font-mono">
                       坐标 X:{node.screenTextConfig.x}% Y:{node.screenTextConfig.y}% ·{' '}
                       {node.screenTextConfig.fontSize}px
                     </div>
                   </div>
+                ) : meta.category === 'audio' ? (
+                  /* 6. AUDIO NODES (BGM / SFX / VOICE) */
+                  <div className="px-2 py-1.5 rounded bg-orange-500/15 border border-orange-500/35 text-[11px] text-orange-200 font-mono truncate">
+                    {node.type === 'bgm_stop'
+                      ? '■ 淡出停止当前背景音乐'
+                      : node.type === 'sfx_play'
+                      ? `🔊 音效: ${node.sfxId || 'sfx-bell-chime'}`
+                      : `♪ 曲轨: ${node.bgmId}`}
+                  </div>
+                ) : meta.category === 'character' ? (
+                  /* 7. CHARACTER NODES (Enter / Exit / Move / Expression / Affection) */
+                  <div className="px-2 py-1.5 rounded bg-pink-500/15 border border-pink-500/35 text-[11px] text-pink-200 truncate">
+                    {node.type === 'affection_change'
+                      ? `♥ 好感度变更: ${node.affectionTargetCharId || 'yukina'} ${
+                          (node.affectionDelta ?? 10) >= 0 ? '+' : ''
+                        }${node.affectionDelta ?? 10}`
+                      : node.type === 'char_expression'
+                      ? `表情切换 → ${node.targetExpressionSpriteId || 'char-yukina-3'}`
+                      : `${meta.title}: ${node.characters[0]?.name || '星野雪奈'} (X:${
+                          node.characters[0]?.x ?? 50
+                        }%)`}
+                  </div>
+                ) : meta.category === 'visual' ? (
+                  /* 8. VISUAL & CAMERA NODES */
+                  <div className="px-2 py-1.5 rounded bg-teal-500/15 border border-teal-500/35 text-[11px] text-teal-200 truncate">
+                    {node.type === 'camera_pan_zoom'
+                      ? `推拉镜头 Zoom: ${node.cameraConfig?.zoom ?? 1.25}x`
+                      : node.type === 'camera_shake'
+                      ? `镜头震动: ${node.cameraConfig?.shakeIntensity || 'medium'} (${
+                          node.cameraConfig?.durationMs ?? 700
+                        }ms)`
+                      : node.type === 'screen_flash'
+                      ? `画面闪光: ${node.cameraConfig?.flashColor || '#ffffff'}`
+                      : node.type === 'weather_particles'
+                      ? `粒子天气: ${node.weatherEffect || 'sakura'}`
+                      : node.type === 'color_filter'
+                      ? `色彩滤镜: ${node.colorFilter || 'sepia'}`
+                      : node.type === 'fade'
+                      ? `过渡渐变: ${node.fadeConfig?.direction || 'in'} (${
+                          node.fadeConfig?.durationMs ?? 800
+                        }ms)`
+                      : `场景切换 → ${bg.name}`}
+                  </div>
+                ) : meta.category === 'ui' ? (
+                  /* 9. IN-GAME UI & SETTINGS NODES */
+                  <div className="px-2 py-1.5 rounded bg-blue-500/15 border border-blue-500/35 text-[11px] text-blue-200 truncate">
+                    {node.type === 'popup_toast'
+                      ? `弹窗: ${node.toastMessage || '获得关键道具'}`
+                      : node.type === 'clue_unlock'
+                      ? `词条: ${node.unlockedClueTitle || '新档案词条'}`
+                      : node.type === 'game_settings_modify'
+                      ? `语速 ${node.settingsActionConfig?.textSpeedMs ?? 28}ms · 音量 ${
+                          node.settingsActionConfig?.bgmVolumePercent ?? 75
+                        }%`
+                      : `${meta.title}: ${meta.description}`}
+                  </div>
+                ) : meta.category === 'control' ? (
+                  /* 10. CONTROL FLOW NODES */
+                  <div className="px-2 py-1.5 rounded bg-amber-500/15 border border-amber-500/35 text-[11px] text-amber-200 font-mono truncate">
+                    {node.type === 'wait_timer'
+                      ? `await sleep(${node.waitDurationMs ?? 1500}ms)`
+                      : node.type === 'stream_preload_hint'
+                      ? `预载 ${node.settingsActionConfig?.preloadAheadScenes ?? 3} 场景 / 卸载 ${
+                          node.settingsActionConfig?.unloadBehindScenes ?? 5
+                        } 场景`
+                      : node.type === 'msvn_chapter_load'
+                      ? `挂载 .msvn 章节包`
+                      : node.type === 'end'
+                      ? `结局: ${node.endingTitle || 'Good Ending'}`
+                      : `${meta.title}: → ${node.nextNodeId || '下一节点'}`}
+                  </div>
+                ) : meta.category === 'script' ? (
+                  /* 11. CUSTOM SCRIPT NODE */
+                  <div className="px-2 py-1.5 rounded bg-lime-500/15 border border-lime-500/35 text-[10px] text-lime-200 font-mono truncate">
+                    {(node.customScript || '// 自定义 TS/JS 脚本').split('\n')[0]}
+                  </div>
                 ) : (
-                  /* 6. NARRATIVE / VISUAL / AUDIO / UI NODES */
-                  <div className="text-[11px] text-zinc-300 truncate">
+                  /* 12. NARRATIVE DIALOGUE / MONOLOGUE NODES */
+                  <div className="px-2 py-1.5 rounded bg-sky-500/12 border border-sky-500/30 text-[11px] text-sky-100 truncate">
                     {node.dialogues[0]
                       ? `${node.dialogues[0].speakerName}：${node.dialogues[0].text}`
                       : meta.description}

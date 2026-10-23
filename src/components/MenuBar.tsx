@@ -7,10 +7,6 @@ import {
   FolderOpen,
   RotateCcw,
   LayoutGrid,
-  Terminal as TerminalIcon,
-  Bot,
-  Wand2,
-  Settings,
   Columns,
   Grid,
 } from 'lucide-react';
@@ -38,7 +34,6 @@ interface MenuBarProps {
   onPlayPreview: () => void;
   onOpenExportModal: () => void;
   onOpenProjectLauncher: () => void;
-  onOpenSettingsModal: () => void;
 }
 
 export const MenuBar: React.FC<MenuBarProps> = ({
@@ -54,33 +49,28 @@ export const MenuBar: React.FC<MenuBarProps> = ({
   onPlayPreview,
   onOpenExportModal,
   onOpenProjectLauncher,
-  onOpenSettingsModal,
 }) => {
   const [openWindowMenu, setOpenWindowMenu] = useState(false);
 
-  const isWindowVisible = (id: PanelId) => {
-    const found = panels.find((p) => p.id === id);
-    return !!(found && (found.docked || found.floating));
-  };
-
   return (
-    <header className="h-10 bg-[#141417] border-b border-[#27272c] px-3 flex items-center justify-between select-none z-50 shrink-0 text-xs">
-      {/* Left: File / Undo / Redo / Window & 2D Layout Manager */}
+    <header className="h-9 bg-[#141417] border-b border-[#27272c] px-2.5 flex items-center justify-between select-none z-50 shrink-0 text-xs">
+      {/* Left: Project, Undo/Redo, Window & 2D Split Layout Menu */}
       <div className="flex items-center gap-1">
         <button
           onClick={onOpenProjectLauncher}
-          className="icon-btn"
-          title="项目管理器 (新建 / 打开 / 保存工程)"
+          className="px-2 py-1 rounded text-zinc-300 hover:text-white hover:bg-[#1f1f25] flex items-center gap-1.5 transition"
+          title="新建 / 打开 / 保存工程"
         >
           <FolderOpen className="w-3.5 h-3.5" strokeWidth={1.6} />
+          <span>工程</span>
         </button>
 
-        <div className="w-px h-3.5 bg-[#27272c] mx-1" />
+        <div className="w-px h-3.5 bg-[#27272c] mx-0.5" />
 
         <button
           disabled={!canUndo}
           onClick={onUndo}
-          className="icon-btn"
+          className="icon-btn !w-6 !h-6"
           title="撤销 (Ctrl+Z)"
         >
           <Undo2 className="w-3.5 h-3.5" strokeWidth={1.6} />
@@ -88,26 +78,26 @@ export const MenuBar: React.FC<MenuBarProps> = ({
         <button
           disabled={!canRedo}
           onClick={onRedo}
-          className="icon-btn"
+          className="icon-btn !w-6 !h-6"
           title="重做 (Ctrl+Y)"
         >
           <Redo2 className="w-3.5 h-3.5" strokeWidth={1.6} />
         </button>
 
-        <div className="w-px h-3.5 bg-[#27272c] mx-1" />
+        <div className="w-px h-3.5 bg-[#27272c] mx-0.5" />
 
-        {/* VS Code 2D Window & Layout Dropdown */}
+        {/* Window & 2D Layout Dropdown */}
         <div className="relative">
           <button
             onClick={() => setOpenWindowMenu((v) => !v)}
             className={`px-2 py-1 rounded text-xs flex items-center gap-1.5 transition ${
               openWindowMenu
                 ? 'bg-[#27272c] text-white'
-                : 'text-zinc-400 hover:text-zinc-200 hover:bg-[#1f1f24]'
+                : 'text-zinc-300 hover:text-white hover:bg-[#1f1f25]'
             }`}
           >
             <LayoutGrid className="w-3.5 h-3.5" strokeWidth={1.6} />
-            <span>窗口与多维布局</span>
+            <span>窗口与分栏布局</span>
           </button>
 
           {openWindowMenu && (
@@ -117,8 +107,8 @@ export const MenuBar: React.FC<MenuBarProps> = ({
                 onClick={() => setOpenWindowMenu(false)}
               />
               <div className="absolute left-0 top-8 z-50 w-72 bg-[#1c1c21] border border-[#2e2e36] rounded-lg shadow-2xl p-2 space-y-2">
-                <div className="px-2 py-1 text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">
-                  2D 多行多列分栏预设
+                <div className="px-2 py-0.5 text-[10px] font-semibold text-zinc-400">
+                  多维分栏快速布局
                 </div>
                 <div className="grid grid-cols-2 gap-1 px-1">
                   <button
@@ -127,7 +117,6 @@ export const MenuBar: React.FC<MenuBarProps> = ({
                       setOpenWindowMenu(false);
                     }}
                     className="px-2 py-1.5 rounded bg-[#23232b] hover:bg-[#2d2d37] border border-[#32323c] text-[11px] text-zinc-200 flex items-center gap-1.5"
-                    title="上方 窗口A | 窗口C，下方 窗口B | 窗口D"
                   >
                     <Grid className="w-3 h-3" strokeWidth={1.6} />
                     四象限 (A|C / B|D)
@@ -138,10 +127,9 @@ export const MenuBar: React.FC<MenuBarProps> = ({
                       setOpenWindowMenu(false);
                     }}
                     className="px-2 py-1.5 rounded bg-[#23232b] hover:bg-[#2d2d37] border border-[#32323c] text-[11px] text-zinc-200 flex items-center gap-1.5"
-                    title="多列并排 窗口A | 窗口B | 窗口C | 窗口D"
                   >
                     <Columns className="w-3 h-3" strokeWidth={1.6} />
-                    多列并排 (A|B|C|D)
+                    四列并排 (A|B|C|D)
                   </button>
                   <button
                     onClick={() => {
@@ -150,7 +138,7 @@ export const MenuBar: React.FC<MenuBarProps> = ({
                     }}
                     className="px-2 py-1.5 rounded bg-[#23232b] hover:bg-[#2d2d37] border border-[#32323c] text-[11px] text-zinc-200 flex items-center gap-1.5"
                   >
-                    画布 + 舞台 + 终端
+                    画布+舞台+终端
                   </button>
                   <button
                     onClick={() => {
@@ -159,14 +147,14 @@ export const MenuBar: React.FC<MenuBarProps> = ({
                     }}
                     className="px-2 py-1.5 rounded bg-[#23232b] hover:bg-[#2d2d37] border border-[#32323c] text-[11px] text-zinc-200 flex items-center gap-1.5"
                   >
-                    标准工作台
+                    清爽三栏
                   </button>
                 </div>
 
                 <div className="h-px bg-[#2c2c34]" />
 
                 <div className="px-2 py-0.5 text-[10px] font-semibold text-zinc-400">
-                  全部窗口 (可自由拖拽停靠 ⇄ 漂浮)
+                  窗口状态 (支持直接拖拽标题栏切换停靠 ⇄ 漂浮)
                 </div>
 
                 <div className="space-y-0.5 max-h-64 overflow-y-auto">
@@ -225,96 +213,8 @@ export const MenuBar: React.FC<MenuBarProps> = ({
         </div>
       </div>
 
-      {/* Center: VS Code Style Window Quick-Toggles (Open/Focus Docked or Floating Windows) */}
-      <div className="flex items-center gap-1 bg-[#19191e] p-0.5 rounded-md border border-[#27272c]">
-        <button
-          onClick={() => onOpenOrFocusWindow('canvas', 'dock')}
-          className={`px-2.5 py-1 rounded text-xs font-medium transition ${
-            isWindowVisible('canvas')
-              ? 'bg-[#2a2a32] text-white'
-              : 'text-zinc-400 hover:text-zinc-200'
-          }`}
-        >
-          节点画布
-        </button>
-        <button
-          onClick={() => onOpenOrFocusWindow('stage', 'dock')}
-          className={`px-2.5 py-1 rounded text-xs font-medium transition ${
-            isWindowVisible('stage')
-              ? 'bg-[#2a2a32] text-white'
-              : 'text-zinc-400 hover:text-zinc-200'
-          }`}
-        >
-          场景舞台
-        </button>
-        <button
-          onClick={() => onOpenOrFocusWindow('ts_code', 'dock')}
-          className={`px-2.5 py-1 rounded text-xs font-medium transition ${
-            isWindowVisible('ts_code')
-              ? 'bg-[#2a2a32] text-white'
-              : 'text-zinc-400 hover:text-zinc-200'
-          }`}
-        >
-          脚本 (JS/TS)
-        </button>
-        <button
-          onClick={() => onOpenOrFocusWindow('ui_customizer', 'dock')}
-          className={`px-2.5 py-1 rounded text-xs font-medium transition ${
-            isWindowVisible('ui_customizer')
-              ? 'bg-[#2a2a32] text-white'
-              : 'text-zinc-400 hover:text-zinc-200'
-          }`}
-        >
-          界面定制
-        </button>
-        <button
-          onClick={() => onOpenOrFocusWindow('asset_studio', 'dock')}
-          className={`px-2.5 py-1 rounded text-xs font-medium transition flex items-center gap-1 ${
-            isWindowVisible('asset_studio')
-              ? 'bg-[#2a2a32] text-white'
-              : 'text-zinc-400 hover:text-zinc-200'
-          }`}
-          title="打开智能立绘抠图与 AI 生图工坊窗口"
-        >
-          <Wand2 className="w-3 h-3" strokeWidth={1.6} />
-          抠图与生图
-        </button>
-        <button
-          onClick={() => onOpenOrFocusWindow('ai_agent', 'dock')}
-          className={`px-2.5 py-1 rounded text-xs font-medium transition flex items-center gap-1 ${
-            isWindowVisible('ai_agent')
-              ? 'bg-[#2a2a32] text-white'
-              : 'text-zinc-400 hover:text-zinc-200'
-          }`}
-          title="像 VS Code 扩展窗口一样打开 AI 助手面板（支持停靠与漂浮切换）"
-        >
-          <Bot className="w-3.5 h-3.5" strokeWidth={1.6} />
-          AI 助手窗口
-        </button>
-        <button
-          onClick={() => onOpenOrFocusWindow('terminal', 'dock')}
-          className={`px-2.5 py-1 rounded text-xs font-medium transition flex items-center gap-1 ${
-            isWindowVisible('terminal')
-              ? 'bg-[#2a2a32] text-white'
-              : 'text-zinc-400 hover:text-zinc-200'
-          }`}
-          title="打开内置终端与 TypeScript 编译诊断窗口"
-        >
-          <TerminalIcon className="w-3 h-3" strokeWidth={1.6} />
-          终端
-        </button>
-      </div>
-
-      {/* Right: Settings, Play Preview & Export */}
+      {/* Right: Run Preview & Export Game */}
       <div className="flex items-center gap-1.5">
-        <button
-          onClick={onOpenSettingsModal}
-          className="icon-btn"
-          title="打开全局目录与编译器设置 (MooVN Settings)"
-        >
-          <Settings className="w-3.5 h-3.5" strokeWidth={1.6} />
-        </button>
-
         <button
           onClick={onPlayPreview}
           className="px-2.5 py-1 rounded bg-[#232329] hover:bg-[#2c2c34] text-zinc-100 border border-[#32323a] flex items-center gap-1.5 transition"
