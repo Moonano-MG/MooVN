@@ -62,6 +62,7 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
   // Node library collapsible categories
   const [openCategories, setOpenCategories] = useState<Record<NodeCategory, boolean>>({
     control: true,
+    loop_logic: true,
     narrative: true,
     screen_text: true,
     character: true,

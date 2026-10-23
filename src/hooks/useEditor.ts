@@ -325,6 +325,76 @@ export function useEditor() {
         affectionDelta: type === 'affection_change' ? 10 : undefined,
         variableKey: type === 'set_variable' ? 'clueCount' : undefined,
         variableValue: type === 'set_variable' ? 3 : undefined,
+        loopConfig:
+          type === 'repeat_loop' ||
+          type === 'while_loop' ||
+          type === 'for_each_loop' ||
+          type === 'if_else_container' ||
+          type === 'break_continue'
+            ? {
+                repeatCount: type === 'repeat_loop' ? 3 : undefined,
+                conditionExpr:
+                  type === 'while_loop'
+                    ? 'ctx.vars.clueCount < 5'
+                    : type === 'if_else_container'
+                    ? 'ctx.affection.yukina >= 60'
+                    : undefined,
+                iteratorVar: type === 'for_each_loop' ? 'char' : undefined,
+                collectionTarget: type === 'for_each_loop' ? 'characters' : undefined,
+                breakMode: type === 'break_continue' ? 'break' : undefined,
+              }
+            : undefined,
+        logicConfig:
+          type === 'math_operation' ||
+          type === 'string_format' ||
+          type === 'array_operation' ||
+          type === 'function_call'
+            ? {
+                targetVar: 'clueCount',
+                mathOp: type === 'math_operation' ? '+=' : undefined,
+                operandValue: type === 'math_operation' ? 1 : '钟塔星盘碎片',
+                clampMin: 0,
+                clampMax: 100,
+                formatTemplate:
+                  type === 'string_format' ? '第 ${day_count} 日 · 已收集 ${clueCount} 枚线索' : undefined,
+                arrayAction: type === 'array_operation' ? 'push' : undefined,
+                functionName: type === 'function_call' ? 'onClocktowerChime' : undefined,
+                functionArgs: type === 'function_call' ? 'ctx, 13' : undefined,
+              }
+            : undefined,
+        childrenNodes:
+          type === 'repeat_loop' ||
+          type === 'while_loop' ||
+          type === 'for_each_loop' ||
+          type === 'if_else_container' ||
+          type === 'parallel_container' ||
+          type === 'try_catch_container'
+            ? [
+                {
+                  id: `child-${Date.now()}-1`,
+                  type: 'camera_shake',
+                  title: '镜头震动',
+                  params: { intensity: 'medium', durationMs: 400 },
+                },
+                {
+                  id: `child-${Date.now()}-2`,
+                  type: 'dialogue',
+                  title: '角色对白',
+                  params: { speaker: '星野 雪奈', text: '钟塔的齿轮正在回转……' },
+                },
+              ]
+            : undefined,
+        elseChildrenNodes:
+          type === 'if_else_container' || type === 'try_catch_container'
+            ? [
+                {
+                  id: `else-${Date.now()}-1`,
+                  type: 'dialogue',
+                  title: '否则分支对白',
+                  params: { speaker: '旁白', text: '条件尚未满足，钟声渐渐远去。' },
+                },
+              ]
+            : undefined,
         visualBlocks: [],
         nextNodeId: null,
         endingType: type === 'end' ? 'good' : undefined,

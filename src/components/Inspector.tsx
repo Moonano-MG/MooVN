@@ -9,7 +9,8 @@ import {
   StoryChapter,
 } from '../types';
 import { BACKGROUND_ASSETS, AUDIO_ASSETS, CHARACTER_ASSETS } from '../data/assets';
-import { NODE_CATEGORIES, NODE_REGISTRY } from '../data/nodeRegistry';
+import { NODE_CATEGORIES, NODE_REGISTRY, getNodeMeta } from '../data/nodeRegistry';
+import { generateSingleNodeCode } from '../lib/nodeCodeCompiler';
 
 interface InspectorProps {
   node: SceneNode;
@@ -52,18 +53,20 @@ export const Inspector: React.FC<InspectorProps> = ({
   onAddCharacterProfile,
   onUpdateChapter,
 }) => {
-  const [tab, setTab] = useState<'dialogue' | 'visual' | 'flow' | 'char'>('dialogue');
+  const [tab, setTab] = useState<'dialogue' | 'visual' | 'flow' | 'char' | 'script_code'>('dialogue');
+  const currentMeta = getNodeMeta(node.type);
 
   return (
     <div className="flex flex-col h-full bg-[#161619] text-zinc-300 select-none overflow-hidden">
-      {/* Clean 4-Tab Navigation */}
-      <div className="grid grid-cols-4 border-b border-[#27272c] bg-[#141417] shrink-0 text-xs">
+      {/* Clean 5-Tab Navigation */}
+      <div className="grid grid-cols-5 border-b border-[#27272c] bg-[#141417] shrink-0 text-xs">
         {(
           [
             ['dialogue', '对白'],
             ['visual', '演出'],
             ['flow', '流转'],
             ['char', '角色'],
+            ['script_code', '脚本'],
           ] as const
         ).map(([id, label]) => (
           <button
@@ -139,7 +142,288 @@ export const Inspector: React.FC<InspectorProps> = ({
               ))}
             </select>
           </div>
+
+          <div
+            style={{
+              backgroundColor: currentMeta.badgeBg,
+              borderColor: `${currentMeta.accentColor}45`,
+              color: currentMeta.badgeText,
+            }}
+            className="px-2 py-1 rounded border text-[11px] flex items-center justify-between"
+          >
+            <span>
+              [{currentMeta.categoryLabel}] {currentMeta.title}：{currentMeta.description}
+            </span>
+          </div>
         </div>
+
+        {/* ==================== NODE-SPECIFIC CONTAINER MULTI-NESTING & LOGIC CONTROLS ==================== */}
+        {currentMeta.isContainer && (
+          <div className="p-2.5 rounded-md bg-emerald-500/10 border border-emerald-500/35 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-emerald-300">
+                多重嵌套容器配置 ({currentMeta.title})
+              </span>
+              <span className="text-[10px] text-emerald-400">
+                已嵌套 {(node.childrenNodes || []).length} 个子节点
+              </span>
+            </div>
+
+            {node.type === 'repeat_loop' ? (
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-zinc-300">重复循环次数 (N)</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={999}
+                  value={node.loopConfig?.repeatCount ?? 3}
+                  onChange={(e) =>
+                    onUpdateNode((prev) => ({
+                      ...prev,
+                      loopConfig: {
+                        ...(prev.loopConfig || {}),
+                        repeatCount: Number(e.target.value),
+                      },
+                    }))
+                  }
+                  className="w-24 px-2 py-1 text-right font-mono"
+                />
+              </div>
+            ) : (
+              <div className="space-y-1">
+                <span className="text-zinc-300 text-[11px]">循环 / 分支条件表达式 (JS/TS)</span>
+                <input
+                  type="text"
+                  value={node.loopConfig?.conditionExpr || 'ctx.affection.yukina >= 60'}
+                  onChange={(e) =>
+                    onUpdateNode((prev) => ({
+                      ...prev,
+                      loopConfig: {
+                        ...(prev.loopConfig || {}),
+                        conditionExpr: e.target.value,
+                      },
+                    }))
+                  }
+                  className="w-full px-2 py-1 font-mono text-[11px]"
+                />
+              </div>
+            )}
+
+            {/* Nested Children List with Multi-Level Addition */}
+            <div className="space-y-1.5 pt-1">
+              {(node.childrenNodes || []).map((child, cIdx) => (
+                <div
+                  key={child.id}
+                  className="p-2 rounded bg-[#141419] border border-[#292934] space-y-1.5"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-medium text-emerald-200">
+                      #{cIdx + 1} [{getNodeMeta(child.type).title}]
+                    </span>
+                    <button
+                      onClick={() =>
+                        onUpdateNode((prev) => ({
+                          ...prev,
+                          childrenNodes: (prev.childrenNodes || []).filter(
+                            (x) => x.id !== child.id
+                          ),
+                        }))
+                      }
+                      className="text-zinc-500 hover:text-rose-400"
+                    >
+                      <Trash2 className="w-3 h-3" strokeWidth={1.6} />
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {Object.entries(child.params).map(([pk, pv]) => (
+                      <div key={pk}>
+                        <span className="block text-[9px] text-zinc-500">{pk}</span>
+                        <input
+                          type="text"
+                          value={String(pv)}
+                          onChange={(e) =>
+                            onUpdateNode((prev) => ({
+                              ...prev,
+                              childrenNodes: (prev.childrenNodes || []).map((x) =>
+                                x.id === child.id
+                                  ? {
+                                      ...x,
+                                      params: {
+                                        ...x.params,
+                                        [pk]:
+                                          typeof pv === 'number'
+                                            ? Number(e.target.value)
+                                            : e.target.value,
+                                      },
+                                    }
+                                  : x
+                              ),
+                            }))
+                          }
+                          className="w-full px-1.5 py-0.5 text-[11px]"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex flex-wrap gap-1 pt-1">
+              {(
+                [
+                  { type: 'dialogue', label: '+ 台词子节点', params: { speaker: '星野 雪奈', text: '容器内台词' } },
+                  { type: 'math_operation', label: '+ 数学运算', params: { targetVar: 'clueCount', mathOp: '+=', operandValue: 1 } },
+                  { type: 'camera_shake', label: '+ 镜头震动', params: { intensity: 'medium', durationMs: 400 } },
+                  { type: 'repeat_loop', label: '+ 嵌套重复循环', params: { repeatCount: 2 } },
+                  { type: 'if_else_container', label: '+ 嵌套如果否则', params: { conditionExpr: 'ctx.affection.yukina >= 50' } },
+                ] as const
+              ).map((btn) => (
+                <button
+                  key={btn.type}
+                  onClick={() =>
+                    onUpdateNode((prev) => ({
+                      ...prev,
+                      childrenNodes: [
+                        ...(prev.childrenNodes || []),
+                        {
+                          id: `nested-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+                          type: btn.type,
+                          title: btn.label.replace('+ ', ''),
+                          params: { ...btn.params },
+                        },
+                      ],
+                    }))
+                  }
+                  className="px-2 py-1 rounded bg-[#202028] hover:bg-[#2a2a34] border border-emerald-500/30 text-emerald-200 text-[10px]"
+                >
+                  {btn.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {(node.type === 'math_operation' ||
+          node.type === 'string_format' ||
+          node.type === 'array_operation' ||
+          node.type === 'function_call') && (
+          <div className="p-2.5 rounded-md bg-[#1c1c22] border border-emerald-500/35 space-y-2">
+            <div className="text-xs font-semibold text-emerald-300">
+              逻辑与运算专属参数 ({currentMeta.title})
+            </div>
+            <div className="grid grid-cols-2 gap-1.5">
+              <div>
+                <span className="block text-[10px] text-zinc-400 mb-0.5">
+                  {node.type === 'function_call' ? '函数名' : '目标变量名'}
+                </span>
+                <input
+                  type="text"
+                  value={
+                    node.type === 'function_call'
+                      ? node.logicConfig?.functionName || 'onCustomTrigger'
+                      : node.logicConfig?.targetVar || 'clueCount'
+                  }
+                  onChange={(e) =>
+                    onUpdateNode((prev) => ({
+                      ...prev,
+                      logicConfig: {
+                        targetVar: prev.logicConfig?.targetVar || 'clueCount',
+                        operandValue: prev.logicConfig?.operandValue ?? 1,
+                        ...(prev.logicConfig || {}),
+                        ...(node.type === 'function_call'
+                          ? { functionName: e.target.value }
+                          : { targetVar: e.target.value }),
+                      },
+                    }))
+                  }
+                  className="w-full px-2 py-1 font-mono text-xs"
+                />
+              </div>
+              <div>
+                <span className="block text-[10px] text-zinc-400 mb-0.5">
+                  {node.type === 'math_operation'
+                    ? '运算符'
+                    : node.type === 'function_call'
+                    ? '参数列表'
+                    : '操作值 / 模板'}
+                </span>
+                {node.type === 'math_operation' ? (
+                  <select
+                    value={node.logicConfig?.mathOp || '+='}
+                    onChange={(e) =>
+                      onUpdateNode((prev) => ({
+                        ...prev,
+                        logicConfig: {
+                          targetVar: prev.logicConfig?.targetVar || 'clueCount',
+                          operandValue: prev.logicConfig?.operandValue ?? 1,
+                          ...(prev.logicConfig || {}),
+                          mathOp: e.target.value as any,
+                        },
+                      }))
+                    }
+                    className="w-full px-2 py-1 font-mono text-xs"
+                  >
+                    <option value="+=">+= (累加)</option>
+                    <option value="-=">-= (扣减)</option>
+                    <option value="*=">*= (乘倍)</option>
+                    <option value="/=">/= (整除)</option>
+                    <option value="=">= (直接赋值)</option>
+                    <option value="random">random (随机数)</option>
+                    <option value="clamp">clamp (区间限制)</option>
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    value={
+                      node.type === 'function_call'
+                        ? node.logicConfig?.functionArgs || 'ctx'
+                        : node.type === 'string_format'
+                        ? node.logicConfig?.formatTemplate || ''
+                        : String(node.logicConfig?.operandValue ?? '')
+                    }
+                    onChange={(e) =>
+                      onUpdateNode((prev) => ({
+                        ...prev,
+                        logicConfig: {
+                          targetVar: prev.logicConfig?.targetVar || 'clueCount',
+                          operandValue: e.target.value,
+                          ...(prev.logicConfig || {}),
+                          ...(node.type === 'function_call'
+                            ? { functionArgs: e.target.value }
+                            : node.type === 'string_format'
+                            ? { formatTemplate: e.target.value }
+                            : { operandValue: e.target.value }),
+                        },
+                      }))
+                    }
+                    className="w-full px-2 py-1 font-mono text-xs"
+                  />
+                )}
+              </div>
+            </div>
+            {node.type === 'math_operation' && (
+              <div>
+                <span className="block text-[10px] text-zinc-400 mb-0.5">运算数值</span>
+                <input
+                  type="number"
+                  value={Number(node.logicConfig?.operandValue ?? 1)}
+                  onChange={(e) =>
+                    onUpdateNode((prev) => ({
+                      ...prev,
+                      logicConfig: {
+                        targetVar: prev.logicConfig?.targetVar || 'clueCount',
+                        ...(prev.logicConfig || {}),
+                        operandValue: Number(e.target.value),
+                      },
+                    }))
+                  }
+                  className="w-full px-2 py-1 font-mono text-xs"
+                />
+              </div>
+            )}
+          </div>
+        )}
 
         {/* ==================== TAB 1: DIALOGUE & SCREEN TEXT ==================== */}
         {tab === 'dialogue' && (
@@ -1128,6 +1412,91 @@ export const Inspector: React.FC<InspectorProps> = ({
                 </div>
               </div>
             ))}
+          </div>
+        )}
+
+        {/* ==================== TAB 5: NODE TS / JS SCRIPT ==================== */}
+        {tab === 'script_code' && (
+          <div className="space-y-3">
+            <div className="p-2.5 rounded-md bg-[#1c1c20] border border-[#27272c] space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-medium text-zinc-200">
+                  节点脚本语言模式
+                </span>
+                <div className="flex items-center rounded bg-[#131317] p-0.5 border border-[#27272c]">
+                  <button
+                    onClick={() =>
+                      onUpdateNode((prev) => ({ ...prev, scriptLanguage: 'javascript' }))
+                    }
+                    className={`px-2 py-0.5 rounded text-[10px] font-mono transition ${
+                      node.scriptLanguage === 'javascript'
+                        ? 'bg-amber-500/20 text-amber-300 font-semibold'
+                        : 'text-zinc-500 hover:text-zinc-300'
+                    }`}
+                  >
+                    JavaScript (快速开发)
+                  </button>
+                  <button
+                    onClick={() =>
+                      onUpdateNode((prev) => ({ ...prev, scriptLanguage: 'typescript' }))
+                    }
+                    className={`px-2 py-0.5 rounded text-[10px] font-mono transition ${
+                      node.scriptLanguage !== 'javascript'
+                        ? 'bg-sky-500/20 text-sky-300 font-semibold'
+                        : 'text-zinc-500 hover:text-zinc-300'
+                    }`}
+                  >
+                    TypeScript (严格类型)
+                  </button>
+                </div>
+              </div>
+
+              <div className="text-[10px] text-zinc-400 leading-relaxed">
+                当前节点自动编译生成的{' '}
+                {node.scriptLanguage === 'javascript' ? 'JavaScript' : 'TypeScript'} 实现：
+              </div>
+
+              <pre className="p-2.5 rounded bg-[#101014] border border-[#27272f] font-mono text-[10px] text-sky-200 overflow-x-auto whitespace-pre-wrap leading-relaxed select-text">
+                {generateSingleNodeCode(
+                  node,
+                  node.scriptLanguage === 'javascript' ? 'javascript' : 'typescript'
+                )}
+              </pre>
+            </div>
+
+            <div className="p-2.5 rounded-md bg-[#1c1c20] border border-[#27272c] space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-medium text-zinc-200">
+                  自定义覆盖 / 扩展脚本 (JS / TS)
+                </span>
+                <button
+                  onClick={() =>
+                    onUpdateNode((prev) => ({
+                      ...prev,
+                      customScript: generateSingleNodeCode(
+                        node,
+                        node.scriptLanguage === 'javascript' ? 'javascript' : 'typescript'
+                      ),
+                    }))
+                  }
+                  className="px-2 py-0.5 rounded bg-[#25252e] hover:bg-[#2f2f3a] text-[10px] text-zinc-300"
+                >
+                  载入自动编译代码作为模板
+                </button>
+              </div>
+              <textarea
+                rows={7}
+                value={node.customScript || ''}
+                onChange={(e) =>
+                  onUpdateNode((prev) => ({
+                    ...prev,
+                    customScript: e.target.value,
+                  }))
+                }
+                placeholder="// 可在此编写该节点的自定义 JS 或 TS 代码，编译时自动通过 tsc 检查..."
+                className="w-full p-2 rounded font-mono text-[11px] leading-relaxed"
+              />
+            </div>
           </div>
         )}
       </div>

@@ -2,6 +2,7 @@ export type ScriptLanguage = 'typescript' | 'javascript' | 'lua' | 'teal' | 'pyt
 
 export type NodeCategory =
   | 'control'
+  | 'loop_logic'
   | 'narrative'
   | 'screen_text'
   | 'character'
@@ -32,7 +33,18 @@ export type WorkflowNodeType =
   | 'stream_preload_hint'
   | 'msvn_chapter_load'
   | 'end'
-  // 4. 角色 (Character & Expression)
+  // 4. 循环与多重容器逻辑 (Scratch-style Multi-Nesting Containers & Fine Logic)
+  | 'repeat_loop'
+  | 'while_loop'
+  | 'for_each_loop'
+  | 'if_else_container'
+  | 'parallel_container'
+  | 'try_catch_container'
+  | 'math_operation'
+  | 'string_format'
+  | 'array_operation'
+  | 'break_continue'
+  // 5. 角色 (Character & Expression)
   | 'char_enter'
   | 'char_exit'
   | 'char_expression'
@@ -40,7 +52,7 @@ export type WorkflowNodeType =
   | 'char_action'
   | 'char_highlight'
   | 'affection_change'
-  // 5. 视觉 (Visual, Fade & Camera)
+  // 6. 视觉 (Visual, Fade & Camera)
   | 'bg_switch'
   | 'fade'
   | 'camera_pan_zoom'
@@ -49,31 +61,34 @@ export type WorkflowNodeType =
   | 'weather_particles'
   | 'color_filter'
   | 'frame_animation'
-  // 6. 音频 (Audio)
+  // 7. 音频 (Audio)
   | 'bgm_play'
   | 'bgm_stop'
   | 'sfx_play'
   | 'voice_play'
-  // 7. 界面与设置 (In-Game UI & Settings Nodes)
+  // 8. 界面与设置 (In-Game UI & Settings Nodes)
   | 'ui_visibility'
   | 'popup_toast'
   | 'clue_unlock'
   | 'ui_theme_switch'
   | 'ui_style_switch'
   | 'game_settings_modify'
-  // 8. 数据与脚本 (Data & Script Bridge)
+  // 9. 数据与脚本 (Data & Script Bridge)
   | 'set_variable'
+  | 'function_call'
   | 'script';
 
 export interface NodeTypeMeta {
   type: WorkflowNodeType;
   category: NodeCategory;
-  categoryLabel: string; // 类型标，例如 "控制"、"屏幕文字"、"角色"
+  categoryLabel: string; // 类型标，例如 "控制"、"循环"、"屏幕文字"、"角色"
   title: string;
   description: string;
   accentColor: string;
   badgeBg: string;
   badgeText: string;
+  isContainer?: boolean; // 是否为可多重嵌套子节点的容器节点（如重复循环、如果否则、并行块）
+  hasDualSlots?: boolean; // 是否包含主分支槽 + 否则/异常副槽
 }
 
 export interface CharacterCustomAttribute {
@@ -251,6 +266,39 @@ export interface MediaAnimationConfig {
   tweenDurationMs?: number;
 }
 
+export interface NestedChildNode {
+  id: string;
+  type: WorkflowNodeType;
+  title: string;
+  params: Record<string, string | number | boolean>;
+  customCode?: string;
+  /**
+   * 支持多重递归嵌套：例如在「重复循环」下添加「如果否则」，「如果否则」下再添加「台词/变量/重复循环」
+   */
+  childrenNodes?: NestedChildNode[];
+  elseChildrenNodes?: NestedChildNode[];
+}
+
+export interface LoopContainerConfig {
+  repeatCount?: number; // for repeat_loop (e.g. 3)
+  conditionExpr?: string; // for while_loop / if_else_container (e.g. "affection.yukina >= 60")
+  iteratorVar?: string; // for for_each_loop (e.g. "char")
+  collectionTarget?: 'characters' | 'variables' | 'clues';
+  breakMode?: 'break' | 'continue';
+}
+
+export interface LogicOperationConfig {
+  targetVar: string;
+  mathOp?: '+=' | '-=' | '*=' | '/=' | '%=' | '=' | 'random' | 'clamp';
+  operandValue: number | string;
+  clampMin?: number;
+  clampMax?: number;
+  formatTemplate?: string; // e.g. "第 ${day_count} 天 · 好感 ${yukina}"
+  arrayAction?: 'push' | 'remove' | 'clear';
+  functionName?: string;
+  functionArgs?: string;
+}
+
 export interface SceneNode {
   id: string;
   type: WorkflowNodeType;
@@ -273,6 +321,10 @@ export interface SceneNode {
   screenTextConfig?: ScreenTextConfig;
   cameraConfig?: CameraActionConfig;
   settingsActionConfig?: NodeSettingsActionConfig;
+  loopConfig?: LoopContainerConfig;
+  logicConfig?: LogicOperationConfig;
+  childrenNodes?: NestedChildNode[];
+  elseChildrenNodes?: NestedChildNode[];
   waitDurationMs?: number;
   toastMessage?: string;
   unlockedClueTitle?: string;
@@ -576,7 +628,10 @@ export type PanelId =
   | 'yaml_code'
   | 'inspector'
   | 'characters'
-  | 'ai_agent';
+  | 'ai_agent'
+  | 'terminal'
+  | 'asset_studio'
+  | 'settings';
 
 export type DockZoneId = 'left' | 'center' | 'right' | 'bottom';
 

@@ -405,7 +405,22 @@ export const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({
     const actions: string[] = [];
     const lower = userPrompt.toLowerCase();
 
-    if (lower.includes('流加载') || lower.includes('预载') || lower.includes('解压')) {
+    if (lower.includes('重复') || lower.includes('循环') || lower.includes('repeat')) {
+      onAddNode('repeat_loop');
+      actions.push('新增 [重复循环] 多重嵌套容器节点（含默认子节点）');
+    } else if (lower.includes('如果否则') || lower.includes('容器分支') || lower.includes('ifelse')) {
+      onAddNode('if_else_container');
+      actions.push('新增 [如果否则] 双槽多重嵌套容器节点');
+    } else if (lower.includes('并行') || lower.includes('并发')) {
+      onAddNode('parallel_container');
+      actions.push('新增 [并行执行] 容器节点');
+    } else if (lower.includes('数学') || lower.includes('运算') || lower.includes('加减')) {
+      onAddNode('math_operation');
+      actions.push('新增 [数学运算] 节点');
+    } else if (lower.includes('钟塔') || lower.includes('月光') || lower.includes('生图')) {
+      onSwitchBackground('bg-clocktower-moonlight-cg');
+      actions.push('切换至 AI 生成背景：《学园月夜第13声钟塔 (CG)》');
+    } else if (lower.includes('流加载') || lower.includes('预载') || lower.includes('解压')) {
       onAddNode('stream_preload_hint');
       actions.push('新增 [流式预载] 节点');
     } else if (lower.includes('msvn') || lower.includes('章节包')) {
