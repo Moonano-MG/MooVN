@@ -24,6 +24,7 @@ import {
   downloadChapterMsvnFile,
 } from '../lib/assetCompressionEngine';
 import {
+  IS_WEB_EDITION,
   loadSystemSettings,
   pickDeviceMooVNFolder,
   saveSystemSettings,
@@ -221,26 +222,28 @@ export const ExportModal: React.FC<ExportModalProps> = ({
               {/* Right: Config + Export Directory */}
               <div className="md:col-span-8 space-y-3">
                 <div className="p-3 rounded-md bg-[#1c1c20] border border-[#27272c] space-y-2.5">
-                  <div>
-                    <div className="text-[10px] text-zinc-500 mb-1">导出目标路径 (MooVN 导出目录)</div>
-                    <div className="flex items-center gap-1.5">
-                      <input
-                        type="text"
-                        value={outputDir}
-                        onChange={(e) => setOutputDir(e.target.value)}
-                        className="flex-1 px-2.5 py-1.5 font-mono text-[11px]"
-                        placeholder="选择或输入导出文件夹路径..."
-                      />
-                      <button
-                        onClick={handleBrowseOutputFolder}
-                        className="px-2.5 py-1.5 rounded bg-[#27272c] hover:bg-zinc-700 text-zinc-200 text-[11px] flex items-center gap-1 shrink-0"
-                        title="选择设备上已保存的文件夹"
-                      >
-                        <FolderOpen className="w-3.5 h-3.5" strokeWidth={1.6} />
-                        选择目录
-                      </button>
+                  {!IS_WEB_EDITION && (
+                    <div>
+                      <div className="text-[10px] text-zinc-500 mb-1">导出目标路径 (MooVN 导出目录)</div>
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="text"
+                          value={outputDir}
+                          onChange={(e) => setOutputDir(e.target.value)}
+                          className="flex-1 px-2.5 py-1.5 font-mono text-[11px]"
+                          placeholder="选择或输入导出文件夹路径..."
+                        />
+                        <button
+                          onClick={handleBrowseOutputFolder}
+                          className="px-2.5 py-1.5 rounded bg-[#27272c] hover:bg-zinc-700 text-zinc-200 text-[11px] flex items-center gap-1 shrink-0"
+                          title="选择设备上已保存的文件夹"
+                        >
+                          <FolderOpen className="w-3.5 h-3.5" strokeWidth={1.6} />
+                          选择目录
+                        </button>
+                      </div>
                     </div>
-                  </div>
+                  )}
 
                   <div className="grid grid-cols-3 gap-2">
                     <div className="col-span-1">

@@ -418,7 +418,7 @@ export function App({
         return 'studio';
       }
     }
-    return 'portal';
+    return 'studio';
   });
 
   // 严格仅针对真实手机窄屏开启移动端工作台（绝不影响任何桌面电脑、触屏笔记本或桌面小窗口）
@@ -451,6 +451,18 @@ export function App({
 
   const importProject = (proj: typeof project) => {
     setProject(proj);
+    const firstCh = proj.chapters?.[0]?.id || 'ch-1';
+    const firstNode =
+      proj.startNodeId ||
+      proj.nodes?.find((n) => n.chapterId === firstCh)?.id ||
+      proj.nodes?.[0]?.id ||
+      '';
+    setSelectedChapterId(firstCh);
+    if (firstNode) {
+      setSelectedNodeId(firstNode);
+    }
+    setSelectedDialogueIndex(0);
+    setSelectedCharacterPlacementId(null);
   };
 
   // ==================== Recursive 2D Split Tree + Floating State ====================

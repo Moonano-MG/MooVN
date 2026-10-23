@@ -8,9 +8,12 @@ import {
   HardDrive,
   Sliders,
   Code2,
+  Languages,
+  Cpu,
 } from 'lucide-react';
-import { VNProject, MooVNSystemSettings } from '../types';
+import { VNProject, MooVNSystemSettings, ScriptLanguage } from '../types';
 import {
+  IS_WEB_EDITION,
   loadSystemSettings,
   saveSystemSettings,
   exportSettingsFileJson,
@@ -18,6 +21,8 @@ import {
   getPlatformDefaultPaths,
   pickDeviceMooVNFolder,
 } from '../lib/workspaceManager';
+import { SUPPORTED_UI_LANGUAGES, UILanguage, useUILanguage } from '../lib/i18n';
+import { RESERVED_RENDERER_STATUS } from '../lib/moovnEngineBridge';
 
 interface SettingsModalProps {
   project: VNProject;
@@ -30,16 +35,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onUpdateProject,
   onClose,
 }) => {
+  const { lang, setLang, t } = useUILanguage();
   const [settings, setSettings] = useState<MooVNSystemSettings>(() =>
     loadSystemSettings()
   );
-  const [activeTab, setActiveTab] = useState<'workspace' | 'script_compiler' | 'game_defaults'>('workspace');
+  const [activeTab, setActiveTab] = useState<
+    'language' | 'workspace' | 'script_compiler' | 'game_defaults'
+  >('language');
   const [diskStatus, setDiskStatus] = useState<Awaited<
     ReturnType<typeof fetchWorkspaceDiskStatus>
   > | null>(null);
   const [savedBanner, setSavedBanner] = useState<string | null>(null);
 
   const refreshDisk = async () => {
+    if (IS_WEB_EDITION) return;
     const st = await fetchWorkspaceDiskStatus();
     setDiskStatus(st);
   };
@@ -51,31 +60,36 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const handleSaveAll = async () => {
     saveSystemSettings(settings);
     onUpdateProject({
-      projectPath: `${settings.projectsDirectoryPath}/${project.id}.moovn.json`,
+      ...(IS_WEB_EDITION
+        ? {}
+        : { projectPath: `${settings.projectsDirectoryPath}/${project.id}.mpvn` }),
       performanceConfig: {
         ...(project.performanceConfig || settings.performanceConfig),
       },
     });
-    await refreshDisk();
-    setSavedBanner(`已保存并同步写入磁盘: ${settings.settingsFilePath}`);
+    if (!IS_WEB_EDITION) {
+      await refreshDisk();
+    }
+    setSavedBanner(
+      IS_WEB_EDITION
+        ? '已应用当前编辑器与引擎设置'
+        : `已保存并同步写入磁盘: ${settings.settingsFilePath}`
+    );
     setTimeout(() => setSavedBanner(null), 3000);
   };
 
-  const devScriptMode =
-    project.nodes[0]?.scriptLanguage === 'javascript' ? 'javascript' : 'typescript';
+  const devScriptMode: ScriptLanguage =
+    project.nodes[0]?.scriptLanguage || project.defaultLanguage || 'typescript';
 
-  const handleSwitchAllNodesLanguage = (lang: 'javascript' | 'typescript') => {
+  const handleSwitchAllNodesLanguage = (targetLang: ScriptLanguage) => {
     onUpdateProject({
+      defaultLanguage: targetLang,
       nodes: project.nodes.map((n) => ({
         ...n,
-        scriptLanguage: lang,
+        scriptLanguage: targetLang,
       })),
     });
-    setSavedBanner(
-      lang === 'javascript'
-        ? '已将工程节点脚本切换为 JavaScript 快速开发模式（导出前仍可用 tsc 进行类型检查）'
-        : '已将工程节点脚本切换为 TypeScript 严格类型模式'
-    );
+    setSavedBanner(`已将工程节点默认脚本语言切换为 ${targetLang.toUpperCase()} (MooVN Engine 多语言翻译层已同步)`);
     setTimeout(() => setSavedBanner(null), 3000);
   };
 
@@ -87,7 +101,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           <div className="flex items-center gap-2">
             <Sliders className="w-4 h-4 text-zinc-300" strokeWidth={1.7} />
             <span className="text-sm font-semibold text-white">
-              编辑器与全局目录设置 (MooVN Settings)
+              {t('settings.title')}
             </span>
           </div>
           <button onClick={onClose} className="icon-btn" title="关闭设置">
@@ -96,17 +110,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
 
         {/* Sub-navigation */}
-        <div className="px-4 py-1.5 bg-[#141418] border-b border-[#27272c] flex items-center gap-2">
+        <div className="px-4 py-1.5 bg-[#141418] border-b border-[#27272c] flex flex-wrap items-center gap-2">
           <button
-            onClick={() => setActiveTab('workspace')}
+            onClick={() => setActiveTab('language')}
             className={`px-3 py-1 rounded text-xs font-medium flex items-center gap-1.5 transition ${
-              activeTab === 'workspace'
+              activeTab === 'language'
                 ? 'bg-[#26262f] text-white border border-zinc-600'
                 : 'text-zinc-400 hover:text-zinc-200'
             }`}
           >
-            <HardDrive className="w-3.5 h-3.5" strokeWidth={1.6} />
-            MooVN 全局文件夹与磁盘存储
+            <Languages className="w-3.5 h-3.5" strokeWidth={1.6} />
+            {t('settings.tab.language')}
           </button>
 
           <button
@@ -118,7 +132,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             }`}
           >
             <Code2 className="w-3.5 h-3.5" strokeWidth={1.6} />
-            JS / TS 节点脚本与编译策略
+            {t('settings.tab.engine')}
           </button>
 
           <button
@@ -130,8 +144,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             }`}
           >
             <Sliders className="w-3.5 h-3.5" strokeWidth={1.6} />
-            游戏运行与流式解压默认参数
+            {t('settings.tab.game')}
           </button>
+
+          {!IS_WEB_EDITION && (
+            <button
+              onClick={() => setActiveTab('workspace')}
+              className={`px-3 py-1 rounded text-xs font-medium flex items-center gap-1.5 transition ${
+                activeTab === 'workspace'
+                  ? 'bg-[#26262f] text-white border border-zinc-600'
+                  : 'text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              <HardDrive className="w-3.5 h-3.5" strokeWidth={1.6} />
+              {t('settings.tab.workspace')}
+            </button>
+          )}
         </div>
 
         {/* Body */}
@@ -143,7 +171,57 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
           )}
 
-          {activeTab === 'workspace' && (
+          {activeTab === 'language' && (
+            <div className="space-y-4">
+              <div className="p-3.5 rounded-lg bg-[#1b1b21] border border-[#292932] space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-zinc-100 font-semibold">
+                      界面与系统语言 (Interface Language)
+                    </div>
+                    <div className="text-[11px] text-zinc-400 mt-0.5">
+                      实时切换 MooVN Studio / MooVN Web 工作台菜单、面板与提示语言
+                    </div>
+                  </div>
+                  <span className="px-2 py-0.5 rounded bg-sky-500/15 border border-sky-400/30 text-sky-300 font-mono text-[11px]">
+                    {lang}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {SUPPORTED_UI_LANGUAGES.map((item) => {
+                    const active = lang === item.id;
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => {
+                          setLang(item.id as UILanguage);
+                          setSavedBanner(`已切换系统语言为: ${item.label}`);
+                          setTimeout(() => setSavedBanner(null), 2500);
+                        }}
+                        className={`p-3 rounded-lg border text-left transition flex items-center justify-between ${
+                          active
+                            ? 'bg-sky-500/15 border-sky-400 text-white'
+                            : 'bg-[#15151a] border-[#27272c] text-zinc-300 hover:border-zinc-500'
+                        }`}
+                      >
+                        <div>
+                          <div className="font-semibold text-xs">{item.nativeName}</div>
+                          <div className="text-[10px] text-zinc-400">{item.label}</div>
+                        </div>
+                        {active && (
+                          <Check className="w-4 h-4 text-sky-400 shrink-0" strokeWidth={2} />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {!IS_WEB_EDITION && activeTab === 'workspace' && (
             <div className="space-y-4">
               {/* Platform Preset Selector */}
               <div className="p-3 rounded-lg bg-[#1b1b21] border border-[#292932] space-y-2.5">
@@ -289,43 +367,64 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {activeTab === 'script_compiler' && (
             <div className="space-y-3">
               <div className="p-3.5 rounded-lg bg-[#1b1b21] border border-[#292932] space-y-3">
-                <div className="text-zinc-100 font-medium">
-                  节点脚本双模架构 (JavaScript 快速迭代 ⇄ TypeScript 严格编译)
+                <div className="flex items-center justify-between">
+                  <div className="text-zinc-100 font-semibold">
+                    MooVN Engine (Rust 内核) · 多语言快速 API 翻译架构
+                  </div>
+                  <span className="px-2 py-0.5 rounded bg-sky-500/15 border border-sky-400/30 text-sky-300 font-mono text-[10px]">
+                    JS / TS / C# / C++ / Rust
+                  </span>
                 </div>
                 <p className="text-zinc-400 leading-relaxed">
-                  MooVN 中的每一个节点（包括重复循环、条件容器、数学运算、屏幕字、台词演出）在底层都对应一段独立的脚本函数。您可以选择：
+                  MooVN Engine 采用 Rust 编写，通过多语言翻译层接入 JavaScript/TypeScript、C++、C#、Rust 的视觉小说快速 API 接口（不同语言指令自动编译为统一的底层 `EngineOp` 指令）：
                 </p>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div
-                    onClick={() => handleSwitchAllNodesLanguage('javascript')}
-                    className={`p-3 rounded-lg border cursor-pointer transition ${
-                      devScriptMode === 'javascript'
-                        ? 'bg-[#262630] border-amber-400/70 text-white'
-                        : 'bg-[#15151a] border-[#27272c] text-zinc-400 hover:border-zinc-500'
-                    }`}
-                  >
-                    <div className="font-semibold text-amber-300 mb-1">
-                      JavaScript 模式 (推荐日常快速开发)
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                  {(
+                    [
+                      ['javascript', 'JavaScript', 'moobn.sava:create(NAME)'],
+                      ['typescript', 'TypeScript', 'moobn.sava:create(NAME)'],
+                      ['csharp', 'C#', 'moovn.save:create(NAME)'],
+                      ['cpp', 'C++20', 'moovn::save::create(NAME)'],
+                      ['rust', 'Rust', 'moovn::save::create(NAME)'],
+                    ] as const
+                  ).map(([id, title, example]) => (
+                    <div
+                      key={id}
+                      onClick={() => handleSwitchAllNodesLanguage(id)}
+                      className={`p-2.5 rounded-lg border cursor-pointer transition ${
+                        devScriptMode === id
+                          ? 'bg-[#262630] border-sky-400 text-white'
+                          : 'bg-[#15151a] border-[#27272c] text-zinc-400 hover:border-zinc-500'
+                      }`}
+                    >
+                      <div className="font-semibold text-sky-300 text-xs mb-1">
+                        {title}
+                      </div>
+                      <div className="font-mono text-[10px] text-zinc-300 break-all">
+                        {example}
+                      </div>
                     </div>
-                    <div className="text-[11px] leading-relaxed">
-                      省略显式类型声明，支持快速编写节点自定义逻辑与表达式；在需要测试或正式导出前，随时可在终端或脚本窗口一键运行 TypeScript (`tsc`) 编译查错。
-                    </div>
-                  </div>
+                  ))}
+                </div>
+              </div>
 
-                  <div
-                    onClick={() => handleSwitchAllNodesLanguage('typescript')}
-                    className={`p-3 rounded-lg border cursor-pointer transition ${
-                      devScriptMode === 'typescript'
-                        ? 'bg-[#262630] border-sky-400/70 text-white'
-                        : 'bg-[#15151a] border-[#27272c] text-zinc-400 hover:border-zinc-500'
-                    }`}
-                  >
-                    <div className="font-semibold text-sky-300 mb-1">
-                      TypeScript 模式 (推荐测试验证与正式发布)
-                    </div>
-                    <div className="text-[11px] leading-relaxed">
-                      为每个节点生成带完整 `VNRuntimeContext` 与 `Promise&lt;string | null&gt;` 类型签名的 TypeScript 代码，静态校验全局变量类型、角色 ID 与跳转目标。
-                    </div>
+              {/* Reserved Rust + C++ Renderer Interface Status */}
+              <div className="p-3.5 rounded-lg bg-[#141824] border border-sky-500/30 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-sky-300 font-semibold">
+                    <Cpu className="w-4 h-4" strokeWidth={1.7} />
+                    <span>预留混合渲染器接口 (Rust + C++20 Renderer Bridge · 开发中)</span>
+                  </div>
+                  <span className="px-2 py-0.5 rounded bg-emerald-500/15 border border-emerald-400/30 text-emerald-300 text-[10px] font-mono">
+                    ABI Ready
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px] font-mono text-zinc-300">
+                  <div className="p-2 rounded bg-[#10131c] border border-[#22283a]">
+                    Rust Trait: {RESERVED_RENDERER_STATUS.rustTrait}
+                  </div>
+                  <div className="p-2 rounded bg-[#10131c] border border-[#22283a]">
+                    C++ Header: {RESERVED_RENDERER_STATUS.cppHeader}
                   </div>
                 </div>
               </div>
@@ -448,7 +547,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             className="px-3.5 py-1.5 rounded bg-zinc-100 hover:bg-white text-zinc-950 font-semibold flex items-center gap-1.5"
           >
             <Check className="w-3.5 h-3.5" strokeWidth={2} />
-            保存设置并写入磁盘
+            {IS_WEB_EDITION ? '应用设置' : '保存设置并写入磁盘'}
           </button>
         </div>
       </div>

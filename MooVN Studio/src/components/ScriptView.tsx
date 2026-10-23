@@ -22,6 +22,11 @@ import {
   compileAndCheckProjectTypeScript,
   TsCompileReport,
 } from '../lib/nodeCodeCompiler';
+import {
+  EnginePolyglotLanguage,
+  generateNodeEngineFastScript,
+  generateProjectEnginePolyglotScript,
+} from '../lib/moovnEngineBridge';
 import { syncWriteToRealWorkspaceDisk } from '../lib/workspaceManager';
 
 interface ScriptViewProps {
@@ -40,9 +45,18 @@ export const ScriptView: React.FC<ScriptViewProps> = ({
   mode: initialMode = 'ts',
 }) => {
   const [currentMode, setCurrentMode] = useState<
-    'node_edit' | 'js' | 'ts' | 'lua' | 'teal' | 'python' | 'yaml'
+    | 'node_edit'
+    | 'js'
+    | 'ts'
+    | 'csharp'
+    | 'cpp'
+    | 'rust'
+    | 'lua'
+    | 'teal'
+    | 'python'
+    | 'yaml'
   >(initialMode === 'yaml' ? 'yaml' : 'ts');
-  const [nodeLang, setNodeLang] = useState<'javascript' | 'typescript'>('javascript');
+  const [nodeLang, setNodeLang] = useState<EnginePolyglotLanguage>('javascript');
   const [editableNodeCode, setEditableNodeCode] = useState<string>('');
   const [copied, setCopied] = useState(false);
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
@@ -51,11 +65,19 @@ export const ScriptView: React.FC<ScriptViewProps> = ({
 
   useEffect(() => {
     if (selectedNode) {
-      const lang = selectedNode.scriptLanguage === 'javascript' ? 'javascript' : nodeLang;
-      setEditableNodeCode(
-        selectedNode.customScript ||
-          generateSingleNodeCode(selectedNode, lang, project)
-      );
+      if (
+        nodeLang === 'csharp' ||
+        nodeLang === 'cpp' ||
+        nodeLang === 'rust'
+      ) {
+        setEditableNodeCode(generateNodeEngineFastScript(selectedNode, nodeLang));
+      } else {
+        setEditableNodeCode(
+          selectedNode.customScript ||
+            generateNodeEngineFastScript(selectedNode, nodeLang) ||
+            generateSingleNodeCode(selectedNode, nodeLang, project)
+        );
+      }
     }
   }, [selectedNode?.id, nodeLang]);
 
@@ -66,6 +88,12 @@ export const ScriptView: React.FC<ScriptViewProps> = ({
       ? generateFullProjectCode(project, 'javascript')
       : currentMode === 'ts'
       ? generateFullProjectCode(project, 'typescript')
+      : currentMode === 'csharp'
+      ? generateProjectEnginePolyglotScript(project, 'csharp')
+      : currentMode === 'cpp'
+      ? generateProjectEnginePolyglotScript(project, 'cpp')
+      : currentMode === 'rust'
+      ? generateProjectEnginePolyglotScript(project, 'rust')
       : currentMode === 'lua'
       ? generateLuaScript(project)
       : currentMode === 'teal'
@@ -153,7 +181,37 @@ export const ScriptView: React.FC<ScriptViewProps> = ({
                   : 'text-zinc-400 hover:text-zinc-200'
               }`}
             >
-              全工程 TS (严格类型)
+              全工程 TS
+            </button>
+            <button
+              onClick={() => setCurrentMode('csharp')}
+              className={`px-2 py-0.5 rounded text-[11px] font-medium transition ${
+                currentMode === 'csharp'
+                  ? 'bg-violet-400 text-zinc-950 font-semibold'
+                  : 'text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              C# (Engine翻译)
+            </button>
+            <button
+              onClick={() => setCurrentMode('cpp')}
+              className={`px-2 py-0.5 rounded text-[11px] font-medium transition ${
+                currentMode === 'cpp'
+                  ? 'bg-blue-400 text-zinc-950 font-semibold'
+                  : 'text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              C++ (Engine翻译)
+            </button>
+            <button
+              onClick={() => setCurrentMode('rust')}
+              className={`px-2 py-0.5 rounded text-[11px] font-medium transition ${
+                currentMode === 'rust'
+                  ? 'bg-orange-400 text-zinc-950 font-semibold'
+                  : 'text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              Rust (Engine原生)
             </button>
             <button
               onClick={() => setCurrentMode('lua')}
@@ -199,26 +257,27 @@ export const ScriptView: React.FC<ScriptViewProps> = ({
 
           {currentMode === 'node_edit' && (
             <div className="flex items-center gap-1">
-              <button
-                onClick={() => setNodeLang('javascript')}
-                className={`px-2 py-0.5 rounded text-[10px] font-mono border ${
-                  nodeLang === 'javascript'
-                    ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'
-                    : 'bg-[#1a1a20] border-[#27272c] text-zinc-400'
-                }`}
-              >
-                JS
-              </button>
-              <button
-                onClick={() => setNodeLang('typescript')}
-                className={`px-2 py-0.5 rounded text-[10px] font-mono border ${
-                  nodeLang === 'typescript'
-                    ? 'bg-sky-500/20 border-sky-500/50 text-sky-300'
-                    : 'bg-[#1a1a20] border-[#27272c] text-zinc-400'
-                }`}
-              >
-                TS
-              </button>
+              {(
+                [
+                  ['javascript', 'JS'],
+                  ['typescript', 'TS'],
+                  ['csharp', 'C#'],
+                  ['cpp', 'C++'],
+                  ['rust', 'Rust'],
+                ] as const
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  onClick={() => setNodeLang(id)}
+                  className={`px-2 py-0.5 rounded text-[10px] font-mono border ${
+                    nodeLang === id
+                      ? 'bg-sky-500/20 border-sky-500/50 text-sky-300'
+                      : 'bg-[#1a1a20] border-[#27272c] text-zinc-400'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
           )}
 

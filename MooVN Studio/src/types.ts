@@ -1,4 +1,12 @@
-export type ScriptLanguage = 'typescript' | 'javascript' | 'lua' | 'teal' | 'python';
+export type ScriptLanguage =
+  | 'typescript'
+  | 'javascript'
+  | 'csharp'
+  | 'cpp'
+  | 'rust'
+  | 'lua'
+  | 'teal'
+  | 'python';
 
 export type NodeCategory =
   | 'control'

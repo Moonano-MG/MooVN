@@ -9,6 +9,14 @@ import { DEFAULT_PERFORMANCE_CONFIG } from './assetCompressionEngine';
 const SETTINGS_STORAGE_KEY = 'moovn_studio_settings_v3';
 const PROJECTS_STORAGE_KEY = 'moovn_studio_projects_v3';
 
+/**
+ * 标识当前是否为 Web 版工作台 (`MooVN Web`)：
+ * - Web 版 (`IS_WEB_EDITION === true`)：类似 Web 版 VS Code，无本地保存列表与本地路径设置，
+ *   用户通过「导入本地 .mpvn 文件」或「重新创建一个新项目」进入工作台。
+ * - 本地版 (`IS_WEB_EDITION === false`，即 `MooVN Studio` Tauri 桌面/移动版)：包含完整的本地工作区路径与磁盘保存管理。
+ */
+export const IS_WEB_EDITION: boolean = false;
+
 export function detectRuntimePlatform(): MooVNSystemSettings['platform'] {
   if (typeof navigator === 'undefined') return 'windows';
   const ua = navigator.userAgent.toLowerCase();
@@ -426,10 +434,11 @@ export async function saveProjectToWorkspace(
   const settings = loadSystemSettings();
   const safeName = (project.title || project.id).replace(/[\\/:*?"<>|\s]+/g, '_');
   const fileName = safeName.endsWith('.mpvn') ? safeName : `${safeName}.mpvn`;
-  const resolvedPath =
-    customPath ||
-    project.projectPath ||
-    `${settings.projectsDirectoryPath}/${fileName}`;
+  const resolvedPath = IS_WEB_EDITION
+    ? fileName
+    : customPath ||
+      project.projectPath ||
+      `${settings.projectsDirectoryPath}/${fileName}`;
 
   const updatedProject: VNProject = {
     ...project,
@@ -448,6 +457,10 @@ export async function saveProjectToWorkspace(
     isTemplatePreset: updatedProject.isTemplatePreset,
     projectData: updatedProject,
   };
+
+  if (IS_WEB_EDITION) {
+    return meta;
+  }
 
   const list = loadSavedProjectsList();
   const idx = list.findIndex((item) => item.id === meta.id);

@@ -1,0 +1,21 @@
+[package]
+name = "moovn-engine"
+version = "0.1.0"
+edition = "2021"
+authors = ["MooVN Studio Team"]
+description = "MooVN Engine — Rust Visual Novel Runtime with Polyglot API Translation (JS/TS, C++, C#, Rust) and Hybrid Rust/C++ Renderer Interface"
+license = "GPL-3.0"
+
+[lib]
+name = "moovn_engine"
+path = "src/lib.rs"
+crate-type = ["rlib", "cdylib", "staticlib"]
+
+[[bin]]
+name = "moovn-engine-cli"
+path = "src/main.rs"
+
+[features]
+default = ["polyglot-translator", "cpp-renderer-bridge"]
+polyglot-translator = []
+cpp-renderer-bridge = []

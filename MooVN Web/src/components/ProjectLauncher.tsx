@@ -18,6 +18,7 @@ import {
   VNProject,
 } from '../types';
 import {
+  IS_WEB_EDITION,
   createBlankVNProject,
   deleteSavedProject,
   exportSettingsFileJson,
@@ -28,7 +29,8 @@ import {
   saveProjectToWorkspace,
   saveSystemSettings,
 } from '../lib/workspaceManager';
-import { exportProjectAsMpvn, parseMpvnProject } from '../lib/mpvnFormat';
+import { parseMpvnProject } from '../lib/mpvnFormat';
+import { useUILanguage, SUPPORTED_UI_LANGUAGES } from '../lib/i18n';
 
 interface ProjectLauncherProps {
   onOpenProject: (project: VNProject) => void;
@@ -41,10 +43,14 @@ export const ProjectLauncher: React.FC<ProjectLauncherProps> = ({
   onClose,
   canClose = false,
 }) => {
-  const [tab, setTab] = useState<'projects' | 'create' | 'workspace'>('projects');
+  const { lang, setLang, t } = useUILanguage();
+  const [tab, setTab] = useState<'projects' | 'create' | 'workspace'>(
+    IS_WEB_EDITION ? 'create' : 'projects'
+  );
   const [projects, setProjects] = useState<SavedProjectMeta[]>(() => loadSavedProjectsList());
   const [settings, setSettings] = useState<MooVNSystemSettings>(() => loadSystemSettings());
   const [notice, setNotice] = useState<string | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
 
   // Create project form
   const [newTitle, setNewTitle] = useState('新视觉小说项目');
@@ -54,6 +60,23 @@ export const ProjectLauncher: React.FC<ProjectLauncherProps> = ({
 
   const importProjectInputRef = useRef<HTMLInputElement | null>(null);
   const importSettingsInputRef = useRef<HTMLInputElement | null>(null);
+
+  const loadMpvnFileObject = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const res = parseMpvnProject(String(reader.result));
+      if (res.ok && res.project) {
+        if (!IS_WEB_EDITION) {
+          await saveProjectToWorkspace(res.project);
+          setProjects(loadSavedProjectsList());
+        }
+        onOpenProject(res.project);
+      } else {
+        setNotice(res.error || '项目文件解析失败，请确认格式为 .mpvn (MooVN Studio 项目文件)');
+      }
+    };
+    reader.readAsText(file);
+  };
 
   const updateSettings = (patch: Partial<MooVNSystemSettings>) => {
     setSettings((prev) => {
@@ -85,7 +108,9 @@ export const ProjectLauncher: React.FC<ProjectLauncherProps> = ({
   const handleCreateProject = async () => {
     const [w, h] = resolutionStr.split('x').map(Number);
     const safeName = (newTitle || 'NewProject').replace(/[\\/:*?"<>|\s]+/g, '_');
-    const fullPath = `${customSaveDir}/${safeName}.mpvn`;
+    const fullPath = IS_WEB_EDITION
+      ? `${safeName}.mpvn`
+      : `${customSaveDir}/${safeName}.mpvn`;
 
     const proj = createBlankVNProject({
       title: newTitle || '新视觉小说项目',
@@ -95,26 +120,17 @@ export const ProjectLauncher: React.FC<ProjectLauncherProps> = ({
       projectPath: fullPath,
     });
 
-    await saveProjectToWorkspace(proj, fullPath);
-    setProjects(loadSavedProjectsList());
+    if (!IS_WEB_EDITION) {
+      await saveProjectToWorkspace(proj, fullPath);
+      setProjects(loadSavedProjectsList());
+    }
     onOpenProject(proj);
   };
 
   const handleImportProjectFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const res = parseMpvnProject(String(reader.result));
-      if (res.ok && res.project) {
-        await saveProjectToWorkspace(res.project);
-        setProjects(loadSavedProjectsList());
-        onOpenProject(res.project);
-      } else {
-        setNotice(res.error || '项目文件解析失败，请确认格式为 .mpvn (MooVN Studio 项目文件)');
-      }
-    };
-    reader.readAsText(file);
+    loadMpvnFileObject(file);
     e.target.value = '';
   };
 
@@ -173,52 +189,69 @@ export const ProjectLauncher: React.FC<ProjectLauncherProps> = ({
         <div className="flex items-center gap-6">
           <div className="flex items-center gap-2">
             <span className="text-sm font-semibold tracking-wide text-white">
-              MooVN Studio
+              {IS_WEB_EDITION ? 'MooVN Web' : 'MooVN Studio'}
             </span>
             <span className="px-1.5 py-0.5 rounded bg-[#27272c] text-zinc-300 text-[10px] font-mono">
-              .mpvn 项目中心
+              {IS_WEB_EDITION ? t('launcher.webBadge') : t('launcher.localBadge')}
             </span>
           </div>
 
-          <div className="flex items-center bg-[#1a1a1f] p-0.5 rounded-md border border-[#27272c] text-xs">
-            {(
-              [
-                ['projects', '本地项目 (.mpvn)'],
-                ['create', '创建新项目'],
-                ['workspace', '专属路径与设置文件'],
-              ] as const
-            ).map(([id, label]) => (
-              <button
-                key={id}
-                onClick={() => setTab(id)}
-                className={`px-3 py-1 rounded text-xs font-medium transition ${
-                  tab === id
-                    ? 'bg-zinc-200 text-zinc-950'
-                    : 'text-zinc-400 hover:text-zinc-200'
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+          {!IS_WEB_EDITION && (
+            <div className="flex items-center bg-[#1a1a1f] p-0.5 rounded-md border border-[#27272c] text-xs">
+              {(
+                [
+                  ['projects', '本地项目 (.mpvn)'],
+                  ['create', '创建新项目'],
+                  ['workspace', '专属路径与设置文件'],
+                ] as const
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  onClick={() => setTab(id)}
+                  className={`px-3 py-1 rounded text-xs font-medium transition ${
+                    tab === id
+                      ? 'bg-zinc-200 text-zinc-950'
+                      : 'text-zinc-400 hover:text-zinc-200'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
-          <button
-            onClick={handleMountDeviceFolder}
-            className="px-2.5 py-1.5 rounded bg-[#1c1c20] hover:bg-[#27272c] border border-[#27272c] text-zinc-200 text-xs flex items-center gap-1.5"
-            title="选择设备上已经保存的 MooVN Studio 文件夹"
+          <select
+            value={lang}
+            onChange={(e) => setLang(e.target.value as any)}
+            className="px-2 py-1 rounded bg-[#1c1c20] border border-[#27272c] text-zinc-200 text-xs"
+            title={t('menu.language')}
           >
-            <FolderOpen className="w-3.5 h-3.5" strokeWidth={1.6} />
-            选择设备文件夹
-          </button>
+            {SUPPORTED_UI_LANGUAGES.map((l) => (
+              <option key={l.id} value={l.id}>
+                {l.nativeName}
+              </option>
+            ))}
+          </select>
+
+          {!IS_WEB_EDITION && (
+            <button
+              onClick={handleMountDeviceFolder}
+              className="px-2.5 py-1.5 rounded bg-[#1c1c20] hover:bg-[#27272c] border border-[#27272c] text-zinc-200 text-xs flex items-center gap-1.5"
+              title="选择设备上已经保存的 MooVN Studio 文件夹"
+            >
+              <FolderOpen className="w-3.5 h-3.5" strokeWidth={1.6} />
+              选择设备文件夹
+            </button>
+          )}
 
           <button
             onClick={() => importProjectInputRef.current?.click()}
             className="px-2.5 py-1.5 rounded bg-sky-500/20 hover:bg-sky-500/30 border border-sky-500/40 text-sky-200 text-xs font-medium flex items-center gap-1.5"
           >
             <Upload className="w-3.5 h-3.5" strokeWidth={1.6} />
-            导入 .mpvn 项目
+            {t('launcher.importBtn')}
           </button>
 
           {canClose && onClose && (
@@ -226,7 +259,7 @@ export const ProjectLauncher: React.FC<ProjectLauncherProps> = ({
               onClick={onClose}
               className="px-3 py-1.5 rounded bg-zinc-200 hover:bg-white text-zinc-950 text-xs font-medium"
             >
-              返回编辑器
+              {t('launcher.backToEditor')}
             </button>
           )}
         </div>
@@ -249,6 +282,127 @@ export const ProjectLauncher: React.FC<ProjectLauncherProps> = ({
           </div>
         )}
 
+        {/* ==================== WEB EDITION: VS CODE WEB-STYLE IMPORT OR CREATE ==================== */}
+        {IS_WEB_EDITION ? (
+          <div className="max-w-4xl mx-auto space-y-6 py-4">
+            <div className="p-4 rounded-xl bg-[#16161b] border border-[#27272f] flex items-center justify-between gap-4">
+              <div className="space-y-1">
+                <div className="text-sm font-semibold text-white flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-sky-400" strokeWidth={1.7} />
+                  <span>{t('launcher.webBadge')}</span>
+                </div>
+                <div className="text-xs text-zinc-400 leading-relaxed">
+                  {t('launcher.webSubtitle')}
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              {/* Card 1: Import Local .mpvn File */}
+              <div
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setIsDragOver(true);
+                }}
+                onDragLeave={() => setIsDragOver(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setIsDragOver(false);
+                  const file = e.dataTransfer.files?.[0];
+                  if (file) loadMpvnFileObject(file);
+                }}
+                onClick={() => importProjectInputRef.current?.click()}
+                className={`p-6 rounded-xl border-2 border-dashed cursor-pointer transition flex flex-col items-center justify-center text-center gap-3 min-h-[260px] ${
+                  isDragOver
+                    ? 'border-sky-400 bg-sky-500/10'
+                    : 'border-[#2e2e38] bg-[#161619] hover:border-sky-400/60 hover:bg-[#1a1a20]'
+                }`}
+              >
+                <div className="w-12 h-12 rounded-xl bg-sky-500/15 border border-sky-400/30 flex items-center justify-center text-sky-300">
+                  <Upload className="w-6 h-6" strokeWidth={1.7} />
+                </div>
+                <div className="space-y-1">
+                  <div className="text-sm font-semibold text-white">
+                    {t('launcher.importTitle')}
+                  </div>
+                  <div className="text-xs text-zinc-400 max-w-xs leading-relaxed">
+                    {t('launcher.importDesc')}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    importProjectInputRef.current?.click();
+                  }}
+                  className="mt-2 px-4 py-2 rounded-lg bg-sky-500 hover:bg-sky-400 text-zinc-950 font-semibold text-xs flex items-center gap-1.5"
+                >
+                  <Upload className="w-3.5 h-3.5" strokeWidth={1.8} />
+                  {t('launcher.importBtn')}
+                </button>
+              </div>
+
+              {/* Card 2: Create Brand-New Project in Memory (No Local Path Input) */}
+              <div className="p-6 rounded-xl bg-[#161619] border border-[#27272c] flex flex-col justify-between gap-4 min-h-[260px]">
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-semibold text-white">
+                      {t('launcher.createTitle')}
+                    </span>
+                    <FileCode className="w-4 h-4 text-sky-400" strokeWidth={1.7} />
+                  </div>
+                  <div className="text-xs text-zinc-400 leading-relaxed">
+                    {t('launcher.createDesc')}
+                  </div>
+
+                  <div className="space-y-2.5 pt-1 text-xs">
+                    <div>
+                      <div className="text-[10px] text-zinc-500 mb-1">项目名称</div>
+                      <input
+                        type="text"
+                        value={newTitle}
+                        onChange={(e) => setNewTitle(e.target.value)}
+                        className="w-full px-2.5 py-1.5"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <div>
+                        <div className="text-[10px] text-zinc-500 mb-1">创作者 / 团队</div>
+                        <input
+                          type="text"
+                          value={newAuthor}
+                          onChange={(e) => setNewAuthor(e.target.value)}
+                          className="w-full px-2.5 py-1.5"
+                        />
+                      </div>
+                      <div>
+                        <div className="text-[10px] text-zinc-500 mb-1">画布标准分辨率</div>
+                        <select
+                          value={resolutionStr}
+                          onChange={(e) => setResolutionStr(e.target.value)}
+                          className="w-full px-2.5 py-1.5"
+                        >
+                          <option value="1920x1080">1920 × 1080 (1080p)</option>
+                          <option value="1280x720">1280 × 720 (720p)</option>
+                          <option value="2560x1440">2560 × 1440 (2K)</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleCreateProject}
+                  className="w-full py-2.5 rounded-lg bg-zinc-200 hover:bg-white text-zinc-950 font-semibold text-xs flex items-center justify-center gap-1.5"
+                >
+                  <Plus className="w-3.5 h-3.5" strokeWidth={1.8} />
+                  {t('launcher.createBtn')}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <>
         {/* TAB 1: Project List */}
         {tab === 'projects' && (
           <div className="space-y-4">
@@ -556,6 +710,8 @@ export const ProjectLauncher: React.FC<ProjectLauncherProps> = ({
               </div>
             </div>
           </div>
+        )}
+          </>
         )}
       </div>
     </div>

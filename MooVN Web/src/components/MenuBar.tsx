@@ -10,8 +10,10 @@ import {
   Columns,
   Grid,
   Globe,
+  Languages,
 } from 'lucide-react';
 import { PanelId } from '../types';
+import { SUPPORTED_UI_LANGUAGES, UILanguage, useUILanguage } from '../lib/i18n';
 
 export interface WindowPanelDescriptor {
   id: PanelId;
@@ -54,6 +56,7 @@ export const MenuBar: React.FC<MenuBarProps> = ({
   onOpenOfficialPortal,
 }) => {
   const [openWindowMenu, setOpenWindowMenu] = useState(false);
+  const { lang, setLang, t } = useUILanguage();
 
   return (
     <header className="h-9 bg-[#141417] border-b border-[#27272c] px-2.5 flex items-center justify-between select-none z-50 shrink-0 text-xs">
@@ -64,10 +67,10 @@ export const MenuBar: React.FC<MenuBarProps> = ({
             <button
               onClick={onOpenOfficialPortal}
               className="px-2 py-1 rounded text-zinc-300 hover:text-white hover:bg-[#1f1f25] flex items-center gap-1.5 transition"
-              title="返回官网"
+              title={t('menu.portal')}
             >
               <Globe className="w-3.5 h-3.5" strokeWidth={1.6} />
-              <span className="hidden sm:inline">官网</span>
+              <span className="hidden sm:inline">{t('menu.portal')}</span>
             </button>
             <div className="w-px h-3.5 bg-[#27272c] mx-0.5" />
           </>
@@ -76,10 +79,10 @@ export const MenuBar: React.FC<MenuBarProps> = ({
         <button
           onClick={onOpenProjectLauncher}
           className="px-2 py-1 rounded text-zinc-300 hover:text-white hover:bg-[#1f1f25] flex items-center gap-1.5 transition"
-          title="新建 / 打开 / 导入项目"
+          title={t('menu.project')}
         >
           <FolderOpen className="w-3.5 h-3.5" strokeWidth={1.6} />
-          <span>项目</span>
+          <span>{t('menu.project')}</span>
         </button>
 
         <div className="w-px h-3.5 bg-[#27272c] mx-0.5" />
@@ -88,7 +91,7 @@ export const MenuBar: React.FC<MenuBarProps> = ({
           disabled={!canUndo}
           onClick={onUndo}
           className="icon-btn !w-6 !h-6"
-          title="撤销 (Ctrl+Z)"
+          title={t('menu.undo')}
         >
           <Undo2 className="w-3.5 h-3.5" strokeWidth={1.6} />
         </button>
@@ -96,7 +99,7 @@ export const MenuBar: React.FC<MenuBarProps> = ({
           disabled={!canRedo}
           onClick={onRedo}
           className="icon-btn !w-6 !h-6"
-          title="重做 (Ctrl+Y)"
+          title={t('menu.redo')}
         >
           <Redo2 className="w-3.5 h-3.5" strokeWidth={1.6} />
         </button>
@@ -114,7 +117,7 @@ export const MenuBar: React.FC<MenuBarProps> = ({
             }`}
           >
             <LayoutGrid className="w-3.5 h-3.5" strokeWidth={1.6} />
-            <span>布局</span>
+            <span>{t('menu.layout')}</span>
           </button>
 
           {openWindowMenu && (
@@ -230,14 +233,30 @@ export const MenuBar: React.FC<MenuBarProps> = ({
         </div>
       </div>
 
-      {/* Right: Run Preview & Unified Export */}
+      {/* Right: Language Switcher, Run Preview & Unified Export */}
       <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#1c1c21] border border-[#2c2c34]">
+          <Languages className="w-3 h-3 text-zinc-400 shrink-0" strokeWidth={1.6} />
+          <select
+            value={lang}
+            onChange={(e) => setLang(e.target.value as UILanguage)}
+            className="bg-transparent border-0 text-[11px] text-zinc-200 focus:outline-none cursor-pointer pr-1"
+            title={t('menu.language')}
+          >
+            {SUPPORTED_UI_LANGUAGES.map((item) => (
+              <option key={item.id} value={item.id} className="bg-[#18181c] text-zinc-200">
+                {item.shortLabel}
+              </option>
+            ))}
+          </select>
+        </div>
+
         <button
           onClick={onPlayPreview}
           className="px-2.5 py-1 rounded bg-[#232329] hover:bg-[#2c2c34] text-zinc-100 border border-[#32323a] flex items-center gap-1.5 transition"
         >
           <Play className="w-3 h-3 fill-current" strokeWidth={1.6} />
-          <span>运行</span>
+          <span>{t('menu.run')}</span>
         </button>
 
         <button
@@ -245,7 +264,7 @@ export const MenuBar: React.FC<MenuBarProps> = ({
           className="px-2.5 py-1 rounded bg-zinc-100 hover:bg-white text-zinc-950 font-semibold flex items-center gap-1.5 transition"
         >
           <Download className="w-3 h-3" strokeWidth={1.8} />
-          <span>导出</span>
+          <span>{t('menu.export')}</span>
         </button>
       </div>
     </header>
