@@ -121,7 +121,6 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
     });
     return init;
   });
-  const [minStatNotice, setMinStatNotice] = useState<string | null>(null);
   const msvnFileInputRef = useRef<HTMLInputElement | null>(null);
   const lastVisitedChapterIdRef = useRef<string>('');
   const [saveSlots, setSaveSlots] = useState<Record<string, SaveSlotData>>(() => {
@@ -242,13 +241,35 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
           variablesMap
         );
       if (boostedLogs.length > 0) {
+        // 静默在后台校准最低数值，绝不在游戏内向玩家弹出任何补偿提示
         setAffectionMap(nextAffection);
         setVariablesMap(nextVariables);
-        setMinStatNotice(
-          `进入 [${currentChapter.title}] · 已自动应用跳章保底数值：${boostedLogs.join('，')}`
-        );
-        setTimeout(() => setMinStatNotice(null), 3600);
       }
+    }
+
+    // 执行 math_operation / set_variable / repeat_loop 节点数值逻辑
+    if (currentNode.type === 'math_operation' && currentNode.logicConfig) {
+      const { targetVar, mathOp = '+=', operandValue = 1 } = currentNode.logicConfig;
+      setVariablesMap((prev) => {
+        const cur = Number(prev[targetVar] ?? 0);
+        const val = Number(operandValue ?? 1);
+        const nextVal =
+          mathOp === '+='
+            ? cur + val
+            : mathOp === '-='
+            ? cur - val
+            : mathOp === '*='
+            ? cur * val
+            : mathOp === '/=' && val !== 0
+            ? Math.floor(cur / val)
+            : val;
+        return { ...prev, [targetVar]: nextVal };
+      });
+    } else if (currentNode.type === 'set_variable' && currentNode.variableKey) {
+      setVariablesMap((prev) => ({
+        ...prev,
+        [currentNode.variableKey!]: currentNode.variableValue ?? 1,
+      }));
     }
   }, [screenMode, currentNode?.id]);
 
@@ -1261,7 +1282,7 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
                     ...prev,
                     [pkg.chapter.id]: true,
                   }));
-                  const { nextAffection, nextVariables, boostedLogs } =
+                  const { nextAffection, nextVariables } =
                     applyChapterMinimumCharacterStats(
                       pkg.chapter,
                       project.characters,
@@ -1270,13 +1291,8 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
                     );
                   setAffectionMap(nextAffection);
                   setVariablesMap(nextVariables);
-                  setMinStatNotice(
-                    `已挂载外部章节包 [${pkg.chapter.title}]${
-                      boostedLogs.length > 0 ? ` · 保底补偿：${boostedLogs.join('，')}` : ''
-                    }`
-                  );
                 } catch {
-                  setMinStatNotice('章节包解析失败，请确认文件为 .msvn 格式');
+                  // ignore invalid msvn file
                 }
                 e.target.value = '';
               }}
@@ -1369,7 +1385,7 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
                         {isMounted && firstNodeOfChapter && (
                           <button
                             onClick={() => {
-                              const { nextAffection, nextVariables, boostedLogs } =
+                              const { nextAffection, nextVariables } =
                                 applyChapterMinimumCharacterStats(
                                   ch,
                                   project.characters,
@@ -1382,12 +1398,6 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
                               setDialogueIndex(0);
                               setScreenMode('playing');
                               setModalMode('none');
-                              if (boostedLogs.length > 0) {
-                                setMinStatNotice(
-                                  `跳章进入 [${ch.title}] · 已补偿最低好感：${boostedLogs.join('，')}`
-                                );
-                                setTimeout(() => setMinStatNotice(null), 4000);
-                              }
                             }}
                             className="px-2.5 py-1 rounded bg-[#27272c] hover:bg-zinc-700 text-zinc-100 text-[11px]"
                           >
@@ -1400,13 +1410,6 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
                 })}
               </div>
             </div>
-          </div>
-        )}
-
-        {/* Skip-chapter minimum stat compensation toast */}
-        {minStatNotice && (
-          <div className="absolute top-12 left-1/2 -translate-x-1/2 z-40 px-4 py-2 rounded-lg bg-[#161619]/95 border border-amber-500/40 text-amber-200 text-xs shadow-xl">
-            {minStatNotice}
           </div>
         )}
 

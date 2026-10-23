@@ -126,6 +126,43 @@ export const SceneStageView: React.FC<SceneStageViewProps> = ({
               ))}
             </select>
           </div>
+
+          <select
+            value={node.weatherEffect || 'none'}
+            onChange={(e) =>
+              onUpdateNode((prev) => ({
+                ...prev,
+                weatherEffect: e.target.value as any,
+              }))
+            }
+            className="px-2 py-1 w-24"
+            title="天气粒子特效"
+          >
+            <option value="none">无天气</option>
+            <option value="sakura">樱花飘落</option>
+            <option value="rain">细雨连绵</option>
+            <option value="snow">冬雪纷飞</option>
+            <option value="fireflies">夏夜流萤</option>
+            <option value="sunset_glow">黄昏光尘</option>
+          </select>
+
+          <select
+            value={node.colorFilter || 'none'}
+            onChange={(e) =>
+              onUpdateNode((prev) => ({
+                ...prev,
+                colorFilter: e.target.value as any,
+              }))
+            }
+            className="px-2 py-1 w-24"
+            title="画面色彩滤镜"
+          >
+            <option value="none">原色滤镜</option>
+            <option value="sepia">旧日怀旧</option>
+            <option value="grayscale">黑白回忆</option>
+            <option value="night_blue">深蓝夜幕</option>
+            <option value="dream_bloom">梦境柔光</option>
+          </select>
         </div>
 
         {/* Selected Character Inline Controls */}
@@ -305,28 +342,49 @@ export const SceneStageView: React.FC<SceneStageViewProps> = ({
             }}
             className="absolute left-1/2 -translate-x-1/2 z-25 backdrop-blur-md shadow-2xl flex flex-col justify-between"
           >
-            <div>
+            <div onClick={(e) => e.stopPropagation()} className="space-y-1">
               {currentDialogue && (
-                <div
+                <input
+                  type="text"
+                  value={currentDialogue.speakerName}
+                  onChange={(e) =>
+                    onUpdateNode((prev) => ({
+                      ...prev,
+                      dialogues: prev.dialogues.map((d, idx) =>
+                        idx === selectedDialogueIndex
+                          ? { ...d, speakerName: e.target.value }
+                          : d
+                      ),
+                    }))
+                  }
                   style={{
                     fontSize: `${Math.round(uiConfig.dialogueBox.speakerFontSize * 0.8)}px`,
                     color: currentDialogue.speakerColor || '#38bdf8',
                   }}
-                  className="font-bold mb-1"
-                >
-                  {currentDialogue.speakerName}
-                </div>
+                  className="!bg-transparent !border-none font-bold px-0 py-0 w-full focus:outline-none"
+                />
               )}
-              <p
+              <textarea
+                rows={2}
+                value={currentDialogue?.text || ''}
+                onChange={(e) =>
+                  onUpdateNode((prev) => ({
+                    ...prev,
+                    dialogues: prev.dialogues.map((d, idx) =>
+                      idx === selectedDialogueIndex
+                        ? { ...d, text: e.target.value }
+                        : d
+                    ),
+                  }))
+                }
                 style={{
                   fontSize: `${Math.round(uiConfig.dialogueBox.textFontSize * 0.8)}px`,
                   color: uiConfig.dialogueBox.textColor,
                   lineHeight: uiConfig.dialogueBox.lineHeight,
                 }}
-                className="line-clamp-2"
-              >
-                {currentDialogue?.text || ''}
-              </p>
+                placeholder="在此直接编辑当前台词..."
+                className="w-full !bg-transparent !border-none px-0 py-0 resize-none focus:outline-none"
+              />
             </div>
 
             <div className="flex items-center justify-between pt-1.5 border-t border-white/10 text-[10px] text-zinc-400">

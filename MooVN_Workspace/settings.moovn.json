@@ -1,0 +1,26 @@
+{
+  "version": "2.4.0",
+  "platform": "web",
+  "workspaceRootPath": "/home/user/MooVN/MooVN_Workspace",
+  "projectsDirectoryPath": "/home/user/MooVN/MooVN_Workspace/Projects",
+  "exportOutputDirectoryPath": "/home/user/MooVN/MooVN_Workspace/Exports",
+  "cacheDirectoryPath": "/home/user/MooVN/MooVN_Workspace/Cache",
+  "settingsFilePath": "/home/user/MooVN/MooVN_Workspace/settings.moovn.json",
+  "defaultGameSettings": {
+    "textSpeedMs": 24,
+    "autoPlayDelayMs": 1800,
+    "bgmVolume": 75,
+    "sfxVolume": 85,
+    "voiceVolume": 90,
+    "fullscreenByDefault": false,
+    "skipUnreadText": false
+  },
+  "performanceConfig": {
+    "compressionFormat": "7z",
+    "compressionLevel": 5,
+    "skipPngRecompression": true,
+    "preloadSceneCount": 3,
+    "unloadSceneAfterCount": 5,
+    "enableMsvnChapterStreaming": true
+  }
+}

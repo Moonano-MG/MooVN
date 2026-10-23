@@ -268,6 +268,22 @@ export const DEFAULT_PROJECT: VNProject = {
         { id: 'attr-qianqian-shell', key: 'loopMemory', label: '回溯记忆觉醒度', value: 60 },
       ],
     },
+    {
+      id: 'celeste',
+      name: '白银塞蕾丝',
+      titleRole: '钟塔星盘守望者 / 秘仪司书',
+      color: '#a78bfa',
+      spriteId: 'char-celeste-1',
+      expressions: [
+        { id: '微笑', label: '温柔微笑', spriteId: 'char-celeste-1' },
+      ],
+      initialAffection: 35,
+      maxAffection: 100,
+      bio: '驻守于第13层天文钟塔顶层的银发紫瞳少女，负责记录每一次世界线回溯时的星象偏移。',
+      customAttributes: [
+        { id: 'attr-celeste-star', key: 'starlightSync', label: '星盘同步率', value: 80 },
+      ],
+    },
   ],
   variables: [
     { key: 'clueCount', label: '时计真相线索数', type: 'number', value: 1 },
@@ -316,6 +332,60 @@ export const DEFAULT_PROJECT: VNProject = {
       visualBlocks: [
         { id: 'vb-101', category: 'screen_text', kind: 'chapter_banner', params: { title: '第一章：樱坂坡道与停摆的银怀表', subtitle: 'Chapter 01' } },
       ],
+      nextNodeId: 'ch1-clock-repeat-loop',
+    },
+    {
+      id: 'ch1-clock-repeat-loop',
+      type: 'repeat_loop',
+      title: '钟声回响：重复3次检测容器',
+      chapterId: 'chapter-1',
+      position: { x: 220, y: 310 },
+      backgroundId: 'bg-clocktower-moonlight-cg',
+      bgmId: 'bgm-spring-breeze',
+      transition: 'fade',
+      loopConfig: {
+        repeatCount: 3,
+      },
+      childrenNodes: [
+        {
+          id: 'nest-ch1-1',
+          type: 'camera_shake',
+          title: '钟鸣震屏',
+          params: { intensity: 'light', durationMs: 320 },
+        },
+        {
+          id: 'nest-ch1-2',
+          type: 'math_operation',
+          title: '累加线索计数',
+          params: { targetVar: 'clueCount', mathOp: '+=', operandValue: 1 },
+        },
+        {
+          id: 'nest-ch1-3',
+          type: 'if_else_container',
+          title: '嵌套判断：好感共鸣',
+          params: { conditionExpr: 'ctx.affection.yukina >= 30' },
+          childrenNodes: [
+            {
+              id: 'nest-ch1-3-sub1',
+              type: 'dialogue',
+              title: '共鸣对白',
+              params: { speaker: '星野 雪奈', text: '银怀表的指针正在发光……' },
+            },
+          ],
+        },
+      ],
+      characters: [],
+      dialogues: [
+        {
+          id: 'ch1-loop-d1',
+          speakerId: 'narrator',
+          speakerName: '旁白',
+          speakerColor: '#94a3b8',
+          text: '钟塔传来三次悠远的共鸣，口袋里的银怀表随之微微震颤。',
+        },
+      ],
+      choices: [],
+      visualBlocks: [],
       nextNodeId: 'ch1-screen-poem',
     },
     {

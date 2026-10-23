@@ -6,6 +6,7 @@ export const NODE_CATEGORIES: {
   color: string;
 }[] = [
   { id: 'control', label: '控制', color: '#f59e0b' },
+  { id: 'loop_logic', label: '循环逻辑', color: '#10b981' },
   { id: 'narrative', label: '叙事', color: '#38bdf8' },
   { id: 'screen_text', label: '屏幕字', color: '#c084fc' },
   { id: 'character', label: '角色', color: '#f472b6' },
@@ -21,42 +22,47 @@ const CAT_STYLE: Record<
 > = {
   control: {
     accentColor: '#f59e0b',
-    badgeBg: 'rgba(245, 158, 11, 0.16)',
+    badgeBg: 'rgba(245, 158, 11, 0.18)',
     badgeText: '#fcd34d',
+  },
+  loop_logic: {
+    accentColor: '#10b981',
+    badgeBg: 'rgba(16, 185, 129, 0.18)',
+    badgeText: '#6ee7b7',
   },
   narrative: {
     accentColor: '#38bdf8',
-    badgeBg: 'rgba(56, 189, 248, 0.16)',
+    badgeBg: 'rgba(56, 189, 248, 0.18)',
     badgeText: '#7dd3fc',
   },
   screen_text: {
     accentColor: '#c084fc',
-    badgeBg: 'rgba(192, 132, 252, 0.16)',
+    badgeBg: 'rgba(192, 132, 252, 0.18)',
     badgeText: '#d8b4fe',
   },
   character: {
     accentColor: '#f472b6',
-    badgeBg: 'rgba(244, 114, 182, 0.16)',
+    badgeBg: 'rgba(244, 114, 182, 0.18)',
     badgeText: '#f9a8d4',
   },
   visual: {
     accentColor: '#2dd4bf',
-    badgeBg: 'rgba(45, 212, 191, 0.16)',
+    badgeBg: 'rgba(45, 212, 191, 0.18)',
     badgeText: '#5eead4',
   },
   audio: {
     accentColor: '#fb923c',
-    badgeBg: 'rgba(251, 146, 60, 0.16)',
+    badgeBg: 'rgba(251, 146, 60, 0.18)',
     badgeText: '#fdba74',
   },
   ui: {
     accentColor: '#60a5fa',
-    badgeBg: 'rgba(96, 165, 250, 0.16)',
+    badgeBg: 'rgba(96, 165, 250, 0.18)',
     badgeText: '#93c5fd',
   },
   script: {
     accentColor: '#a3e635',
-    badgeBg: 'rgba(163, 230, 53, 0.16)',
+    badgeBg: 'rgba(163, 230, 53, 0.18)',
     badgeText: '#bef264',
   },
 };
@@ -68,7 +74,7 @@ export const NODE_REGISTRY: NodeTypeMeta[] = [
     category: 'control',
     categoryLabel: '控制',
     title: '玩家选项',
-    description: '多分支剧情选择',
+    description: '多分支剧情选择与条件过滤',
     ...CAT_STYLE.control,
   },
   {
@@ -76,7 +82,7 @@ export const NODE_REGISTRY: NodeTypeMeta[] = [
     category: 'control',
     categoryLabel: '控制',
     title: '限时选项',
-    description: '倒计时抉择与超时跳转',
+    description: '倒计时抉择与超时自动分支',
     ...CAT_STYLE.control,
   },
   {
@@ -84,7 +90,7 @@ export const NODE_REGISTRY: NodeTypeMeta[] = [
     category: 'control',
     categoryLabel: '控制',
     title: '条件分支',
-    description: '按好感或变量自动分流',
+    description: '按角色好感或变量比较分流',
     ...CAT_STYLE.control,
   },
   {
@@ -92,7 +98,7 @@ export const NODE_REGISTRY: NodeTypeMeta[] = [
     category: 'control',
     categoryLabel: '控制',
     title: '多路路由',
-    description: '按变量值分发多个出口',
+    description: 'switch-case 多出口分发',
     ...CAT_STYLE.control,
   },
   {
@@ -100,7 +106,7 @@ export const NODE_REGISTRY: NodeTypeMeta[] = [
     category: 'control',
     categoryLabel: '控制',
     title: '延时等待',
-    description: '暂停指定毫秒后继续',
+    description: 'await sleep(ms) 暂停推进',
     ...CAT_STYLE.control,
   },
   {
@@ -108,7 +114,7 @@ export const NODE_REGISTRY: NodeTypeMeta[] = [
     category: 'control',
     categoryLabel: '控制',
     title: '跨章跳转',
-    description: '跳转至指定章节节点',
+    description: '直接跳转至目标章节节点',
     ...CAT_STYLE.control,
   },
   {
@@ -116,7 +122,7 @@ export const NODE_REGISTRY: NodeTypeMeta[] = [
     category: 'control',
     categoryLabel: '控制',
     title: '随机分支',
-    description: '按权重随机走向分支',
+    description: '按概率随机抽取下一分支',
     ...CAT_STYLE.control,
   },
   {
@@ -124,7 +130,7 @@ export const NODE_REGISTRY: NodeTypeMeta[] = [
     category: 'control',
     categoryLabel: '控制',
     title: '流式预载',
-    description: '提前流式解压后续场景并释放旧内存',
+    description: '提前流式解压 1~20 场景并释放旧内存',
     ...CAT_STYLE.control,
   },
   {
@@ -132,7 +138,7 @@ export const NODE_REGISTRY: NodeTypeMeta[] = [
     category: 'control',
     categoryLabel: '控制',
     title: '章节加载',
-    description: '挂载 .msvn 章节包并应用最低保底好感',
+    description: '挂载 .msvn 章节包并校准保底好感',
     ...CAT_STYLE.control,
   },
   {
@@ -140,17 +146,107 @@ export const NODE_REGISTRY: NodeTypeMeta[] = [
     category: 'control',
     categoryLabel: '控制',
     title: '结局终点',
-    description: '触发结局画面与演职员表',
+    description: '触发结局判定与通关画面',
     ...CAT_STYLE.control,
   },
 
-  // ==================== 2. 叙事 (Narrative) ====================
+  // ==================== 2. 循环与多重容器逻辑 (Scratch-Style Multi-Nesting & Fine Logic) ====================
+  {
+    type: 'repeat_loop',
+    category: 'loop_logic',
+    categoryLabel: '循环',
+    title: '重复循环',
+    description: '容器节点：可多重嵌套添加任意子节点重复执行 N 次',
+    isContainer: true,
+    ...CAT_STYLE.loop_logic,
+  },
+  {
+    type: 'while_loop',
+    category: 'loop_logic',
+    categoryLabel: '循环',
+    title: '条件循环',
+    description: '容器节点：当表达式成立时循环执行内部嵌套子节点',
+    isContainer: true,
+    ...CAT_STYLE.loop_logic,
+  },
+  {
+    type: 'for_each_loop',
+    category: 'loop_logic',
+    categoryLabel: '循环',
+    title: '遍历集合',
+    description: '容器节点：遍历全体角色或线索并执行内部子节点',
+    isContainer: true,
+    ...CAT_STYLE.loop_logic,
+  },
+  {
+    type: 'if_else_container',
+    category: 'loop_logic',
+    categoryLabel: '逻辑',
+    title: '如果否则',
+    description: '双槽容器节点：支持在「如果」与「否则」槽内多重嵌套子节点',
+    isContainer: true,
+    hasDualSlots: true,
+    ...CAT_STYLE.loop_logic,
+  },
+  {
+    type: 'parallel_container',
+    category: 'loop_logic',
+    categoryLabel: '并发',
+    title: '并行执行',
+    description: '容器节点：Promise.all 同时并发执行内部所有嵌套子节点',
+    isContainer: true,
+    ...CAT_STYLE.loop_logic,
+  },
+  {
+    type: 'try_catch_container',
+    category: 'loop_logic',
+    categoryLabel: '容错',
+    title: '异常捕获',
+    description: '双槽容器节点：try 执行主槽子节点，出错时执行 catch 槽子节点',
+    isContainer: true,
+    hasDualSlots: true,
+    ...CAT_STYLE.loop_logic,
+  },
+  {
+    type: 'math_operation',
+    category: 'loop_logic',
+    categoryLabel: '运算',
+    title: '数学运算',
+    description: '对变量执行 += / -= / *= / /= / % / 随机数 / 区间限制',
+    ...CAT_STYLE.loop_logic,
+  },
+  {
+    type: 'string_format',
+    category: 'loop_logic',
+    categoryLabel: '运算',
+    title: '文本拼接',
+    description: '模板字符串格式化并写入目标变量',
+    ...CAT_STYLE.loop_logic,
+  },
+  {
+    type: 'array_operation',
+    category: 'loop_logic',
+    categoryLabel: '列表',
+    title: '列表操作',
+    description: '向背包或线索数组 push / remove / clear 元素',
+    ...CAT_STYLE.loop_logic,
+  },
+  {
+    type: 'break_continue',
+    category: 'loop_logic',
+    categoryLabel: '循环',
+    title: '跳出循环',
+    description: '在循环容器内执行 break 或 continue',
+    ...CAT_STYLE.loop_logic,
+  },
+
+  // ==================== 3. 叙事 (Narrative) ====================
   {
     type: 'dialogue',
     category: 'narrative',
     categoryLabel: '叙事',
     title: '角色对白',
-    description: '标准角色对话与语音演出',
+    description: '多行角色台词、表情切换与配音',
     ...CAT_STYLE.narrative,
   },
   {
@@ -158,7 +254,7 @@ export const NODE_REGISTRY: NodeTypeMeta[] = [
     category: 'narrative',
     categoryLabel: '叙事',
     title: '全屏独白',
-    description: 'NVL 小说式叙事段落',
+    description: 'NVL 小说式全屏文学叙述',
     ...CAT_STYLE.narrative,
   },
   {
@@ -166,7 +262,7 @@ export const NODE_REGISTRY: NodeTypeMeta[] = [
     category: 'narrative',
     categoryLabel: '叙事',
     title: '内心活动',
-    description: '第一人称心理描写',
+    description: '主角第一人称心声描写',
     ...CAT_STYLE.narrative,
   },
   {
@@ -174,17 +270,17 @@ export const NODE_REGISTRY: NodeTypeMeta[] = [
     category: 'narrative',
     categoryLabel: '叙事',
     title: 'CG特写',
-    description: '全屏事件插画配底部字幕',
+    description: '全屏事件 CG 插画配底部字幕',
     ...CAT_STYLE.narrative,
   },
 
-  // ==================== 3. 屏幕字 (Screen Text) ====================
+  // ==================== 4. 屏幕字 (Screen Text) ====================
   {
     type: 'screen_text',
     category: 'screen_text',
     categoryLabel: '屏幕字',
     title: '屏幕文字',
-    description: '任意坐标显示演出文字',
+    description: '在屏幕任意 X/Y 坐标显示排版文字',
     ...CAT_STYLE.screen_text,
   },
   {
@@ -192,7 +288,7 @@ export const NODE_REGISTRY: NodeTypeMeta[] = [
     category: 'screen_text',
     categoryLabel: '屏幕字',
     title: '章节大字',
-    description: '章节序幕主副标题卡',
+    description: '章节开篇主副标题动画展示',
     ...CAT_STYLE.screen_text,
   },
   {
@@ -200,7 +296,7 @@ export const NODE_REGISTRY: NodeTypeMeta[] = [
     category: 'screen_text',
     categoryLabel: '屏幕字',
     title: '电影字幕',
-    description: '宽银幕黑边配居中台词',
+    description: '上下黑边宽银幕电影字幕',
     ...CAT_STYLE.screen_text,
   },
   {
@@ -208,17 +304,17 @@ export const NODE_REGISTRY: NodeTypeMeta[] = [
     category: 'screen_text',
     categoryLabel: '屏幕字',
     title: '地点横幅',
-    description: '显示时间与场景地点角标',
+    description: '左上角时间与场景地点转场横幅',
     ...CAT_STYLE.screen_text,
   },
 
-  // ==================== 4. 角色 (Character) ====================
+  // ==================== 5. 角色 (Character) ====================
   {
     type: 'char_enter',
     category: 'character',
     categoryLabel: '角色',
     title: '角色入场',
-    description: '角色立绘登场与过渡',
+    description: '指定角色立绘坐标与入场动画',
     ...CAT_STYLE.character,
   },
   {
@@ -226,7 +322,7 @@ export const NODE_REGISTRY: NodeTypeMeta[] = [
     category: 'character',
     categoryLabel: '角色',
     title: '角色退场',
-    description: '角色立绘淡出离场',
+    description: '指定角色立绘淡出退场',
     ...CAT_STYLE.character,
   },
   {
@@ -234,7 +330,7 @@ export const NODE_REGISTRY: NodeTypeMeta[] = [
     category: 'character',
     categoryLabel: '角色',
     title: '切换表情',
-    description: '切换角色差分表情姿态',
+    description: '即时切换角色差分表情立绘',
     ...CAT_STYLE.character,
   },
   {
@@ -242,7 +338,7 @@ export const NODE_REGISTRY: NodeTypeMeta[] = [
     category: 'character',
     categoryLabel: '角色',
     title: '角色移动',
-    description: '立绘平滑位移与缩放',
+    description: 'Tween 缓动平移与缩放角色立绘',
     ...CAT_STYLE.character,
   },
   {
@@ -250,7 +346,7 @@ export const NODE_REGISTRY: NodeTypeMeta[] = [
     category: 'character',
     categoryLabel: '角色',
     title: '立绘动作',
-    description: '点头、跳跃或颤抖反馈',
+    description: '点头、跳跃、颤抖等立绘演出',
     ...CAT_STYLE.character,
   },
   {
@@ -258,7 +354,7 @@ export const NODE_REGISTRY: NodeTypeMeta[] = [
     category: 'character',
     categoryLabel: '角色',
     title: '聚焦高亮',
-    description: '提亮说话者并压暗其余立绘',
+    description: '提亮当前说话者并压暗其余立绘',
     ...CAT_STYLE.character,
   },
   {
@@ -266,17 +362,17 @@ export const NODE_REGISTRY: NodeTypeMeta[] = [
     category: 'character',
     categoryLabel: '角色',
     title: '好感变更',
-    description: '增减指定角色好感度',
+    description: '增减指定角色的好感度或属性',
     ...CAT_STYLE.character,
   },
 
-  // ==================== 5. 视觉 (Visual) ====================
+  // ==================== 6. 视觉 (Visual) ====================
   {
     type: 'bg_switch',
     category: 'visual',
     categoryLabel: '视觉',
     title: '切换背景',
-    description: '更换场景背景与转场',
+    description: '更换高清场景背景与转场特效',
     ...CAT_STYLE.visual,
   },
   {
@@ -284,7 +380,7 @@ export const NODE_REGISTRY: NodeTypeMeta[] = [
     category: 'visual',
     categoryLabel: '视觉',
     title: '淡入淡出',
-    description: '画面、背景或立绘渐变',
+    description: '整屏、背景或立绘透明度渐变',
     ...CAT_STYLE.visual,
   },
   {
@@ -292,7 +388,7 @@ export const NODE_REGISTRY: NodeTypeMeta[] = [
     category: 'visual',
     categoryLabel: '视觉',
     title: '镜头推拉',
-    description: '平滑缩放与焦点平移',
+    description: '摄像机推近拉远与焦点偏移',
     ...CAT_STYLE.visual,
   },
   {
@@ -300,7 +396,7 @@ export const NODE_REGISTRY: NodeTypeMeta[] = [
     category: 'visual',
     categoryLabel: '视觉',
     title: '镜头震动',
-    description: '受击或惊愕震屏效果',
+    description: '触发轻度/中度/剧烈震屏',
     ...CAT_STYLE.visual,
   },
   {
@@ -308,7 +404,7 @@ export const NODE_REGISTRY: NodeTypeMeta[] = [
     category: 'visual',
     categoryLabel: '视觉',
     title: '画面闪光',
-    description: '瞬间闪白或快门闪烁',
+    description: '自定义颜色瞬间闪屏特效',
     ...CAT_STYLE.visual,
   },
   {
@@ -316,7 +412,7 @@ export const NODE_REGISTRY: NodeTypeMeta[] = [
     category: 'visual',
     categoryLabel: '视觉',
     title: '天气粒子',
-    description: '樱花、雨雪或萤火虫',
+    description: '樱花、雨雪、萤火虫或夕照粒子',
     ...CAT_STYLE.visual,
   },
   {
@@ -324,7 +420,7 @@ export const NODE_REGISTRY: NodeTypeMeta[] = [
     category: 'visual',
     categoryLabel: '视觉',
     title: '色彩滤镜',
-    description: '怀旧、黑白或夜色滤镜',
+    description: '怀旧、黑白、夜色或柔光滤镜',
     ...CAT_STYLE.visual,
   },
   {
@@ -332,17 +428,17 @@ export const NODE_REGISTRY: NodeTypeMeta[] = [
     category: 'visual',
     categoryLabel: '视觉',
     title: '序列动画',
-    description: '播放多图序列帧或视频',
+    description: '播放多图序列帧、视频或补间动画',
     ...CAT_STYLE.visual,
   },
 
-  // ==================== 6. 音频 (Audio) ====================
+  // ==================== 7. 音频 (Audio) ====================
   {
     type: 'bgm_play',
     category: 'audio',
     categoryLabel: '音频',
     title: '播放音乐',
-    description: '切换并循环背景音乐',
+    description: '切换并循环播放指定 BGM',
     ...CAT_STYLE.audio,
   },
   {
@@ -358,7 +454,7 @@ export const NODE_REGISTRY: NodeTypeMeta[] = [
     category: 'audio',
     categoryLabel: '音频',
     title: '播放音效',
-    description: '触发环境或动作音效',
+    description: '触发单次环境或动作音效',
     ...CAT_STYLE.audio,
   },
   {
@@ -366,17 +462,17 @@ export const NODE_REGISTRY: NodeTypeMeta[] = [
     category: 'audio',
     categoryLabel: '音频',
     title: '播放语音',
-    description: '播放角色台词配音',
+    description: '播放角色台词音频轨道',
     ...CAT_STYLE.audio,
   },
 
-  // ==================== 7. 界面与设置 (In-Game UI & Settings) ====================
+  // ==================== 8. 界面与设置 (In-Game UI & Settings) ====================
   {
     type: 'ui_visibility',
     category: 'ui',
     categoryLabel: '界面',
     title: '显隐界面',
-    description: '隐藏或恢复对话框界面',
+    description: '隐藏或恢复游戏对话框图层',
     ...CAT_STYLE.ui,
   },
   {
@@ -384,7 +480,7 @@ export const NODE_REGISTRY: NodeTypeMeta[] = [
     category: 'ui',
     categoryLabel: '界面',
     title: '弹窗提示',
-    description: '顶部弹出道具或状态提示',
+    description: '顶部弹出物品获得或状态通知',
     ...CAT_STYLE.ui,
   },
   {
@@ -392,7 +488,7 @@ export const NODE_REGISTRY: NodeTypeMeta[] = [
     category: 'ui',
     categoryLabel: '界面',
     title: '解锁词条',
-    description: '解锁情报或设定集词条',
+    description: '写入档案词条库供随时查阅',
     ...CAT_STYLE.ui,
   },
   {
@@ -400,7 +496,7 @@ export const NODE_REGISTRY: NodeTypeMeta[] = [
     category: 'ui',
     categoryLabel: '界面',
     title: '主题预设',
-    description: '切换对话框整体预设风格',
+    description: '切换对话框整体预设主题风格',
     ...CAT_STYLE.ui,
   },
   {
@@ -408,7 +504,7 @@ export const NODE_REGISTRY: NodeTypeMeta[] = [
     category: 'ui',
     categoryLabel: '界面',
     title: '界面样式',
-    description: '动态修改对话框底色与透明度',
+    description: '动态调整对话框底色与不透明度',
     ...CAT_STYLE.ui,
   },
   {
@@ -416,25 +512,33 @@ export const NODE_REGISTRY: NodeTypeMeta[] = [
     category: 'ui',
     categoryLabel: '界面',
     title: '游戏设置',
-    description: '调整语速音量或唤起设置页',
+    description: '动态修改打字速度、音量或打开设置',
     ...CAT_STYLE.ui,
   },
 
-  // ==================== 8. 脚本 (Script) ====================
+  // ==================== 9. 脚本 (Script & Function) ====================
   {
     type: 'set_variable',
     category: 'script',
     categoryLabel: '脚本',
     title: '变量赋值',
-    description: '修改全局变量或标记',
+    description: '设置全局变量值（数值/布尔/文本）',
+    ...CAT_STYLE.script,
+  },
+  {
+    type: 'function_call',
+    category: 'script',
+    categoryLabel: '脚本',
+    title: '函数调用',
+    description: '调用自定义 JS/TS 函数并传入参数',
     ...CAT_STYLE.script,
   },
   {
     type: 'script',
     category: 'script',
     categoryLabel: '脚本',
-    title: '脚本桥接',
-    description: '执行 TS / Lua / Python 逻辑',
+    title: '脚本代码',
+    description: '编写自定义 JavaScript / TypeScript 逻辑',
     ...CAT_STYLE.script,
   },
 ];
@@ -446,7 +550,7 @@ export function getNodeMeta(type: WorkflowNodeType): NodeTypeMeta {
       category: 'narrative',
       categoryLabel: '叙事',
       title: '剧情节点',
-      description: '基础视觉小说节点',
+      description: '基础节点',
       ...CAT_STYLE.narrative,
     }
   );

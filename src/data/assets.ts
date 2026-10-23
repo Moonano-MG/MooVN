@@ -11,6 +11,14 @@ export const BACKGROUND_ASSETS: BackgroundAsset[] = [
     timeOfDay: '晴日',
   },
   {
+    id: 'bg-clocktower-moonlight-cg',
+    name: '第十三钟塔·苍月齿轮CG',
+    category: '秘境·夜晚',
+    path: '/images/backgrounds/bg-clocktower-moonlight-cg.jpg',
+    accent: '#60a5fa',
+    timeOfDay: '夜晚',
+  },
+  {
     id: 'bg-school-path-day',
     name: '樱花林荫校道·晴日',
     category: '学园·晴日',
@@ -357,6 +365,7 @@ export const CHARACTER_ASSETS: CharacterSpriteAsset[] = [
   { id: 'char-qianqian-5', name: '雾岛浅浅·闭眼甜笑', characterGroup: '雾岛浅浅', expressionLabel: '温柔', role: '神秘归乡少女 / 潮汐旅人', path: '/images/characters/char-qianqian-5.png', themeColor: '#34d399' },
   { id: 'char-qianqian-6', name: '雾岛浅浅·侧颜憧憬', characterGroup: '雾岛浅浅', expressionLabel: '憧憬', role: '神秘归乡少女 / 潮汐旅人', path: '/images/characters/char-qianqian-6.png', themeColor: '#34d399' },
   { id: 'char-qianqian-7', name: '雾岛浅浅·低头羞怯', characterGroup: '雾岛浅浅', expressionLabel: '害羞', role: '神秘归乡少女 / 潮汐旅人', path: '/images/characters/char-qianqian-7.png', themeColor: '#34d399' },
+  { id: 'char-celeste-1', name: '瑟蕾丝特·星盘守望', characterGroup: '瑟蕾丝特', expressionLabel: '微笑', role: '钟塔星象观测者', path: '/images/characters/char-celeste-1.png', themeColor: '#818cf8' },
 ];
 
 export const AUDIO_ASSETS: AudioAsset[] = [

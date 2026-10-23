@@ -1,243 +1,789 @@
 import React, { useState, useRef } from 'react';
 import {
-  Maximize2,
-  Minimize2,
+  X,
   ExternalLink,
-  PanelLeftClose,
-  PanelLeftOpen,
-  PanelRightClose,
-  PanelRightOpen,
+  Minimize2,
+  SplitSquareVertical,
+  SplitSquareHorizontal,
+  GripHorizontal,
 } from 'lucide-react';
 import { useEditor } from './hooks/useEditor';
-import { MenuBar, WorkspaceNavMode } from './components/MenuBar';
+import { MenuBar, WindowPanelDescriptor } from './components/MenuBar';
 import { LeftPanel } from './components/LeftPanel';
 import { NodeCanvas } from './components/NodeCanvas';
 import { SceneStageView } from './components/SceneStageView';
-import { Inspector } from './components/Inspector';
-import { PreviewPlayer } from './components/PreviewPlayer';
-import { ScriptView } from './components/ScriptView';
-import { StatusBar } from './components/StatusBar';
-import { AiAssistantPanel } from './components/AiAssistantPanel';
 import { GameUICustomizer } from './components/GameUICustomizer';
+import { ScriptView } from './components/ScriptView';
+import { Inspector } from './components/Inspector';
+import { StatusBar } from './components/StatusBar';
+import { PreviewPlayer } from './components/PreviewPlayer';
 import { ExportModal } from './components/ExportModal';
+import { AiAssistantPanel } from './components/AiAssistantPanel';
 import { ProjectLauncher } from './components/ProjectLauncher';
+import { TerminalPanel } from './components/TerminalPanel';
+import { AssetStudioPanel } from './components/AssetStudioPanel';
+import { SettingsModal } from './components/SettingsModal';
+import { PanelId } from './types';
 import { saveProjectToWorkspace } from './lib/workspaceManager';
-import { PanelId, FloatingWindowConfig } from './types';
 
-const WINDOW_TITLES: Record<PanelId, string> = {
-  explorer: '资源与节点',
+const PANEL_TITLES: Record<PanelId, string> = {
+  explorer: '工程资源与章节',
   node_library: '节点库',
-  canvas: '流程图',
-  stage: '舞台',
+  canvas: '节点画布',
+  stage: '场景舞台',
   ui_customizer: '界面定制',
-  ts_code: '脚本',
-  yaml_code: '章节 YAML',
-  inspector: '属性',
-  characters: '角色',
+  ts_code: '脚本编辑器 (JS/TS)',
+  yaml_code: 'YAML 剧本',
+  inspector: '属性检查器',
+  characters: '角色好感表',
   ai_agent: 'AI 助手',
+  terminal: '终端与编译诊断',
+  asset_studio: '抠图与 AI 生图',
+  settings: '系统设置',
 };
 
+const ALL_WINDOW_IDS: PanelId[] = [
+  'explorer',
+  'canvas',
+  'stage',
+  'inspector',
+  'ts_code',
+  'terminal',
+  'ai_agent',
+  'asset_studio',
+  'ui_customizer',
+];
+
+export interface DockCell {
+  id: string;
+  tabs: PanelId[];
+  activeTab: PanelId;
+  heightRatio: number; // relative weight in column
+}
+
+export interface DockColumn {
+  id: string;
+  widthRatio: number; // relative weight in row
+  cells: DockCell[];
+}
+
+export interface FloatingWindowState {
+  id: PanelId;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  zIndex: number;
+}
+
+type DropZonePosition = 'top' | 'bottom' | 'left' | 'right' | 'center';
+
+const createDefaultColumns = (): DockColumn[] => [
+  {
+    id: 'col-left',
+    widthRatio: 18,
+    cells: [
+      {
+        id: 'cell-explorer',
+        tabs: ['explorer'],
+        activeTab: 'explorer',
+        heightRatio: 100,
+      },
+    ],
+  },
+  {
+    id: 'col-center',
+    widthRatio: 56,
+    cells: [
+      {
+        id: 'cell-main',
+        tabs: ['canvas', 'stage', 'ts_code', 'asset_studio', 'ui_customizer'],
+        activeTab: 'canvas',
+        heightRatio: 72,
+      },
+      {
+        id: 'cell-bottom',
+        tabs: ['terminal'],
+        activeTab: 'terminal',
+        heightRatio: 28,
+      },
+    ],
+  },
+  {
+    id: 'col-right',
+    widthRatio: 26,
+    cells: [
+      {
+        id: 'cell-inspector',
+        tabs: ['inspector', 'ai_agent'],
+        activeTab: 'inspector',
+        heightRatio: 100,
+      },
+    ],
+  },
+];
+
 export function App() {
-  const editor = useEditor();
-  const [activeNav, setActiveNav] = useState<WorkspaceNavMode>('graph');
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [playStartNodeId, setPlayStartNodeId] = useState<string | undefined>(undefined);
-  const [showExportModal, setShowExportModal] = useState(false);
-  const [showProjectLauncher, setShowProjectLauncher] = useState(true);
+  const {
+    project,
+    setProject,
+    selectedNodeId,
+    selectedNode,
+    selectedChapterId,
+    selectedDialogueIndex,
+    selectedCharacterPlacementId,
+    canUndo,
+    canRedo,
+    selectNode: setSelectedNodeId,
+    setSelectedChapterId,
+    setSelectedDialogueIndex,
+    setSelectedCharacterPlacementId,
+    undo,
+    redo,
+    updateUIConfig,
+    updateNode,
+    addNode,
+    deleteNode,
+    addDialogueLine,
+    updateDialogueLine,
+    deleteDialogueLine,
+    addChoiceOption: addChoice,
+    updateChoiceOption: updateChoice,
+    deleteChoiceOption: deleteChoice,
+    addCharacterToStage: addCharacterToNode,
+    updateCharacterPlacement,
+    removeCharacterPlacement: removeCharacterFromNode,
+    updateCharacterProfile,
+    addCharacterProfile,
+    addChapter,
+    updateChapter,
+    addVisualBlock,
+    updateVisualBlock,
+    removeVisualBlock,
+  } = useEditor();
 
-  const [leftCollapsed, setLeftCollapsed] = useState(false);
-  const [rightCollapsed, setRightCollapsed] = useState(false);
-  const [leftWidth, setLeftWidth] = useState(256);
-  const [rightWidth, setRightWidth] = useState(328);
-  const [maximizedWindow, setMaximizedWindow] = useState<PanelId | null>(null);
+  const updateProjectMeta = (patch: Partial<typeof project>) => {
+    setProject((prev) => ({ ...prev, ...patch }));
+  };
 
-  // Optional floating windows (VS Code undock support without cluttering default layout)
-  const [floatingWindows, setFloatingWindows] = useState<FloatingWindowConfig[]>([]);
+  const setAsStartNode = (id: string) => {
+    setProject((prev) => ({ ...prev, startNodeId: id }));
+  };
 
-  const resizingRef = useRef<{
-    type: 'left' | 'right' | null;
-    startX: number;
-    startY: number;
-    initialSize: number;
-  }>({ type: null, startX: 0, startY: 0, initialSize: 0 });
+  const importProject = (proj: typeof project) => {
+    setProject(proj);
+  };
 
-  const floatingDragRef = useRef<{
-    panelId: PanelId | null;
-    mode: 'move' | 'resize';
-    startX: number;
-    startY: number;
-    initialRect: FloatingWindowConfig;
+  // ==================== 2D Grid Dock + Floating State ====================
+  const [columns, setColumns] = useState<DockColumn[]>(createDefaultColumns);
+  const [floatingWindows, setFloatingWindows] = useState<FloatingWindowState[]>([]);
+  const [topZ, setTopZ] = useState<number>(60);
+
+  // Dragging state for seamless Dock <-> Float transitions
+  const [draggingFloatingId, setDraggingFloatingId] = useState<PanelId | null>(null);
+  const [floatDragOffset, setFloatDragOffset] = useState({ x: 0, y: 0 });
+  const [hoverDropTarget, setHoverDropTarget] = useState<{
+    colId: string;
+    cellId: string;
+    zone: DropZonePosition;
   } | null>(null);
 
-  const toggleFloatWindow = (panelId: PanelId) => {
+  // Pending drag on a docked tab (if dragged > 22px, smoothly detaches into Floating Window)
+  const pendingTabDragRef = useRef<{
+    panelId: PanelId;
+    startX: number;
+    startY: number;
+  } | null>(null);
+
+  // Column & Row Splitter Resize
+  const resizingColRef = useRef<{
+    colIndex: number;
+    startX: number;
+    startLeftRatio: number;
+    startRightRatio: number;
+  } | null>(null);
+
+  const resizingRowRef = useRef<{
+    colId: string;
+    cellIndex: number;
+    startY: number;
+    startTopRatio: number;
+    startBottomRatio: number;
+  } | null>(null);
+
+  // Modals & Logs
+  const [isPlayingPreview, setIsPlayingPreview] = useState(false);
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [isLauncherOpen, setIsLauncherOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [runtimeLogs, setRuntimeLogs] = useState<string[]>([
+    `[${new Date().toLocaleTimeString().slice(0, 8)}] MooVN Engine 初始化完成：已挂载 /home/user/MooVN/MooVN_Workspace 全局磁盘目录`,
+    `[${new Date().toLocaleTimeString().slice(0, 8)}] 流加载器就绪：提前解压 3 场景，经过 5 场景后自动释放旧场景内存，PNG 免二次重压缩已开启`,
+  ]);
+
+  // Remove a panelId from all docked cells (cleaning up empty cells/columns)
+  const removePanelFromDock = (
+    cols: DockColumn[],
+    panelId: PanelId
+  ): DockColumn[] => {
+    const nextCols = cols
+      .map((col) => {
+        const nextCells = col.cells
+          .map((cell) => {
+            if (!cell.tabs.includes(panelId)) return cell;
+            const remaining = cell.tabs.filter((t) => t !== panelId);
+            if (remaining.length === 0) return null;
+            return {
+              ...cell,
+              tabs: remaining,
+              activeTab:
+                cell.activeTab === panelId ? remaining[0] : cell.activeTab,
+            };
+          })
+          .filter((c): c is DockCell => c !== null);
+
+        if (nextCells.length === 0) return null;
+        return { ...col, cells: nextCells };
+      })
+      .filter((col): col is DockColumn => col !== null);
+
+    return nextCols;
+  };
+
+  // Convert a docked panel directly into a Floating Window (without closing!)
+  const undockPanelToFloat = (
+    panelId: PanelId,
+    clientX = 240,
+    clientY = 110,
+    startDraggingImmediately = false
+  ) => {
+    const nextZ = topZ + 1;
+    setTopZ(nextZ);
+    setColumns((prev) => removePanelFromDock(prev, panelId));
     setFloatingWindows((prev) => {
-      if (prev.some((w) => w.panelId === panelId)) {
-        return prev.filter((w) => w.panelId !== panelId);
+      const exists = prev.find((f) => f.id === panelId);
+      const win: FloatingWindowState = exists
+        ? { ...exists, x: clientX - 140, y: Math.max(44, clientY - 16), zIndex: nextZ }
+        : {
+            id: panelId,
+            x: Math.max(40, clientX - 180),
+            y: Math.max(46, clientY - 16),
+            width: panelId === 'ai_agent' ? 460 : panelId === 'terminal' ? 680 : 620,
+            height: panelId === 'terminal' ? 320 : 480,
+            zIndex: nextZ,
+          };
+      return [...prev.filter((f) => f.id !== panelId), win];
+    });
+
+    if (startDraggingImmediately) {
+      setDraggingFloatingId(panelId);
+      setFloatDragOffset({ x: 180, y: 16 });
+    }
+  };
+
+  // Dock a floating (or already docked) panel into a target cell & zone in the 2D grid
+  const dockPanelIntoTarget = (
+    panelId: PanelId,
+    targetColId: string,
+    targetCellId: string,
+    zone: DropZonePosition
+  ) => {
+    setFloatingWindows((prev) => prev.filter((f) => f.id !== panelId));
+
+    setColumns((prev) => {
+      const cleaned = removePanelFromDock(prev, panelId);
+      if (cleaned.length === 0) {
+        return [
+          {
+            id: `col-${Date.now()}`,
+            widthRatio: 100,
+            cells: [
+              {
+                id: `cell-${Date.now()}`,
+                tabs: [panelId],
+                activeTab: panelId,
+                heightRatio: 100,
+              },
+            ],
+          },
+        ];
       }
-      return [
-        ...prev,
-        {
-          id: `float-${panelId}`,
-          panelId,
-          x: 180,
-          y: 90,
-          width: 560,
-          height: 420,
-          zIndex: 40 + prev.length,
-        },
-      ];
+
+      if (zone === 'left' || zone === 'right') {
+        const colIdx = cleaned.findIndex((c) => c.id === targetColId);
+        const newCol: DockColumn = {
+          id: `col-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+          widthRatio: 26,
+          cells: [
+            {
+              id: `cell-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+              tabs: [panelId],
+              activeTab: panelId,
+              heightRatio: 100,
+            },
+          ],
+        };
+        const insertAt =
+          colIdx === -1
+            ? cleaned.length
+            : zone === 'left'
+            ? colIdx
+            : colIdx + 1;
+        const copy = [...cleaned];
+        copy.splice(insertAt, 0, newCol);
+        return copy;
+      }
+
+      return cleaned.map((col) => {
+        if (col.id !== targetColId) return col;
+
+        if (zone === 'center') {
+          return {
+            ...col,
+            cells: col.cells.map((cell) =>
+              cell.id === targetCellId
+                ? {
+                    ...cell,
+                    tabs: cell.tabs.includes(panelId)
+                      ? cell.tabs
+                      : [...cell.tabs, panelId],
+                    activeTab: panelId,
+                  }
+                : cell
+            ),
+          };
+        }
+
+        // 'top' or 'bottom': split vertically inside this column!
+        const cellIdx = col.cells.findIndex((c) => c.id === targetCellId);
+        const newCell: DockCell = {
+          id: `cell-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+          tabs: [panelId],
+          activeTab: panelId,
+          heightRatio: 50,
+        };
+        const nextCells = [...col.cells];
+        const insertIdx =
+          cellIdx === -1
+            ? nextCells.length
+            : zone === 'top'
+            ? cellIdx
+            : cellIdx + 1;
+        nextCells.splice(insertIdx, 0, newCell);
+        return { ...col, cells: nextCells };
+      });
     });
   };
 
-  const renderWindowBody = (id: PanelId) => {
+  // Toggle between Docked and Floating with 1 click
+  const handleToggleDockFloat = (panelId: PanelId) => {
+    const isFloating = floatingWindows.some((f) => f.id === panelId);
+    if (isFloating) {
+      // Dock back into first available column
+      const targetCol = columns[columns.length - 1] || columns[0];
+      const targetCell = targetCol?.cells[0];
+      if (targetCol && targetCell) {
+        dockPanelIntoTarget(panelId, targetCol.id, targetCell.id, 'center');
+      }
+    } else {
+      undockPanelToFloat(panelId, 280, 120, false);
+    }
+  };
+
+  // Open or focus a panel
+  const handleOpenOrFocusWindow = (
+    panelId: PanelId,
+    mode: 'dock' | 'float' = 'dock'
+  ) => {
+    if (mode === 'float') {
+      undockPanelToFloat(panelId, 300, 120, false);
+      return;
+    }
+
+    // Check if already docked
+    const alreadyDocked = columns.some((col) =>
+      col.cells.some((c) => c.tabs.includes(panelId))
+    );
+    if (alreadyDocked) {
+      setColumns((prev) =>
+        prev.map((col) => ({
+          ...col,
+          cells: col.cells.map((cell) =>
+            cell.tabs.includes(panelId) ? { ...cell, activeTab: panelId } : cell
+          ),
+        }))
+      );
+      return;
+    }
+
+    // If floating, dock it back
+    const targetCol =
+      panelId === 'terminal'
+        ? columns[1] || columns[0]
+        : panelId === 'ai_agent' || panelId === 'inspector'
+        ? columns[columns.length - 1] || columns[0]
+        : columns[1] || columns[0];
+    const targetCell = targetCol?.cells[0];
+    if (targetCol && targetCell) {
+      dockPanelIntoTarget(
+        panelId,
+        targetCol.id,
+        targetCell.id,
+        panelId === 'terminal' ? 'bottom' : 'center'
+      );
+    }
+  };
+
+  // Apply 2D Multi-Row / Multi-Column Layout Presets
+  const handleApplyLayoutPreset = (
+    preset: 'default_ide' | 'quad_2x2' | 'multi_col_4' | 'canvas_stage_terminal'
+  ) => {
+    setFloatingWindows([]);
+    if (preset === 'quad_2x2') {
+      // 窗口 A | 窗口 C 在上，窗口 B | 窗口 D 在下
+      setColumns([
+        {
+          id: 'col-q1',
+          widthRatio: 50,
+          cells: [
+            {
+              id: 'cell-a',
+              tabs: ['canvas', 'explorer'],
+              activeTab: 'canvas',
+              heightRatio: 55,
+            },
+            {
+              id: 'cell-b',
+              tabs: ['ts_code', 'terminal'],
+              activeTab: 'ts_code',
+              heightRatio: 45,
+            },
+          ],
+        },
+        {
+          id: 'col-q2',
+          widthRatio: 50,
+          cells: [
+            {
+              id: 'cell-c',
+              tabs: ['stage', 'asset_studio'],
+              activeTab: 'stage',
+              heightRatio: 55,
+            },
+            {
+              id: 'cell-d',
+              tabs: ['inspector', 'ai_agent'],
+              activeTab: 'inspector',
+              heightRatio: 45,
+            },
+          ],
+        },
+      ]);
+    } else if (preset === 'multi_col_4') {
+      // 窗口 A | 窗口 B | 窗口 C | 窗口 D 四列并排
+      setColumns([
+        {
+          id: 'col-1',
+          widthRatio: 16,
+          cells: [{ id: 'c-1', tabs: ['explorer'], activeTab: 'explorer', heightRatio: 100 }],
+        },
+        {
+          id: 'col-2',
+          widthRatio: 32,
+          cells: [{ id: 'c-2', tabs: ['canvas', 'ts_code'], activeTab: 'canvas', heightRatio: 100 }],
+        },
+        {
+          id: 'col-3',
+          widthRatio: 30,
+          cells: [
+            { id: 'c-3a', tabs: ['stage', 'asset_studio'], activeTab: 'stage', heightRatio: 65 },
+            { id: 'c-3b', tabs: ['terminal'], activeTab: 'terminal', heightRatio: 35 },
+          ],
+        },
+        {
+          id: 'col-4',
+          widthRatio: 22,
+          cells: [{ id: 'c-4', tabs: ['inspector', 'ai_agent'], activeTab: 'ai_agent', heightRatio: 100 }],
+        },
+      ]);
+    } else if (preset === 'canvas_stage_terminal') {
+      setColumns([
+        {
+          id: 'col-left',
+          widthRatio: 45,
+          cells: [
+            { id: 'c-top-l', tabs: ['canvas', 'explorer'], activeTab: 'canvas', heightRatio: 68 },
+            { id: 'c-bot-l', tabs: ['terminal'], activeTab: 'terminal', heightRatio: 32 },
+          ],
+        },
+        {
+          id: 'col-mid',
+          widthRatio: 33,
+          cells: [
+            { id: 'c-top-m', tabs: ['stage', 'asset_studio'], activeTab: 'stage', heightRatio: 68 },
+            { id: 'c-bot-m', tabs: ['ts_code'], activeTab: 'ts_code', heightRatio: 32 },
+          ],
+        },
+        {
+          id: 'col-right',
+          widthRatio: 22,
+          cells: [
+            { id: 'c-r1', tabs: ['inspector'], activeTab: 'inspector', heightRatio: 55 },
+            { id: 'c-r2', tabs: ['ai_agent'], activeTab: 'ai_agent', heightRatio: 45 },
+          ],
+        },
+      ]);
+    } else {
+      setColumns(createDefaultColumns());
+    }
+  };
+
+  // Global Pointer Move / Up for Floating Window Drag, Tab Detach-to-Float, and Splitter Resize
+  const handleGlobalMouseMove = (e: React.MouseEvent) => {
+    // 1. Check if a docked tab is being dragged out to become a Floating Window
+    if (pendingTabDragRef.current) {
+      const dx = Math.abs(e.clientX - pendingTabDragRef.current.startX);
+      const dy = Math.abs(e.clientY - pendingTabDragRef.current.startY);
+      if (dx > 24 || dy > 24) {
+        const pid = pendingTabDragRef.current.panelId;
+        pendingTabDragRef.current = null;
+        undockPanelToFloat(pid, e.clientX, e.clientY, true);
+        return;
+      }
+    }
+
+    // 2. Move active Floating Window
+    if (draggingFloatingId) {
+      setFloatingWindows((prev) =>
+        prev.map((w) =>
+          w.id === draggingFloatingId
+            ? {
+                ...w,
+                x: Math.max(8, e.clientX - floatDragOffset.x),
+                y: Math.max(42, e.clientY - floatDragOffset.y),
+              }
+            : w
+        )
+      );
+    }
+
+    // 3. Column horizontal resize
+    if (resizingColRef.current) {
+      const { colIndex, startX, startLeftRatio, startRightRatio } =
+        resizingColRef.current;
+      const deltaPercent = ((e.clientX - startX) / window.innerWidth) * 100;
+      const newLeft = Math.max(12, Math.min(75, startLeftRatio + deltaPercent));
+      const newRight = Math.max(
+        12,
+        Math.min(75, startRightRatio - deltaPercent)
+      );
+      setColumns((prev) =>
+        prev.map((col, idx) =>
+          idx === colIndex
+            ? { ...col, widthRatio: newLeft }
+            : idx === colIndex + 1
+            ? { ...col, widthRatio: newRight }
+            : col
+        )
+      );
+    }
+
+    // 4. Row vertical resize inside a column
+    if (resizingRowRef.current) {
+      const { colId, cellIndex, startY, startTopRatio, startBottomRatio } =
+        resizingRowRef.current;
+      const deltaPercent = ((e.clientY - startY) / (window.innerHeight - 66)) * 100;
+      const newTop = Math.max(15, Math.min(85, startTopRatio + deltaPercent));
+      const newBottom = Math.max(15, Math.min(85, startBottomRatio - deltaPercent));
+      setColumns((prev) =>
+        prev.map((col) =>
+          col.id !== colId
+            ? col
+            : {
+                ...col,
+                cells: col.cells.map((cell, idx) =>
+                  idx === cellIndex
+                    ? { ...cell, heightRatio: newTop }
+                    : idx === cellIndex + 1
+                    ? { ...cell, heightRatio: newBottom }
+                    : cell
+                ),
+              }
+        )
+      );
+    }
+  };
+
+  const handleGlobalMouseUp = () => {
+    pendingTabDragRef.current = null;
+    resizingColRef.current = null;
+    resizingRowRef.current = null;
+
+    if (draggingFloatingId) {
+      if (hoverDropTarget) {
+        dockPanelIntoTarget(
+          draggingFloatingId,
+          hoverDropTarget.colId,
+          hoverDropTarget.cellId,
+          hoverDropTarget.zone
+        );
+      }
+      setDraggingFloatingId(null);
+      setHoverDropTarget(null);
+    }
+  };
+
+  // Render content of any PanelId
+  const renderPanelContent = (id: PanelId) => {
     switch (id) {
       case 'explorer':
       case 'node_library':
       case 'characters':
         return (
           <LeftPanel
-            chapters={editor.project.chapters}
-            nodes={editor.project.nodes}
-            startNodeId={editor.project.startNodeId}
-            selectedNodeId={editor.selectedNodeId}
-            selectedChapterId={editor.selectedChapterId}
-            defaultTab={
-              activeNav === 'stage' ? 'assets' : activeNav === 'code' ? 'chapters' : 'nodes'
-            }
-            onSelectChapter={editor.setSelectedChapterId}
-            onSelectNode={editor.selectNode}
-            onAddChapter={editor.addChapter}
-            onAddNode={(type) => editor.addNode(type)}
-            onAssignBackground={(bgId) =>
-              editor.updateNode(editor.selectedNodeId, (n) => ({ ...n, backgroundId: bgId }))
-            }
-            onAssignBgm={(bgmId) =>
-              editor.updateNode(editor.selectedNodeId, (n) => ({ ...n, bgmId }))
-            }
-            onAddCharacterToStage={(charId) =>
-              editor.addCharacterToStage(editor.selectedNodeId, charId)
-            }
-            onOpenYamlTab={(chapterId) => {
-              editor.setSelectedChapterId(chapterId);
-              setActiveNav('code');
+            chapters={project.chapters}
+            nodes={project.nodes}
+            selectedChapterId={selectedChapterId}
+            selectedNodeId={selectedNodeId}
+            startNodeId={project.startNodeId}
+            defaultTab={id === 'node_library' ? 'nodes' : 'chapters'}
+            onSelectChapter={setSelectedChapterId}
+            onSelectNode={setSelectedNodeId}
+            onAddChapter={addChapter}
+            onAddNode={(type) => addNode(type)}
+            onAssignBackground={(bgId) => {
+              if (!selectedNode) return;
+              updateNode(selectedNode.id, (prev) => ({ ...prev, backgroundId: bgId }));
             }}
-            onOpenTsTab={() => setActiveNav('code')}
+            onAssignBgm={(bgmId) => {
+              if (!selectedNode) return;
+              updateNode(selectedNode.id, (prev) => ({ ...prev, bgmId }));
+            }}
+            onAddCharacterToStage={(charId) => {
+              if (!selectedNode) return;
+              addCharacterToNode(selectedNode.id, charId);
+            }}
+            onOpenYamlTab={(chapterId) => {
+              setSelectedChapterId(chapterId);
+              handleOpenOrFocusWindow('yaml_code', 'dock');
+            }}
+            onOpenTsTab={() => handleOpenOrFocusWindow('ts_code', 'dock')}
           />
         );
       case 'canvas':
         return (
           <NodeCanvas
-            nodes={editor.project.nodes}
-            chapters={editor.project.chapters}
-            characters={editor.project.characters}
-            startNodeId={editor.project.startNodeId}
-            selectedNodeId={editor.selectedNodeId}
-            selectedChapterId={editor.selectedChapterId}
-            onSelectNode={editor.selectNode}
-            onUpdateNode={editor.updateNode}
-            onAddNode={editor.addNode}
-            onDeleteNode={editor.deleteNode}
-            onAddVisualBlock={editor.addVisualBlock}
-            onUpdateVisualBlock={editor.updateVisualBlock}
-            onRemoveVisualBlock={editor.removeVisualBlock}
+            nodes={project.nodes}
+            chapters={project.chapters}
+            characters={project.characters}
+            startNodeId={project.startNodeId}
+            selectedNodeId={selectedNodeId}
+            selectedChapterId={selectedChapterId}
+            onSelectNode={setSelectedNodeId}
+            onUpdateNode={updateNode}
+            onAddNode={addNode}
+            onDeleteNode={deleteNode}
+            onAddVisualBlock={addVisualBlock}
+            onUpdateVisualBlock={updateVisualBlock}
+            onRemoveVisualBlock={removeVisualBlock}
           />
         );
       case 'stage':
-        return (
+        return selectedNode ? (
           <SceneStageView
-            node={editor.selectedNode}
-            characters={editor.project.characters}
-            uiConfig={editor.project.uiConfig}
-            selectedDialogueIndex={editor.selectedDialogueIndex}
-            onSelectDialogueIndex={editor.setSelectedDialogueIndex}
-            selectedCharacterPlacementId={editor.selectedCharacterPlacementId}
-            onSelectCharacterPlacement={editor.setSelectedCharacterPlacementId}
-            onUpdateNode={(updater) => editor.updateNode(editor.selectedNodeId, updater)}
-            onAddCharacter={(charId) =>
-              editor.addCharacterToStage(editor.selectedNodeId, charId)
-            }
+            node={selectedNode}
+            characters={project.characters}
+            uiConfig={project.uiConfig}
+            selectedDialogueIndex={selectedDialogueIndex}
+            onSelectDialogueIndex={setSelectedDialogueIndex}
+            selectedCharacterPlacementId={selectedCharacterPlacementId}
+            onSelectCharacterPlacement={setSelectedCharacterPlacementId}
+            onUpdateNode={(updater) => updateNode(selectedNode.id, updater)}
+            onAddCharacter={(charId) => addCharacterToNode(selectedNode.id, charId)}
             onUpdateCharacter={(placementId, patch) =>
-              editor.updateCharacterPlacement(editor.selectedNodeId, placementId, patch)
+              updateCharacterPlacement(selectedNode.id, placementId, patch)
             }
             onRemoveCharacter={(placementId) =>
-              editor.removeCharacterPlacement(editor.selectedNodeId, placementId)
+              removeCharacterFromNode(selectedNode.id, placementId)
             }
           />
-        );
-      case 'inspector':
-        return (
-          <Inspector
-            node={editor.selectedNode}
-            allNodes={editor.project.nodes}
-            chapters={editor.project.chapters}
-            characters={editor.project.characters}
-            startNodeId={editor.project.startNodeId}
-            selectedDialogueIndex={editor.selectedDialogueIndex}
-            onSelectDialogueIndex={editor.setSelectedDialogueIndex}
-            onUpdateNode={(updater) => editor.updateNode(editor.selectedNodeId, updater)}
-            onAddDialogue={() => editor.addDialogueLine(editor.selectedNodeId)}
-            onUpdateDialogue={(lineId, patch) =>
-              editor.updateDialogueLine(editor.selectedNodeId, lineId, patch)
-            }
-            onDeleteDialogue={(lineId) =>
-              editor.deleteDialogueLine(editor.selectedNodeId, lineId)
-            }
-            onAddChoice={() => editor.addChoiceOption(editor.selectedNodeId)}
-            onUpdateChoice={(choiceId, patch) =>
-              editor.updateChoiceOption(editor.selectedNodeId, choiceId, patch)
-            }
-            onDeleteChoice={(choiceId) =>
-              editor.deleteChoiceOption(editor.selectedNodeId, choiceId)
-            }
-            onSetStartNode={(nodeId) =>
-              editor.setProject((prev) => ({ ...prev, startNodeId: nodeId }))
-            }
-            onUpdateCharacterProfile={(charId, updater) =>
-              editor.setProject((prev) => ({
-                ...prev,
-                characters: prev.characters.map((c) => (c.id === charId ? updater(c) : c)),
-              }))
-            }
-            onAddCharacterProfile={editor.addCharacterProfile}
-            onUpdateChapter={(chapterId, updater) =>
-              editor.setProject((prev) => ({
-                ...prev,
-                chapters: prev.chapters.map((ch) =>
-                  ch.id === chapterId ? updater(ch) : ch
-                ),
-              }))
-            }
-          />
-        );
+        ) : null;
       case 'ui_customizer':
         return (
           <GameUICustomizer
-            project={editor.project}
-            onUpdateUIConfig={editor.updateUIConfig}
+            project={project}
+            onUpdateUIConfig={updateUIConfig}
           />
         );
+      case 'ts_code':
+        return (
+          <ScriptView
+            project={project}
+            selectedChapterId={selectedChapterId}
+            selectedNode={selectedNode}
+            onUpdateNode={updateNode}
+            mode="ts"
+          />
+        );
+      case 'yaml_code':
+        return (
+          <ScriptView
+            project={project}
+            selectedChapterId={selectedChapterId}
+            selectedNode={selectedNode}
+            onUpdateNode={updateNode}
+            mode="yaml"
+          />
+        );
+      case 'inspector':
+        return selectedNode ? (
+          <Inspector
+            node={selectedNode}
+            allNodes={project.nodes}
+            chapters={project.chapters}
+            characters={project.characters}
+            startNodeId={project.startNodeId}
+            selectedDialogueIndex={selectedDialogueIndex}
+            onSelectDialogueIndex={setSelectedDialogueIndex}
+            onUpdateNode={(updater) => updateNode(selectedNode.id, updater)}
+            onAddDialogue={() => addDialogueLine(selectedNode.id)}
+            onUpdateDialogue={(lineId, patch) =>
+              updateDialogueLine(selectedNode.id, lineId, patch)
+            }
+            onDeleteDialogue={(lineId) =>
+              deleteDialogueLine(selectedNode.id, lineId)
+            }
+            onAddChoice={() => addChoice(selectedNode.id)}
+            onUpdateChoice={(choiceId, patch) =>
+              updateChoice(selectedNode.id, choiceId, patch)
+            }
+            onDeleteChoice={(choiceId) =>
+              deleteChoice(selectedNode.id, choiceId)
+            }
+            onSetStartNode={setAsStartNode}
+            onUpdateCharacterProfile={updateCharacterProfile}
+            onAddCharacterProfile={addCharacterProfile}
+            onUpdateChapter={updateChapter}
+          />
+        ) : null;
       case 'ai_agent':
         return (
           <AiAssistantPanel
-            project={editor.project}
-            selectedNodeId={editor.selectedNodeId}
-            onAddNode={(type) => editor.addNode(type)}
-            onAddChapter={editor.addChapter}
-            onAddCharacter={() =>
-              editor.addCharacterToStage(
-                editor.selectedNodeId,
-                editor.project.characters[0]?.id || 'yukina'
-              )
-            }
-            onAppendDialogue={(speakerName, text) => {
-              editor.updateNode(editor.selectedNodeId, (n) => ({
-                ...n,
+            project={project}
+            selectedNodeId={selectedNodeId}
+            onAddNode={(type) => addNode(type)}
+            onAppendDialogue={(speaker, text) => {
+              if (!selectedNode) return;
+              updateNode(selectedNode.id, (prev) => ({
+                ...prev,
                 dialogues: [
-                  ...n.dialogues,
+                  ...prev.dialogues,
                   {
-                    id: `dlg-${Date.now()}`,
-                    speakerId: editor.project.characters[0]?.id || 'narrator',
-                    speakerName,
+                    id: `line-${Date.now()}-${Math.random()
+                      .toString(36)
+                      .slice(2, 6)}`,
+                    speakerId: speaker.includes('雪奈') ? 'yukina' : 'custom',
+                    speakerName: speaker,
                     speakerColor: '#38bdf8',
                     text,
                   },
@@ -245,410 +791,500 @@ export function App() {
               }));
             }}
             onSwitchBackground={(bgId) => {
-              editor.updateNode(editor.selectedNodeId, (n) => ({
-                ...n,
+              if (!selectedNode) return;
+              updateNode(selectedNode.id, (prev) => ({
+                ...prev,
                 backgroundId: bgId,
               }));
             }}
+            onAddCharacter={() => {
+              if (!selectedNode) return;
+              addCharacterToNode(
+                selectedNode.id,
+                project.characters[0]?.id || 'yukina'
+              );
+            }}
+            onAddChapter={addChapter}
           />
         );
-      case 'ts_code':
+      case 'terminal':
         return (
-          <ScriptView
-            project={editor.project}
-            selectedChapterId={editor.selectedChapterId}
-            mode="ts"
+          <TerminalPanel
+            project={project}
+            selectedNodeId={selectedNodeId}
+            runtimeLogs={runtimeLogs}
+            onSelectNode={setSelectedNodeId}
+            onClearRuntimeLogs={() => setRuntimeLogs([])}
           />
         );
-      case 'yaml_code':
+      case 'asset_studio':
         return (
-          <ScriptView
-            project={editor.project}
-            selectedChapterId={editor.selectedChapterId}
-            mode="yaml"
+          <AssetStudioPanel
+            project={project}
+            selectedNode={selectedNode}
+            onUpdateNode={(nodeId, patch) =>
+              updateNode(nodeId, (prev) => ({ ...prev, ...patch }))
+            }
+            onUpdateProject={updateProjectMeta}
           />
         );
+      default:
+        return null;
     }
   };
 
-  // Determine the focused center & right panels from the top navigation mode
-  const getPrimaryPanelsForNav = (
-    nav: WorkspaceNavMode
-  ): {
-    showLeft: boolean;
-    centerId: PanelId;
-    rightId: PanelId;
-  } => {
-    switch (nav) {
-      case 'graph':
-        return { showLeft: true, centerId: 'canvas', rightId: 'inspector' };
-      case 'stage':
-        return { showLeft: true, centerId: 'stage', rightId: 'inspector' };
-      case 'ui':
-        return { showLeft: false, centerId: 'stage', rightId: 'ui_customizer' };
-      case 'code':
-        return { showLeft: true, centerId: 'ts_code', rightId: 'inspector' };
-      case 'ai':
-        return { showLeft: false, centerId: 'canvas', rightId: 'ai_agent' };
-    }
-  };
-
-  const { showLeft, centerId, rightId } = getPrimaryPanelsForNav(activeNav);
-
-  const startResize = (
-    type: 'left' | 'right',
-    e: React.MouseEvent,
-    initialSize: number
-  ) => {
-    e.preventDefault();
-    resizingRef.current = {
-      type,
-      startX: e.clientX,
-      startY: e.clientY,
-      initialSize,
-    };
-
-    const handleMove = (ev: MouseEvent) => {
-      const state = resizingRef.current;
-      if (!state.type) return;
-      if (state.type === 'left') {
-        const delta = ev.clientX - state.startX;
-        setLeftWidth(Math.max(200, Math.min(480, state.initialSize + delta)));
-      } else if (state.type === 'right') {
-        const delta = state.startX - ev.clientX;
-        setRightWidth(Math.max(260, Math.min(520, state.initialSize + delta)));
-      }
-    };
-
-    const handleUp = () => {
-      resizingRef.current.type = null;
-      window.removeEventListener('mousemove', handleMove);
-      window.removeEventListener('mouseup', handleUp);
-    };
-
-    window.addEventListener('mousemove', handleMove);
-    window.addEventListener('mouseup', handleUp);
-  };
-
-  const startFloatingInteraction = (
-    panelId: PanelId,
-    mode: 'move' | 'resize',
-    e: React.MouseEvent
-  ) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const rect = floatingWindows.find((w) => w.panelId === panelId);
-    if (!rect) return;
-    floatingDragRef.current = {
-      panelId,
-      mode,
-      startX: e.clientX,
-      startY: e.clientY,
-      initialRect: { ...rect },
-    };
-
-    const handleMove = (ev: MouseEvent) => {
-      const cur = floatingDragRef.current;
-      if (!cur || !cur.panelId) return;
-      const dx = ev.clientX - cur.startX;
-      const dy = ev.clientY - cur.startY;
-      setFloatingWindows((prev) =>
-        prev.map((w) => {
-          if (w.panelId !== cur.panelId) return w;
-          return cur.mode === 'move'
-            ? {
-                ...w,
-                x: Math.max(8, cur.initialRect.x + dx),
-                y: Math.max(44, cur.initialRect.y + dy),
-              }
-            : {
-                ...w,
-                width: Math.max(280, cur.initialRect.width + dx),
-                height: Math.max(220, cur.initialRect.height + dy),
-              };
-        })
-      );
-    };
-
-    const handleUp = () => {
-      floatingDragRef.current = null;
-      window.removeEventListener('mousemove', handleMove);
-      window.removeEventListener('mouseup', handleUp);
-    };
-
-    window.addEventListener('mousemove', handleMove);
-    window.addEventListener('mouseup', handleUp);
-  };
+  // Build descriptor list for MenuBar
+  const panelDescriptors: WindowPanelDescriptor[] = ALL_WINDOW_IDS.map((id) => ({
+    id,
+    title: PANEL_TITLES[id],
+    docked: columns.some((col) => col.cells.some((c) => c.tabs.includes(id))),
+    floating: floatingWindows.some((f) => f.id === id),
+  }));
 
   return (
-    <div className="flex flex-col w-screen h-screen bg-[#121215] text-zinc-200 overflow-hidden select-none">
-      {/* Top Navigation Bar */}
+    <div
+      onMouseMove={handleGlobalMouseMove}
+      onMouseUp={handleGlobalMouseUp}
+      className="h-screen w-screen flex flex-col bg-[#111113] text-zinc-200 overflow-hidden select-none"
+    >
+      {/* Top Studio MenuBar */}
       <MenuBar
-        project={editor.project}
-        selectedChapterId={editor.selectedChapterId}
-        activeNav={activeNav}
-        onSelectNav={(nav) => {
-          setActiveNav(nav);
-          setMaximizedWindow(null);
-        }}
-        canUndo={editor.canUndo}
-        canRedo={editor.canRedo}
-        onUndo={editor.undo}
-        onRedo={editor.redo}
-        onImportProject={(proj) => {
-          editor.setProject(proj);
-          editor.selectNode(proj.startNodeId);
-        }}
-        onResetDefault={editor.resetToDefault}
-        onStartPreview={() => {
-          setPlayStartNodeId(editor.project.startNodeId);
-          setIsPlaying(true);
-        }}
-        onOpenExportModal={() => setShowExportModal(true)}
-        onOpenProjectLauncher={() => setShowProjectLauncher(true)}
-        onSaveProjectToWorkspace={() => {
-          saveProjectToWorkspace(editor.project);
-        }}
-        onFloatPanel={(panelId) => toggleFloatWindow(panelId)}
+        canUndo={canUndo}
+        canRedo={canRedo}
+        onUndo={undo}
+        onRedo={redo}
+        panels={panelDescriptors}
+        onOpenOrFocusWindow={handleOpenOrFocusWindow}
+        onToggleDockFloat={handleToggleDockFloat}
+        onApplyLayoutPreset={handleApplyLayoutPreset}
         onResetLayout={() => {
+          setColumns(createDefaultColumns());
           setFloatingWindows([]);
-          setMaximizedWindow(null);
-          setLeftCollapsed(false);
-          setRightCollapsed(false);
         }}
+        onPlayPreview={() => setIsPlayingPreview(true)}
+        onOpenExportModal={() => setIsExportModalOpen(true)}
+        onOpenProjectLauncher={() => setIsLauncherOpen(true)}
+        onOpenSettingsModal={() => setIsSettingsOpen(true)}
       />
 
-      {/* Focused Main Workspace */}
-      {maximizedWindow ? (
-        <div className="flex-1 flex flex-col overflow-hidden bg-[#161619]">
-          <div className="h-8 bg-[#141417] border-b border-[#27272c] px-3 flex items-center justify-between text-xs">
-            <span className="font-medium text-zinc-200">{WINDOW_TITLES[maximizedWindow]}</span>
-            <button
-              onClick={() => setMaximizedWindow(null)}
-              className="icon-btn"
-              title="还原"
-            >
-              <Minimize2 className="w-3.5 h-3.5" strokeWidth={1.6} />
-            </button>
-          </div>
-          <div className="flex-1 overflow-hidden">{renderWindowBody(maximizedWindow)}</div>
-        </div>
-      ) : (
-        <div className="flex-1 flex overflow-hidden min-h-0 relative">
-          {/* Left Panel (shown in graph / stage / code modes) */}
-          {showLeft && (
-            <>
-              {!leftCollapsed ? (
-                <div
-                  style={{ width: leftWidth }}
-                  className="h-full shrink-0 flex flex-col bg-[#161619] border-r border-[#27272c]"
-                >
-                  <div className="h-8 bg-[#141417] border-b border-[#27272c] px-2.5 flex items-center justify-between shrink-0">
-                    <span className="text-[11px] font-medium text-zinc-400">
-                      {WINDOW_TITLES.explorer}
-                    </span>
-                    <div className="flex items-center gap-0.5">
-                      <button
-                        onClick={() => toggleFloatWindow('explorer')}
-                        className="icon-btn w-6 h-6"
-                        title="浮动窗口"
-                      >
-                        <ExternalLink className="w-3 h-3" strokeWidth={1.6} />
-                      </button>
-                      <button
-                        onClick={() => setLeftCollapsed(true)}
-                        className="icon-btn w-6 h-6"
-                        title="折叠侧栏"
-                      >
-                        <PanelLeftClose className="w-3.5 h-3.5" strokeWidth={1.6} />
-                      </button>
-                    </div>
-                  </div>
-                  <div className="flex-1 overflow-hidden">{renderWindowBody('explorer')}</div>
-                </div>
-              ) : (
-                <div className="w-8 h-full bg-[#141417] border-r border-[#27272c] flex flex-col items-center py-2 shrink-0">
-                  <button
-                    onClick={() => setLeftCollapsed(false)}
-                    className="icon-btn"
-                    title="展开侧栏"
-                  >
-                    <PanelLeftOpen className="w-3.5 h-3.5" strokeWidth={1.6} />
-                  </button>
-                </div>
-              )}
+      {/* ==================== 2D MULTI-COLUMN & MULTI-ROW DOCK WORKBENCH ==================== */}
+      <div className="flex-1 flex overflow-hidden relative">
+        {columns.map((col, colIndex) => {
+          const totalWidth = columns.reduce((s, c) => s + c.widthRatio, 0) || 100;
+          const colWidthPercent = (col.widthRatio / totalWidth) * 100;
+          const totalCellHeight =
+            col.cells.reduce((s, c) => s + c.heightRatio, 0) || 100;
 
-              {/* Left Splitter */}
-              {!leftCollapsed && (
+          return (
+            <React.Fragment key={col.id}>
+              <div
+                style={{ width: `${colWidthPercent}%` }}
+                className="h-full flex flex-col overflow-hidden"
+              >
+                {col.cells.map((cell, cellIndex) => {
+                  const cellHeightPercent =
+                    (cell.heightRatio / totalCellHeight) * 100;
+                  const activePanel = cell.activeTab;
+
+                  return (
+                    <React.Fragment key={cell.id}>
+                      <div
+                        style={{ height: `${cellHeightPercent}%` }}
+                        className="relative flex flex-col overflow-hidden bg-[#141417] border-r border-b border-[#242429]"
+                      >
+                        {/* VS Code Style Docked Cell Tab & Action Bar */}
+                        <div className="h-7 bg-[#18181c] border-b border-[#27272c] px-1.5 flex items-center justify-between shrink-0">
+                          <div className="flex items-center gap-0.5 overflow-x-auto no-scrollbar">
+                            {cell.tabs.map((tabId) => {
+                              const isActive = tabId === activePanel;
+                              return (
+                                <div
+                                  key={tabId}
+                                  onMouseDown={(e) => {
+                                    // Activate tab & arm drag-to-float detector
+                                    setColumns((prev) =>
+                                      prev.map((c) =>
+                                        c.id !== col.id
+                                          ? c
+                                          : {
+                                              ...c,
+                                              cells: c.cells.map((ce) =>
+                                                ce.id === cell.id
+                                                  ? { ...ce, activeTab: tabId }
+                                                  : ce
+                                              ),
+                                            }
+                                      )
+                                    );
+                                    pendingTabDragRef.current = {
+                                      panelId: tabId,
+                                      startX: e.clientX,
+                                      startY: e.clientY,
+                                    };
+                                  }}
+                                  title="按住向窗外拖拽可直接丝滑变为漂浮窗口"
+                                  className={`group flex items-center gap-1.5 px-2.5 py-1 rounded-t text-[11px] cursor-grab active:cursor-grabbing transition ${
+                                    isActive
+                                      ? 'bg-[#141417] text-zinc-100 font-medium border-t border-x border-[#2b2b33]'
+                                      : 'text-zinc-500 hover:text-zinc-300'
+                                  }`}
+                                >
+                                  <span className="truncate max-w-[120px]">
+                                    {PANEL_TITLES[tabId]}
+                                  </span>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setColumns((prev) =>
+                                        removePanelFromDock(prev, tabId)
+                                      );
+                                    }}
+                                    className="opacity-0 group-hover:opacity-100 hover:text-rose-400 transition"
+                                    title="关闭此标签页"
+                                  >
+                                    <X className="w-2.5 h-2.5" strokeWidth={1.8} />
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+
+                          {/* Cell Quick Split & Direct Dock->Float Action Buttons */}
+                          <div className="flex items-center gap-0.5 shrink-0">
+                            <button
+                              onClick={() => {
+                                // Split Down: pick another panel or duplicate into lower row
+                                const candidate: PanelId =
+                                  activePanel === 'canvas'
+                                    ? 'terminal'
+                                    : activePanel === 'stage'
+                                    ? 'ts_code'
+                                    : 'ai_agent';
+                                dockPanelIntoTarget(
+                                  candidate,
+                                  col.id,
+                                  cell.id,
+                                  'bottom'
+                                );
+                              }}
+                              className="icon-btn !w-5 !h-5"
+                              title="向下分栏 (在此列下方新增一行窗口)"
+                            >
+                              <SplitSquareVertical
+                                className="w-3 h-3"
+                                strokeWidth={1.6}
+                              />
+                            </button>
+
+                            <button
+                              onClick={() => {
+                                const candidate: PanelId =
+                                  activePanel === 'canvas'
+                                    ? 'stage'
+                                    : 'inspector';
+                                dockPanelIntoTarget(
+                                  candidate,
+                                  col.id,
+                                  cell.id,
+                                  'right'
+                                );
+                              }}
+                              className="icon-btn !w-5 !h-5"
+                              title="向右分栏 (在右侧新增一列窗口)"
+                            >
+                              <SplitSquareHorizontal
+                                className="w-3 h-3"
+                                strokeWidth={1.6}
+                              />
+                            </button>
+
+                            <button
+                              onClick={(e) => {
+                                const rect = (
+                                  e.currentTarget as HTMLElement
+                                ).getBoundingClientRect();
+                                undockPanelToFloat(
+                                  activePanel,
+                                  rect.left,
+                                  rect.bottom + 12,
+                                  false
+                                );
+                              }}
+                              className="icon-btn !w-5 !h-5"
+                              title="直接切换为漂浮窗口 (无需关闭重开)"
+                            >
+                              <ExternalLink
+                                className="w-3 h-3"
+                                strokeWidth={1.6}
+                              />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Active Panel Body */}
+                        <div className="flex-1 overflow-hidden relative">
+                          {renderPanelContent(activePanel)}
+
+                          {/* 5-Zone VS Code Drop Target Overlay when dragging any Floating Window */}
+                          {draggingFloatingId && (
+                            <div className="absolute inset-0 z-50 bg-black/25 backdrop-blur-[1px] grid grid-cols-3 grid-rows-3 p-3 gap-2">
+                              <div />
+                              <div
+                                onMouseEnter={() =>
+                                  setHoverDropTarget({
+                                    colId: col.id,
+                                    cellId: cell.id,
+                                    zone: 'top',
+                                  })
+                                }
+                                onMouseLeave={() => setHoverDropTarget(null)}
+                                className={`rounded-lg border-2 border-dashed flex items-center justify-center text-xs font-medium transition ${
+                                  hoverDropTarget?.cellId === cell.id &&
+                                  hoverDropTarget.zone === 'top'
+                                    ? 'bg-sky-500/35 border-sky-300 text-white scale-105'
+                                    : 'bg-zinc-900/60 border-zinc-500/60 text-zinc-300'
+                                }`}
+                              >
+                                停靠到上方行
+                              </div>
+                              <div />
+
+                              <div
+                                onMouseEnter={() =>
+                                  setHoverDropTarget({
+                                    colId: col.id,
+                                    cellId: cell.id,
+                                    zone: 'left',
+                                  })
+                                }
+                                onMouseLeave={() => setHoverDropTarget(null)}
+                                className={`rounded-lg border-2 border-dashed flex items-center justify-center text-xs font-medium transition ${
+                                  hoverDropTarget?.cellId === cell.id &&
+                                  hoverDropTarget.zone === 'left'
+                                    ? 'bg-sky-500/35 border-sky-300 text-white scale-105'
+                                    : 'bg-zinc-900/60 border-zinc-500/60 text-zinc-300'
+                                }`}
+                              >
+                                停靠到左侧列
+                              </div>
+
+                              <div
+                                onMouseEnter={() =>
+                                  setHoverDropTarget({
+                                    colId: col.id,
+                                    cellId: cell.id,
+                                    zone: 'center',
+                                  })
+                                }
+                                onMouseLeave={() => setHoverDropTarget(null)}
+                                className={`rounded-lg border-2 border-dashed flex items-center justify-center text-xs font-medium transition ${
+                                  hoverDropTarget?.cellId === cell.id &&
+                                  hoverDropTarget.zone === 'center'
+                                    ? 'bg-emerald-500/35 border-emerald-300 text-white scale-105'
+                                    : 'bg-zinc-900/60 border-zinc-500/60 text-zinc-300'
+                                }`}
+                              >
+                                合并到此窗口标签
+                              </div>
+
+                              <div
+                                onMouseEnter={() =>
+                                  setHoverDropTarget({
+                                    colId: col.id,
+                                    cellId: cell.id,
+                                    zone: 'right',
+                                  })
+                                }
+                                onMouseLeave={() => setHoverDropTarget(null)}
+                                className={`rounded-lg border-2 border-dashed flex items-center justify-center text-xs font-medium transition ${
+                                  hoverDropTarget?.cellId === cell.id &&
+                                  hoverDropTarget.zone === 'right'
+                                    ? 'bg-sky-500/35 border-sky-300 text-white scale-105'
+                                    : 'bg-zinc-900/60 border-zinc-500/60 text-zinc-300'
+                                }`}
+                              >
+                                停靠到右侧列
+                              </div>
+
+                              <div />
+                              <div
+                                onMouseEnter={() =>
+                                  setHoverDropTarget({
+                                    colId: col.id,
+                                    cellId: cell.id,
+                                    zone: 'bottom',
+                                  })
+                                }
+                                onMouseLeave={() => setHoverDropTarget(null)}
+                                className={`rounded-lg border-2 border-dashed flex items-center justify-center text-xs font-medium transition ${
+                                  hoverDropTarget?.cellId === cell.id &&
+                                  hoverDropTarget.zone === 'bottom'
+                                    ? 'bg-sky-500/35 border-sky-300 text-white scale-105'
+                                    : 'bg-zinc-900/60 border-zinc-500/60 text-zinc-300'
+                                }`}
+                              >
+                                停靠到下方行
+                              </div>
+                              <div />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Vertical Row Resizer inside Column */}
+                      {cellIndex < col.cells.length - 1 && (
+                        <div
+                          onMouseDown={(e) => {
+                            resizingRowRef.current = {
+                              colId: col.id,
+                              cellIndex,
+                              startY: e.clientY,
+                              startTopRatio: cell.heightRatio,
+                              startBottomRatio:
+                                col.cells[cellIndex + 1].heightRatio,
+                            };
+                          }}
+                          className="h-1 bg-[#1b1b20] hover:bg-sky-500/60 cursor-row-resize shrink-0 transition"
+                        />
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+              </div>
+
+              {/* Horizontal Column Resizer */}
+              {colIndex < columns.length - 1 && (
                 <div
-                  onMouseDown={(e) => startResize('left', e, leftWidth)}
-                  className="w-1 bg-transparent hover:bg-zinc-600 cursor-col-resize transition shrink-0"
+                  onMouseDown={(e) => {
+                    resizingColRef.current = {
+                      colIndex,
+                      startX: e.clientX,
+                      startLeftRatio: col.widthRatio,
+                      startRightRatio: columns[colIndex + 1].widthRatio,
+                    };
+                  }}
+                  className="w-1 bg-[#1b1b20] hover:bg-sky-500/60 cursor-col-resize shrink-0 transition"
                 />
               )}
-            </>
-          )}
+            </React.Fragment>
+          );
+        })}
 
-          {/* Center Primary Canvas */}
-          <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden bg-[#121215]">
-            <div className="h-8 bg-[#141417] border-b border-[#27272c] px-3 flex items-center justify-between shrink-0">
-              <span className="text-[11px] font-medium text-zinc-300">
-                {WINDOW_TITLES[centerId]}
-              </span>
-              <div className="flex items-center gap-0.5">
-                <button
-                  onClick={() => toggleFloatWindow(centerId)}
-                  className="icon-btn w-6 h-6"
-                  title="浮动窗口"
-                >
-                  <ExternalLink className="w-3 h-3" strokeWidth={1.6} />
-                </button>
-                <button
-                  onClick={() => setMaximizedWindow(centerId)}
-                  className="icon-btn w-6 h-6"
-                  title="最大化"
-                >
-                  <Maximize2 className="w-3 h-3" strokeWidth={1.6} />
-                </button>
-              </div>
-            </div>
-            <div className="flex-1 overflow-hidden">{renderWindowBody(centerId)}</div>
-          </div>
-
-          {/* Right Splitter */}
-          {!rightCollapsed && (
+        {/* ==================== FLOATING WINDOWS LAYER ==================== */}
+        {floatingWindows.map((fw) => (
+          <div
+            key={fw.id}
+            onMouseDown={() => {
+              const nextZ = topZ + 1;
+              setTopZ(nextZ);
+              setFloatingWindows((prev) =>
+                prev.map((w) => (w.id === fw.id ? { ...w, zIndex: nextZ } : w))
+              );
+            }}
+            style={{
+              left: fw.x,
+              top: fw.y,
+              width: fw.width,
+              height: fw.height,
+              zIndex: fw.zIndex,
+            }}
+            className="fixed rounded-lg bg-[#16161a] border border-zinc-600/80 shadow-[0_24px_60px_rgba(0,0,0,0.85)] flex flex-col overflow-hidden"
+          >
+            {/* Floating Window Draggable Title Bar */}
             <div
-              onMouseDown={(e) => startResize('right', e, rightWidth)}
-              className="w-1 bg-transparent hover:bg-zinc-600 cursor-col-resize transition shrink-0"
-            />
-          )}
-
-          {/* Right Focused Inspector / Customizer / AI Panel */}
-          {!rightCollapsed ? (
-            <div
-              style={{ width: rightWidth }}
-              className="h-full shrink-0 flex flex-col bg-[#161619] border-l border-[#27272c]"
-            >
-              <div className="h-8 bg-[#141417] border-b border-[#27272c] px-2.5 flex items-center justify-between shrink-0">
-                <span className="text-[11px] font-medium text-zinc-300">
-                  {WINDOW_TITLES[rightId]}
-                </span>
-                <div className="flex items-center gap-0.5">
-                  <button
-                    onClick={() => toggleFloatWindow(rightId)}
-                    className="icon-btn w-6 h-6"
-                    title="浮动窗口"
-                  >
-                    <ExternalLink className="w-3 h-3" strokeWidth={1.6} />
-                  </button>
-                  <button
-                    onClick={() => setMaximizedWindow(rightId)}
-                    className="icon-btn w-6 h-6"
-                    title="最大化"
-                  >
-                    <Maximize2 className="w-3 h-3" strokeWidth={1.6} />
-                  </button>
-                  <button
-                    onClick={() => setRightCollapsed(true)}
-                    className="icon-btn w-6 h-6"
-                    title="折叠侧栏"
-                  >
-                    <PanelRightClose className="w-3.5 h-3.5" strokeWidth={1.6} />
-                  </button>
-                </div>
-              </div>
-              <div className="flex-1 overflow-hidden">{renderWindowBody(rightId)}</div>
-            </div>
-          ) : (
-            <div className="w-8 h-full bg-[#141417] border-l border-[#27272c] flex flex-col items-center py-2 shrink-0">
-              <button
-                onClick={() => setRightCollapsed(false)}
-                className="icon-btn"
-                title="展开侧栏"
-              >
-                <PanelRightOpen className="w-3.5 h-3.5" strokeWidth={1.6} />
-              </button>
-            </div>
-          )}
-
-          {/* Optional Floating Windows */}
-          {floatingWindows.map((win) => (
-            <div
-              key={win.id}
-              style={{
-                left: win.x,
-                top: win.y,
-                width: win.width,
-                height: win.height,
-                zIndex: win.zIndex,
+              onMouseDown={(e) => {
+                if ((e.target as HTMLElement).closest('button')) return;
+                setDraggingFloatingId(fw.id);
+                setFloatDragOffset({
+                  x: e.clientX - fw.x,
+                  y: e.clientY - fw.y,
+                });
               }}
-              className="fixed flex flex-col rounded-lg overflow-hidden bg-[#161619] border border-[#2e2e36] shadow-2xl"
+              className="h-8 bg-[#202027] border-b border-[#2e2e38] px-3 flex items-center justify-between cursor-move shrink-0"
             >
-              <div
-                onMouseDown={(e) => startFloatingInteraction(win.panelId, 'move', e)}
-                className="h-8 bg-[#121215] border-b border-[#27272c] px-3 flex items-center justify-between cursor-move text-xs"
-              >
-                <span className="font-medium text-zinc-200">{WINDOW_TITLES[win.panelId]}</span>
+              <div className="flex items-center gap-2 text-xs font-semibold text-zinc-100">
+                <GripHorizontal className="w-3.5 h-3.5 text-zinc-400" />
+                <span>{PANEL_TITLES[fw.id]}</span>
+                <span className="px-1.5 py-0.2 rounded bg-sky-500/20 text-sky-300 text-[10px] font-normal">
+                  漂浮窗口 · 拖拽到任意工作区格子即可丝滑停靠
+                </span>
+              </div>
+
+              <div className="flex items-center gap-1">
                 <button
-                  onClick={() => toggleFloatWindow(win.panelId)}
-                  className="icon-btn w-6 h-6"
-                  title="停靠回主界面"
+                  onClick={() => handleToggleDockFloat(fw.id)}
+                  className="px-1.5 py-0.5 rounded bg-[#2c2c36] hover:bg-[#383844] text-[10px] text-zinc-200 flex items-center gap-1"
+                  title="直接停靠回工作区网格"
                 >
                   <Minimize2 className="w-3 h-3" strokeWidth={1.6} />
+                  停靠
+                </button>
+                <button
+                  onClick={() =>
+                    setFloatingWindows((prev) =>
+                      prev.filter((w) => w.id !== fw.id)
+                    )
+                  }
+                  className="icon-btn !w-5 !h-5"
+                  title="关闭漂浮窗口"
+                >
+                  <X className="w-3.5 h-3.5" strokeWidth={1.6} />
                 </button>
               </div>
-              <div className="flex-1 overflow-hidden relative">
-                {renderWindowBody(win.panelId)}
-              </div>
-              <div
-                onMouseDown={(e) => startFloatingInteraction(win.panelId, 'resize', e)}
-                className="w-3.5 h-3.5 absolute right-0 bottom-0 cursor-nwse-resize"
-              />
             </div>
-          ))}
-        </div>
-      )}
 
-      {/* Status Bar */}
-      <StatusBar project={editor.project} selectedNode={editor.selectedNode} />
+            <div className="flex-1 overflow-hidden">
+              {renderPanelContent(fw.id)}
+            </div>
+          </div>
+        ))}
+      </div>
 
-      {/* Multi-Platform Export Modal */}
-      {showExportModal && (
-        <ExportModal
-          project={editor.project}
-          onClose={() => setShowExportModal(false)}
-          onUpdateProjectPerformance={(perf) =>
-            editor.setProject((prev) => ({
-              ...prev,
-              performanceConfig: perf,
-            }))
-          }
+      {/* Bottom Status Bar */}
+      <StatusBar
+        project={project}
+        selectedNode={selectedNode}
+      />
+
+      {/* Modals */}
+      {isPlayingPreview && (
+        <PreviewPlayer
+          project={project}
+          initialNodeId={selectedNodeId || project.startNodeId}
+          onClose={() => setIsPlayingPreview(false)}
         />
       )}
 
-      {/* Startup / Project Center Modal */}
-      {showProjectLauncher && (
+      {isExportModalOpen && (
+        <ExportModal
+          project={project}
+          onUpdateProjectPerformance={(perf) =>
+            updateProjectMeta({ performanceConfig: perf })
+          }
+          onClose={() => setIsExportModalOpen(false)}
+        />
+      )}
+
+      {isSettingsOpen && (
+        <SettingsModal
+          project={project}
+          onUpdateProject={updateProjectMeta}
+          onClose={() => setIsSettingsOpen(false)}
+        />
+      )}
+
+      {isLauncherOpen && (
         <ProjectLauncher
           canClose={true}
-          onClose={() => setShowProjectLauncher(false)}
           onOpenProject={(proj) => {
-            editor.setProject(proj);
-            editor.setSelectedChapterId(proj.chapters[0]?.id || 'ch-1');
-            editor.selectNode(proj.startNodeId);
-            setShowProjectLauncher(false);
+            importProject(proj);
+            saveProjectToWorkspace(proj);
+            setIsLauncherOpen(false);
           }}
-        />
-      )}
-
-      {/* Fullscreen Visual Novel Runtime Player */}
-      {isPlaying && (
-        <PreviewPlayer
-          project={editor.project}
-          initialNodeId={playStartNodeId}
-          onClose={() => setIsPlaying(false)}
+          onClose={() => setIsLauncherOpen(false)}
         />
       )}
     </div>
   );
 }
-
 export default App;

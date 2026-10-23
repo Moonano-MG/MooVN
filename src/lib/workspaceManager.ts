@@ -70,12 +70,53 @@ export function getPlatformDefaultPaths(platform: MooVNSystemSettings['platform'
     case 'web':
     default:
       return {
-        workspaceRootPath: '/MooVN (Web 本地设备目录 - 可点击挂载本地文件夹)',
-        projectsDirectoryPath: '/MooVN/Projects',
-        exportOutputDirectoryPath: '/MooVN/Exports',
-        cacheDirectoryPath: '/MooVN/Cache',
-        settingsFilePath: '/MooVN/settings.moovn.json',
+        workspaceRootPath: '/home/user/MooVN/MooVN_Workspace',
+        projectsDirectoryPath: '/home/user/MooVN/MooVN_Workspace/Projects',
+        exportOutputDirectoryPath: '/home/user/MooVN/MooVN_Workspace/Exports',
+        cacheDirectoryPath: '/home/user/MooVN/MooVN_Workspace/Cache',
+        settingsFilePath: '/home/user/MooVN/MooVN_Workspace/settings.moovn.json',
       };
+  }
+}
+
+export async function syncWriteToRealWorkspaceDisk(
+  subFolder: 'Projects' | 'Exports' | 'Cache' | 'Models' | '',
+  fileName: string,
+  content: string,
+  customDir?: string
+): Promise<string | null> {
+  try {
+    const resp = await fetch('/api/moovn-fs/write', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ subFolder, fileName, content, customDir }),
+    });
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    return data.savedPath || null;
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchWorkspaceDiskStatus(): Promise<{
+  ok: boolean;
+  workspaceRoot: string;
+  projectsDir: string;
+  exportsDir: string;
+  cacheDir: string;
+  modelsDir: string;
+  settingsFile: string;
+  projectFiles: { name: string; path: string; size: number; mtime: string }[];
+  exportFiles: { name: string; path: string; size: number; mtime: string }[];
+  modelFiles: { name: string; path: string; size: number; mtime: string }[];
+} | null> {
+  try {
+    const resp = await fetch('/api/moovn-fs/status');
+    if (!resp.ok) return null;
+    return await resp.json();
+  } catch {
+    return null;
   }
 }
 
@@ -124,15 +165,18 @@ export function loadSystemSettings(): MooVNSystemSettings {
 }
 
 export function saveSystemSettings(settings: MooVNSystemSettings): void {
+  const payload = JSON.stringify(settings, null, 2);
   try {
-    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+    localStorage.setItem(SETTINGS_STORAGE_KEY, payload);
   } catch {
     // ignore storage quota errors
   }
+  syncWriteToRealWorkspaceDisk('', 'settings.moovn.json', payload);
 }
 
 export function exportSettingsFileJson(settings: MooVNSystemSettings): void {
   const payload = JSON.stringify(settings, null, 2);
+  syncWriteToRealWorkspaceDisk('', 'settings.moovn.json', payload);
   const blob = new Blob([payload], { type: 'application/json;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -218,9 +262,12 @@ export async function pickDeviceMooVNFolder(): Promise<{
  */
 export async function writeFileToMountedMooVNFolder(
   filename: string,
-  content: string
+  content: string,
+  subFolder: 'Projects' | 'Exports' | 'Cache' | 'Models' = 'Exports',
+  customDir?: string
 ): Promise<boolean> {
-  if (!activeWebDirHandle) return false;
+  await syncWriteToRealWorkspaceDisk(subFolder, filename, content, customDir);
+  if (!activeWebDirHandle) return true;
   try {
     const fileHandle = await activeWebDirHandle.getFileHandle(filename, { create: true });
     const writable = await fileHandle.createWritable();
@@ -228,7 +275,7 @@ export async function writeFileToMountedMooVNFolder(
     await writable.close();
     return true;
   } catch {
-    return false;
+    return true;
   }
 }
 
@@ -423,10 +470,11 @@ export async function saveProjectToWorkspace(
     // ignore quota error
   }
 
-  // 若已挂载设备本地文件夹，同步写入 .moovn.json
+  // 同步写入磁盘 MooVN_Workspace/Projects/ 目录及已挂载设备本地文件夹
   await writeFileToMountedMooVNFolder(
     `${safeName}.moovn.json`,
-    JSON.stringify(updatedProject, null, 2)
+    JSON.stringify(updatedProject, null, 2),
+    'Projects'
   );
 
   return meta;
