@@ -289,6 +289,29 @@ export default defineConfig({
             return;
           }
 
+          if (req.method === 'GET' && req.url?.startsWith('/download-export')) {
+            const urlObj = new URL(req.url, 'http://localhost');
+            const fileName = path.basename(
+              urlObj.searchParams.get('file') ||
+                'MooVN-v0.1.0-Web-PC-Mobile-LocalBuild.zip'
+            );
+            const fullPath = path.join(WORKSPACE_ROOT, 'Exports', fileName);
+            if (!fs.existsSync(fullPath)) {
+              res.statusCode = 404;
+              res.end(JSON.stringify({ ok: false, error: `File not found: ${fileName}` }));
+              return;
+            }
+            const stat = fs.statSync(fullPath);
+            res.setHeader('Content-Type', 'application/zip');
+            res.setHeader(
+              'Content-Disposition',
+              `attachment; filename="${fileName}"`
+            );
+            res.setHeader('Content-Length', String(stat.size));
+            fs.createReadStream(fullPath).pipe(res);
+            return;
+          }
+
           next();
         });
       },
