@@ -608,27 +608,27 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
           >
             <div
               style={{ backgroundColor: ui.mainMenu.panelColor }}
-              className="w-[84%] sm:w-[34%] sm:min-w-[300px] max-w-[440px] h-full flex flex-col justify-between px-5 py-6 sm:px-11 sm:py-14 relative z-20"
+              className="w-[62%] sm:w-[34%] sm:min-w-[300px] max-w-[440px] h-full flex flex-col justify-between px-5 py-8 sm:px-11 sm:py-14 relative z-20"
             >
               <div>
                 <div
                   style={{ color: ui.mainMenu.accentColor }}
-                  className="text-[11px] font-mono uppercase tracking-[0.24em] mb-2 sm:mb-3"
+                  className="text-[11px] font-mono uppercase tracking-[0.24em] mb-3"
                 >
                   {ui.mainMenu.subtitleText}
                 </div>
                 <h1
                   style={{ color: ui.mainMenu.titleColor }}
-                  className="text-2xl sm:text-3xl font-extrabold tracking-tight leading-snug"
+                  className="text-3xl font-extrabold tracking-tight leading-snug"
                 >
                   {project.title}
                 </h1>
-                <p className="text-xs text-slate-400 mt-1.5 sm:mt-2">
+                <p className="text-xs text-slate-400 mt-2">
                   全 {project.chapters.length} 章 · {project.characters.length} 名登场角色
                 </p>
               </div>
 
-              <div className="space-y-1 sm:space-y-1.5 my-auto">
+              <div className="space-y-1.5 my-auto">
                 {[
                   { label: '开始游戏', action: startNewGame },
                   {
@@ -652,7 +652,7 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
                   <button
                     key={idx}
                     onClick={item.action}
-                    className="w-full text-left py-2.5 sm:py-3 px-4 text-base sm:text-lg font-semibold text-slate-200 hover:text-white border-l-[3px] border-transparent hover:border-sky-400 hover:bg-gradient-to-r hover:from-sky-500/20 hover:to-transparent hover:pl-6 transition-all duration-200 tracking-wider"
+                    className="w-full text-left py-3 px-4 text-lg font-semibold text-slate-200 hover:text-white border-l-[3px] border-transparent hover:border-sky-400 hover:bg-gradient-to-r hover:from-sky-500/20 hover:to-transparent hover:pl-6 transition-all duration-200 tracking-wider"
                   >
                     {item.label}
                   </button>
@@ -811,7 +811,7 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
                     <img
                       src={sprite.path}
                       alt={pl.name}
-                      className="h-[58vh] sm:h-[76vh] w-auto object-contain drop-shadow-[0_20px_40px_rgba(0,0,0,0.72)]"
+                      className="h-[76vh] w-auto object-contain drop-shadow-[0_20px_40px_rgba(0,0,0,0.72)]"
                     />
                   </div>
                 );
@@ -1014,17 +1014,17 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
                   {/* Bottom-Right Controls */}
                   <div
                     onClick={(e) => e.stopPropagation()}
-                    className={`absolute bottom-2.5 sm:bottom-3 ${
+                    className={`absolute bottom-3 ${
                       ui.dialogueBox.controlPosition === 'bottom_center'
                         ? 'left-1/2 -translate-x-1/2'
-                        : 'right-3 sm:right-5'
-                    } flex flex-wrap items-center justify-end gap-1.5 sm:gap-2`}
+                        : 'right-5'
+                    } flex items-center gap-2`}
                   >
                     {ui.dialogueBox.visibleControls.back && (
                       <button
                         onClick={stepBack}
                         disabled={historyStack.length === 0}
-                        className="px-2.5 sm:px-3 py-1 rounded bg-[#0f2246]/80 hover:bg-[#163263] disabled:opacity-35 border border-sky-400/25 text-[11px] sm:text-xs text-slate-200 transition"
+                        className="px-3 py-1 rounded bg-[#0f2246]/80 hover:bg-[#163263] disabled:opacity-35 border border-sky-400/25 text-xs text-slate-200 transition"
                       >
                         后退
                       </button>
@@ -1032,7 +1032,7 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
                     {ui.dialogueBox.visibleControls.auto && (
                       <button
                         onClick={() => setIsAutoPlay((a) => !a)}
-                        className={`px-2.5 sm:px-3 py-1 rounded border text-[11px] sm:text-xs transition ${
+                        className={`px-3 py-1 rounded border text-xs transition ${
                           isAutoPlay
                             ? 'bg-sky-500/30 border-sky-400 text-white'
                             : 'bg-[#0f2246]/80 hover:bg-[#163263] border-sky-400/25 text-slate-200'
@@ -1044,7 +1044,7 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
                     {ui.dialogueBox.visibleControls.skip && (
                       <button
                         onClick={() => setIsSkipMode((s) => !s)}
-                        className={`px-2.5 sm:px-3 py-1 rounded border text-[11px] sm:text-xs transition ${
+                        className={`px-3 py-1 rounded border text-xs transition ${
                           isSkipMode
                             ? 'bg-amber-500/30 border-amber-400 text-white'
                             : 'bg-[#0f2246]/80 hover:bg-[#163263] border-sky-400/25 text-slate-200'
@@ -1056,7 +1056,7 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
                     {ui.dialogueBox.visibleControls.hide && (
                       <button
                         onClick={() => setIsUiHidden(true)}
-                        className="px-2.5 sm:px-3 py-1 rounded bg-[#0f2246]/80 hover:bg-[#163263] border border-sky-400/25 text-[11px] sm:text-xs text-slate-200 transition"
+                        className="px-3 py-1 rounded bg-[#0f2246]/80 hover:bg-[#163263] border border-sky-400/25 text-xs text-slate-200 transition"
                       >
                         隐藏
                       </button>
@@ -1064,7 +1064,7 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
                     {ui.dialogueBox.visibleControls.settings && (
                       <button
                         onClick={() => setModalMode('settings')}
-                        className="px-2.5 sm:px-3 py-1 rounded bg-[#0f2246]/80 hover:bg-[#163263] border border-sky-400/25 text-[11px] sm:text-xs text-slate-200 transition"
+                        className="px-3 py-1 rounded bg-[#0f2246]/80 hover:bg-[#163263] border border-sky-400/25 text-xs text-slate-200 transition"
                       >
                         设置
                       </button>

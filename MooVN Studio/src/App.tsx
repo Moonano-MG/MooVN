@@ -24,14 +24,6 @@ import {
   ArrowLeft,
   ArrowRight,
   CircleDot,
-  Play,
-  Download,
-  Undo2,
-  Redo2,
-  Smartphone,
-  Monitor,
-  Globe,
-  FolderOpen,
 } from 'lucide-react';
 import { useEditor } from './hooks/useEditor';
 import { MenuBar, WindowPanelDescriptor } from './components/MenuBar';
@@ -414,35 +406,36 @@ export function App({
   // 2) 'studio' (网页版 MooVN Studio 完整 IDE 工作台)
   const [siteSection, setSiteSection] = useState<'portal' | 'studio'>(() => {
     if (initialMode) return initialMode;
-    return 'studio';
+    if (typeof window !== 'undefined') {
+      const isTauri = Boolean((window as unknown as Record<string, unknown>).__TAURI_INTERNALS__);
+      const params = new URLSearchParams(window.location.search);
+      if (
+        isTauri ||
+        window.location.pathname.includes('studio') ||
+        params.get('mode') === 'studio' ||
+        window.location.hash === '#studio'
+      ) {
+        return 'studio';
+      }
+    }
+    return 'portal';
   });
 
-  // 移动端智能检测（支持竖屏/横屏手机、触控设备自动识别，并支持手动切换手机版/电脑版）
-  const detectMobileDevice = () => {
+  // 严格仅针对真实手机窄屏开启移动端工作台（绝不影响任何桌面电脑、触屏笔记本或桌面小窗口）
+  const checkIsPhone = () => {
     if (typeof window === 'undefined') return false;
-    const touchUA = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '');
-    const coarse = window.matchMedia?.('(pointer: coarse)').matches;
-    return (
-      window.innerWidth < 960 ||
-      window.innerHeight < 540 ||
-      (touchUA && window.innerWidth < 1280) ||
-      Boolean(coarse && window.innerWidth < 1100)
-    );
+    const ua = navigator.userAgent || '';
+    const isPhoneUA = /Android.*Mobile|iPhone|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
+    return window.innerWidth < 640 || (isPhoneUA && window.innerWidth < 768);
   };
 
-  const [autoIsMobile, setAutoIsMobile] = useState<boolean>(detectMobileDevice);
-  const [deviceModeOverride, setDeviceModeOverride] = useState<'auto' | 'mobile' | 'desktop'>('auto');
-  const isMobile =
-    deviceModeOverride === 'mobile'
-      ? true
-      : deviceModeOverride === 'desktop'
-      ? false
-      : autoIsMobile;
+  const [isMobile, setIsMobile] = useState<boolean>(checkIsPhone);
   const [mobileActivePanel, setMobileActivePanel] = useState<PanelId>('canvas');
+  const [mobilePinStage, setMobilePinStage] = useState<boolean>(true);
 
   useEffect(() => {
     const onResize = () => {
-      setAutoIsMobile(detectMobileDevice());
+      setIsMobile(checkIsPhone());
     };
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
@@ -930,6 +923,14 @@ export function App({
             onAddVisualBlock={addVisualBlock}
             onUpdateVisualBlock={updateVisualBlock}
             onRemoveVisualBlock={removeVisualBlock}
+            onOpenInspectorForNode={(nodeId) => {
+              setSelectedNodeId(nodeId);
+              if (isMobile) {
+                setMobileActivePanel('inspector');
+              } else {
+                handleOpenOrFocusWindow('inspector', 'dock');
+              }
+            }}
           />
         );
       case 'stage':
@@ -1402,76 +1403,78 @@ export function App({
     return <OfficialPortal onEnterStudio={() => setSiteSection('studio')} />;
   }
 
-  const isMobileMoreTab =
-    mobileActivePanel === 'explorer' ||
-    mobileActivePanel === 'node_library' ||
-    mobileActivePanel === 'ai_agent' ||
-    mobileActivePanel === 'asset_studio' ||
-    mobileActivePanel === 'ui_customizer' ||
-    mobileActivePanel === 'terminal';
-
   return (
     <div
-      onMouseMove={isMobile ? undefined : handleGlobalMouseMove}
-      onMouseUp={isMobile ? undefined : handleGlobalMouseUp}
-      className={`h-[100dvh] w-full flex flex-col bg-[#111113] text-zinc-200 overflow-hidden ${
-        isMobile ? '' : 'select-none'
-      } ${editorTheme === 'light' ? 'theme-light' : ''}`}
+      onMouseMove={handleGlobalMouseMove}
+      onMouseUp={handleGlobalMouseUp}
+      className={`h-screen w-screen flex flex-col bg-[#111113] text-zinc-200 overflow-hidden select-none ${
+        editorTheme === 'light' ? 'theme-light' : ''
+      }`}
     >
-      {/* Desktop Top Studio MenuBar (hidden on phone so mobile gets a single clean phone header) */}
-      {!isMobile && (
-        <MenuBar
-          canUndo={canUndo}
-          canRedo={canRedo}
-          onUndo={undo}
-          onRedo={redo}
-          panels={panelDescriptors}
-          onOpenOrFocusWindow={(id, mode) => {
+      {/* Clean Top Studio MenuBar */}
+      <MenuBar
+        canUndo={canUndo}
+        canRedo={canRedo}
+        onUndo={undo}
+        onRedo={redo}
+        panels={panelDescriptors}
+        onOpenOrFocusWindow={(id, mode) => {
+          if (isMobile) {
+            setMobileActivePanel(id);
+          } else {
             handleOpenOrFocusWindow(id, mode);
-          }}
-          onToggleDockFloat={handleToggleDockFloat}
-          onApplyLayoutPreset={handleApplyLayoutPreset}
-          onResetLayout={() => {
-            setSplitRoot(createDefaultSplitTree());
-            setFloatingWindows([]);
-          }}
-          onPlayPreview={() => setIsPlayingPreview(true)}
-          onOpenExportModal={() => setIsExportModalOpen(true)}
-          onOpenProjectLauncher={() => setIsLauncherOpen(true)}
-          onOpenOfficialPortal={() => {
-            if (
-              typeof window !== 'undefined' &&
-              window.location.pathname.includes('studio')
-            ) {
-              window.open('/', '_blank', 'noopener,noreferrer');
-            } else {
-              setSiteSection('portal');
-            }
-          }}
-        />
-      )}
+          }
+        }}
+        onToggleDockFloat={handleToggleDockFloat}
+        onApplyLayoutPreset={handleApplyLayoutPreset}
+        onResetLayout={() => {
+          setSplitRoot(createDefaultSplitTree());
+          setFloatingWindows([]);
+        }}
+        onPlayPreview={() => setIsPlayingPreview(true)}
+        onOpenExportModal={() => setIsExportModalOpen(true)}
+        onOpenProjectLauncher={() => setIsLauncherOpen(true)}
+        onOpenOfficialPortal={() => {
+          if (
+            typeof window !== 'undefined' &&
+            window.location.pathname.includes('studio')
+          ) {
+            window.open('/', '_blank', 'noopener,noreferrer');
+          } else {
+            setSiteSection('portal');
+          }
+        }}
+      />
 
       {isMobile ? (
-        /* ==================== DEDICATED MOBILE PHONE WORKBENCH ==================== */
-        <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-[#0e1117]">
-          {/* Single Compact Phone Top Header (48px) */}
-          <header className="h-12 px-2.5 bg-[#141822] border-b border-[#252d3d] flex items-center justify-between gap-1.5 shrink-0">
-            <div className="flex items-center gap-1.5 min-w-0 flex-1">
-              <button
-                type="button"
-                onClick={() => setIsLauncherOpen(true)}
-                className="px-2.5 py-1.5 rounded-lg bg-[#1d2433] border border-[#2f3a52] text-xs font-semibold text-sky-300 flex items-center gap-1 shrink-0 active:bg-[#263044]"
-                title="打开或导入工程 (.mpvn)"
+        /* ==================== MOBILE DUAL-ZONE TOUCH WORKBENCH ==================== */
+        <div className="flex-1 flex flex-col overflow-hidden relative">
+          {/* Mobile Scene & Stage Control Strip */}
+          <div className="min-h-9 py-1 px-2 bg-[#16161a] border-b border-[#27272c] flex items-center justify-between gap-1.5 text-xs shrink-0">
+            <div className="flex items-center gap-1 min-w-0 flex-1">
+              <select
+                value={selectedChapterId}
+                onChange={(e) => {
+                  const chId = e.target.value;
+                  setSelectedChapterId(chId);
+                  const firstInCh = project.nodes.find((n) => n.chapterId === chId);
+                  if (firstInCh) setSelectedNodeId(firstInCh.id);
+                }}
+                className="px-1.5 py-0.5 rounded bg-[#202027] border border-[#2f2f3a] text-[11px] text-sky-300 font-semibold max-w-[92px] truncate"
+                title="切换当前章节"
               >
-                <FolderOpen className="w-3.5 h-3.5" />
-                <span>工程</span>
-              </button>
+                {project.chapters.map((ch) => (
+                  <option key={ch.id} value={ch.id}>
+                    {ch.title}
+                  </option>
+                ))}
+              </select>
 
               <select
                 value={selectedNodeId}
                 onChange={(e) => setSelectedNodeId(e.target.value)}
-                className="flex-1 min-w-0 px-2 py-1.5 rounded-lg bg-[#181e2b] border border-[#2b354b] text-xs text-zinc-100 truncate"
-                title="切换当前剧情节点"
+                className="flex-1 min-w-0 px-1.5 py-0.5 rounded bg-[#202027] border border-[#2f2f3a] text-[11px] text-zinc-100 truncate"
+                title="切换当前编辑节点"
               >
                 {project.nodes.map((n, idx) => (
                   <option key={n.id} value={n.id}>
@@ -1484,373 +1487,94 @@ export function App({
             <div className="flex items-center gap-1 shrink-0">
               <button
                 type="button"
-                disabled={!canUndo}
-                onClick={undo}
-                className="p-2 rounded-lg bg-[#1c2230] text-zinc-200 disabled:opacity-35"
-                title="撤销"
+                onClick={() => setMobilePinStage((v) => !v)}
+                className={`px-2 py-1 rounded text-[11px] font-semibold border transition ${
+                  mobilePinStage || mobileActivePanel === 'stage'
+                    ? 'bg-sky-500/20 border-sky-400/50 text-sky-300'
+                    : 'bg-[#222228] border-[#2f2f3a] text-zinc-400'
+                }`}
+                title="常驻展开或收起顶部 16:9 实时舞台"
               >
-                <Undo2 className="w-3.5 h-3.5" />
-              </button>
-              <button
-                type="button"
-                disabled={!canRedo}
-                onClick={redo}
-                className="p-2 rounded-lg bg-[#1c2230] text-zinc-200 disabled:opacity-35"
-                title="重做"
-              >
-                <Redo2 className="w-3.5 h-3.5" />
+                {mobilePinStage || mobileActivePanel === 'stage' ? '收起舞台' : '展开舞台'}
               </button>
 
               <button
-                type="button"
-                onClick={() => setIsPlayingPreview(true)}
-                className="px-2.5 py-1.5 rounded-lg bg-emerald-600 active:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1 shadow-sm"
+                onClick={() =>
+                  setEditorTheme((t) => (t === 'dark' ? 'light' : 'dark'))
+                }
+                className="p-1.5 rounded bg-[#222228] text-zinc-300"
+                title="切换黑白界面风格"
               >
-                <Play className="w-3.5 h-3.5 fill-current" />
-                <span>试玩</span>
+                {editorTheme === 'dark' ? (
+                  <Sun className="w-3.5 h-3.5 text-amber-300" />
+                ) : (
+                  <Moon className="w-3.5 h-3.5 text-sky-400" />
+                )}
               </button>
-
               <button
-                type="button"
-                onClick={() => setIsExportModalOpen(true)}
-                className="px-2.5 py-1.5 rounded-lg bg-sky-600 active:bg-sky-500 text-white text-xs font-bold flex items-center gap-1 shadow-sm"
+                onClick={() => setIsSettingsOpen(true)}
+                className="p-1.5 rounded bg-[#222228] text-zinc-300"
+                title="设置"
               >
-                <Download className="w-3.5 h-3.5" />
-                <span>导出</span>
+                <Settings className="w-3.5 h-3.5" />
               </button>
             </div>
-          </header>
+          </div>
 
-          {/* Sub-navigation when inside the 5th tab ("工具箱") */}
-          {isMobileMoreTab && (
-            <div className="shrink-0 bg-[#141923] border-b border-[#252e40] p-2 space-y-2">
-              <div className="grid grid-cols-3 gap-1.5">
-                {[
-                  { id: 'explorer' as PanelId, label: '章节与素材', icon: <FolderTree className="w-3.5 h-3.5" /> },
-                  { id: 'node_library' as PanelId, label: '56类节点库', icon: <Blocks className="w-3.5 h-3.5" /> },
-                  { id: 'ai_agent' as PanelId, label: 'AI 助手', icon: <Bot className="w-3.5 h-3.5" /> },
-                  { id: 'asset_studio' as PanelId, label: '抠图与生图', icon: <Scissors className="w-3.5 h-3.5" /> },
-                  { id: 'ui_customizer' as PanelId, label: 'UI 定制', icon: <Palette className="w-3.5 h-3.5" /> },
-                  { id: 'terminal' as PanelId, label: '终端诊断', icon: <Terminal className="w-3.5 h-3.5" /> },
-                ].map((tool) => {
-                  const active = mobileActivePanel === tool.id;
-                  return (
-                    <button
-                      key={tool.id}
-                      type="button"
-                      onClick={() => setMobileActivePanel(tool.id)}
-                      className={`py-2 px-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 border transition ${
-                        active
-                          ? 'bg-sky-500/20 border-sky-400 text-sky-200'
-                          : 'bg-[#1a202e] border-[#283246] text-zinc-300'
-                      }`}
-                    >
-                      {tool.icon}
-                      <span className="truncate">{tool.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-
-              <div className="flex items-center justify-between gap-1.5 pt-1 border-t border-[#222a3a]">
-                <button
-                  type="button"
-                  onClick={() =>
-                    setEditorTheme((t) => (t === 'dark' ? 'light' : 'dark'))
-                  }
-                  className="flex-1 py-1.5 px-2 rounded-lg bg-[#1a202e] border border-[#283246] text-[11px] text-zinc-200 flex items-center justify-center gap-1"
-                >
-                  {editorTheme === 'dark' ? (
-                    <Sun className="w-3.5 h-3.5 text-amber-300" />
-                  ) : (
-                    <Moon className="w-3.5 h-3.5 text-sky-400" />
-                  )}
-                  <span>{editorTheme === 'dark' ? '浅色主题' : '深色主题'}</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setIsSettingsOpen(true)}
-                  className="flex-1 py-1.5 px-2 rounded-lg bg-[#1a202e] border border-[#283246] text-[11px] text-zinc-200 flex items-center justify-center gap-1"
-                >
-                  <Settings className="w-3.5 h-3.5 text-sky-400" />
-                  <span>工程设置</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setDeviceModeOverride('desktop')}
-                  className="flex-1 py-1.5 px-2 rounded-lg bg-[#1a202e] border border-[#283246] text-[11px] text-zinc-200 flex items-center justify-center gap-1"
-                >
-                  <Monitor className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>电脑分栏版</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (
-                      typeof window !== 'undefined' &&
-                      window.location.pathname.includes('studio')
-                    ) {
-                      window.location.href = '/';
-                    } else {
-                      setSiteSection('portal');
-                    }
-                  }}
-                  className="py-1.5 px-2.5 rounded-lg bg-[#1a202e] border border-[#283246] text-[11px] text-sky-300 flex items-center justify-center gap-1"
-                >
-                  <Globe className="w-3.5 h-3.5" />
-                  <span>官网</span>
-                </button>
-              </div>
+          {/* Pinned Collapsible 16:9 Live Stage Monitor (Always visible when stage tab or pinned) */}
+          {selectedNode && (mobilePinStage || mobileActivePanel === 'stage') && (
+            <div className="shrink-0 border-b border-[#27272c] bg-[#111113]">
+              <SceneStageView
+                node={selectedNode}
+                characters={project.characters}
+                uiConfig={project.uiConfig}
+                selectedDialogueIndex={selectedDialogueIndex}
+                onSelectDialogueIndex={setSelectedDialogueIndex}
+                selectedCharacterPlacementId={selectedCharacterPlacementId}
+                onSelectCharacterPlacement={setSelectedCharacterPlacementId}
+                onUpdateNode={(updater) => updateNode(selectedNode.id, updater)}
+                onAddCharacter={(charId) =>
+                  addCharacterToNode(selectedNode.id, charId)
+                }
+                onUpdateCharacter={(placementId, patch) =>
+                  updateCharacterPlacement(selectedNode.id, placementId, patch)
+                }
+                onRemoveCharacter={(placementId) =>
+                  removeCharacterFromNode(selectedNode.id, placementId)
+                }
+                compactMobile={true}
+              />
             </div>
           )}
 
-          {/* Mobile Active Workspace Body */}
-          <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden relative flex flex-col">
-            {mobileActivePanel === 'stage' && selectedNode ? (
-              /* On phone portrait screens, pair the 16:9 Stage with an interactive Stage Director Drawer right underneath! */
-              <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-                <div className="h-[46%] min-h-[210px] shrink-0 border-b border-[#252d3d]">
-                  {renderPanelContent('stage')}
-                </div>
-                <div className="flex-1 overflow-y-auto p-3 bg-[#10141d] space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-sky-300">
-                      舞台快捷导演台 · {selectedNode.title}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        addCharacterToNode(
-                          selectedNode.id,
-                          project.characters[0]?.id || 'yukina'
-                        )
-                      }
-                      className="px-2.5 py-1 rounded-lg bg-sky-600 text-white text-xs font-semibold"
-                    >
-                      + 添加登场立绘
-                    </button>
-                  </div>
-
-                  {/* Quick Character Placement List */}
-                  {selectedNode.characters.length > 0 ? (
-                    <div className="space-y-2">
-                      {selectedNode.characters.map((pl) => {
-                        const charProf = project.characters.find(
-                          (c) => c.id === pl.characterId
-                        );
-                        return (
-                          <div
-                            key={pl.id}
-                            className="p-2.5 rounded-xl bg-[#161c28] border border-[#283246] flex flex-col gap-2"
-                          >
-                            <div className="flex items-center justify-between gap-2">
-                              <select
-                                value={pl.characterId}
-                                onChange={(e) => {
-                                  const nextChar = project.characters.find(
-                                    (c) => c.id === e.target.value
-                                  );
-                                  const firstExp = nextChar?.expressions?.[0];
-                                  updateCharacterPlacement(selectedNode.id, pl.id, {
-                                    characterId: e.target.value,
-                                    name: nextChar?.name || pl.name,
-                                    spriteId: firstExp?.spriteId || pl.spriteId,
-                                    expressionLabel: firstExp?.label || pl.expressionLabel,
-                                  });
-                                }}
-                                className="px-2 py-1 rounded bg-[#0d1118] border border-[#2c364c] text-xs text-zinc-100 font-semibold"
-                              >
-                                {project.characters.map((c) => (
-                                  <option key={c.id} value={c.id}>
-                                    {c.name}
-                                  </option>
-                                ))}
-                              </select>
-
-                              <select
-                                value={pl.spriteId}
-                                onChange={(e) => {
-                                  const exp = charProf?.expressions?.find(
-                                    (x) => x.spriteId === e.target.value
-                                  );
-                                  updateCharacterPlacement(selectedNode.id, pl.id, {
-                                    spriteId: e.target.value,
-                                    expressionLabel: exp?.label || pl.expressionLabel,
-                                  });
-                                }}
-                                className="flex-1 px-2 py-1 rounded bg-[#0d1118] border border-[#2c364c] text-xs text-sky-200"
-                              >
-                                {(charProf?.expressions || []).map((exp) => (
-                                  <option key={exp.id} value={exp.spriteId}>
-                                    差分: {exp.label}
-                                  </option>
-                                ))}
-                              </select>
-
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  removeCharacterFromNode(selectedNode.id, pl.id)
-                                }
-                                className="px-2 py-1 rounded bg-rose-500/15 text-rose-300 text-xs"
-                              >
-                                移除
-                              </button>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-2 text-[11px] text-zinc-400">
-                              <label className="flex items-center gap-2">
-                                <span className="shrink-0">水平 {Math.round(pl.x)}%</span>
-                                <input
-                                  type="range"
-                                  min={10}
-                                  max={90}
-                                  value={pl.x}
-                                  onChange={(e) =>
-                                    updateCharacterPlacement(selectedNode.id, pl.id, {
-                                      x: Number(e.target.value),
-                                    })
-                                  }
-                                />
-                              </label>
-                              <label className="flex items-center gap-2">
-                                <span className="shrink-0">
-                                  缩放 {Math.round((pl.scale || 1) * 100)}%
-                                </span>
-                                <input
-                                  type="range"
-                                  min={50}
-                                  max={150}
-                                  value={Math.round((pl.scale || 1) * 100)}
-                                  onChange={(e) =>
-                                    updateCharacterPlacement(selectedNode.id, pl.id, {
-                                      scale: Number(e.target.value) / 100,
-                                    })
-                                  }
-                                />
-                              </label>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div className="p-3 rounded-xl bg-[#151a24] border border-[#252e40] text-xs text-zinc-400 text-center">
-                      当前节点暂无登场角色，点击上方「+ 添加登场立绘」或在舞台中直接拖拽。
-                    </div>
-                  )}
-
-                  {/* Quick Current Dialogue Edit */}
-                  <div className="p-2.5 rounded-xl bg-[#161c28] border border-[#283246] space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-semibold text-zinc-200">
-                        当前预览台词 ({selectedDialogueIndex + 1}/
-                        {Math.max(1, selectedNode.dialogues.length)})
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => addDialogueLine(selectedNode.id)}
-                        className="px-2 py-0.5 rounded bg-sky-500/20 text-sky-300 text-[11px]"
-                      >
-                        + 新增台词行
-                      </button>
-                    </div>
-                    {selectedNode.dialogues[selectedDialogueIndex] && (
-                      <>
-                        <input
-                          type="text"
-                          value={
-                            selectedNode.dialogues[selectedDialogueIndex]
-                              .speakerName
-                          }
-                          onChange={(e) =>
-                            updateDialogueLine(
-                              selectedNode.id,
-                              selectedNode.dialogues[selectedDialogueIndex].id,
-                              { speakerName: e.target.value }
-                            )
-                          }
-                          placeholder="说话人姓名"
-                          className="w-full px-2.5 py-1.5 rounded-lg bg-[#0d1118] border border-[#2c364c] text-xs text-zinc-100"
-                        />
-                        <textarea
-                          rows={2}
-                          value={
-                            selectedNode.dialogues[selectedDialogueIndex].text
-                          }
-                          onChange={(e) =>
-                            updateDialogueLine(
-                              selectedNode.id,
-                              selectedNode.dialogues[selectedDialogueIndex].id,
-                              { text: e.target.value }
-                            )
-                          }
-                          placeholder="输入台词内容..."
-                          className="w-full px-2.5 py-1.5 rounded-lg bg-[#0d1118] border border-[#2c364c] text-xs text-zinc-100 resize-none"
-                        />
-                      </>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
-                {renderPanelContent(mobileActivePanel)}
-              </div>
+          {/* Active Creation Workspace (When on 'stage' tab, shows full Inspector below the 16:9 stage!) */}
+          <div className="flex-1 min-h-0 overflow-hidden relative">
+            {renderPanelContent(
+              mobileActivePanel === 'stage' ? 'inspector' : mobileActivePanel
             )}
           </div>
 
-          {/* Clean 5-Tab Phone Bottom Navigation Bar (Zero Horizontal Scroll) */}
-          <nav className="h-14 bg-[#111520] border-t border-[#242c3d] grid grid-cols-5 items-center px-1 shrink-0">
-            {[
-              {
-                id: 'canvas' as PanelId,
-                label: '剧情流',
-                icon: <Workflow className="w-4 h-4" />,
-                active: mobileActivePanel === 'canvas',
-              },
-              {
-                id: 'stage' as PanelId,
-                label: '舞台',
-                icon: <MonitorPlay className="w-4 h-4" />,
-                active: mobileActivePanel === 'stage',
-              },
-              {
-                id: 'inspector' as PanelId,
-                label: '属性',
-                icon: <Sliders className="w-4 h-4" />,
-                active: mobileActivePanel === 'inspector',
-              },
-              {
-                id: 'ts_code' as PanelId,
-                label: '脚本',
-                icon: <Code2 className="w-4 h-4" />,
-                active: mobileActivePanel === 'ts_code',
-              },
-              {
-                id: 'explorer' as PanelId,
-                label: '工具箱',
-                icon: <Blocks className="w-4 h-4" />,
-                active: isMobileMoreTab,
-              },
-            ].map((tab) => (
-              <button
-                key={tab.label}
-                type="button"
-                onClick={() => setMobileActivePanel(tab.id)}
-                className={`h-11 mx-0.5 rounded-xl flex flex-col items-center justify-center gap-0.5 transition ${
-                  tab.active
-                    ? 'bg-gradient-to-b from-sky-500 to-blue-600 text-white font-bold shadow-md shadow-blue-600/30'
-                    : 'text-zinc-400 active:text-zinc-100'
-                }`}
-              >
-                {tab.icon}
-                <span className="text-[11px] leading-none">{tab.label}</span>
-              </button>
-            ))}
+          {/* Mobile Bottom Touch Navigation Bar */}
+          <nav className="h-14 bg-[#12141c] border-t border-[#262b3b] flex items-center overflow-x-auto px-1.5 gap-1 shrink-0">
+            {ACTIVITY_RAIL_ITEMS.map((item) => {
+              const active = mobileActivePanel === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => setMobileActivePanel(item.id)}
+                  className={`min-w-[58px] px-2 py-1.5 rounded-lg flex flex-col items-center justify-center gap-1 shrink-0 transition ${
+                    active
+                      ? 'bg-sky-500 text-white font-semibold shadow-md shadow-sky-600/30'
+                      : 'text-zinc-400 hover:text-zinc-200 bg-[#191c26]'
+                  }`}
+                >
+                  {item.icon}
+                  <span className="text-[10px] leading-none whitespace-nowrap">
+                    {item.shortLabel}
+                  </span>
+                </button>
+              );
+            })}
           </nav>
         </div>
       ) : (
@@ -1886,15 +1610,6 @@ export function App({
             </div>
 
             <div className="flex flex-col items-center gap-1.5">
-              {/* Switch to Mobile Touch Layout anytime */}
-              <button
-                onClick={() => setDeviceModeOverride('mobile')}
-                title="切换为手机触控布局"
-                className="w-8 h-8 rounded flex items-center justify-center text-sky-400 hover:text-sky-200 hover:bg-[#1d1d23] transition"
-              >
-                <Smartphone className="w-4 h-4" strokeWidth={1.7} />
-              </button>
-
               {/* Dark / Light 2 Themes Toggle (`开发方案 2: 界面风格有黑和白2种风格`) */}
               <button
                 onClick={() =>
@@ -2044,7 +1759,7 @@ export function App({
         </div>
       )}
 
-      {/* Bottom Status Bar (Desktop only) */}
+      {/* Bottom Status Bar (Desktop) */}
       {!isMobile && <StatusBar project={project} selectedNode={selectedNode} />}
 
       {/* Modals */}
