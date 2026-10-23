@@ -451,6 +451,18 @@ export function App({
 
   const importProject = (proj: typeof project) => {
     setProject(proj);
+    const firstCh = proj.chapters?.[0]?.id || 'ch-1';
+    const firstNode =
+      proj.startNodeId ||
+      proj.nodes?.find((n) => n.chapterId === firstCh)?.id ||
+      proj.nodes?.[0]?.id ||
+      '';
+    setSelectedChapterId(firstCh);
+    if (firstNode) {
+      setSelectedNodeId(firstNode);
+    }
+    setSelectedDialogueIndex(0);
+    setSelectedCharacterPlacementId(null);
   };
 
   // ==================== Recursive 2D Split Tree + Floating State ====================

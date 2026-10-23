@@ -58,7 +58,11 @@ export function parseMpvnProject(rawText: string): {
     }
 
     // 拦截游戏运行时章节包 (.msvn)
-    if (parsed.magic === 'MSVN_CHAPTER_PACK' || parsed.format === 'msvn') {
+    if (
+      parsed.magic === 'MSVN_CHAPTER_PACK' ||
+      parsed.magic === 'MSVN_CHAPTER_PACKAGE_V1' ||
+      parsed.format === 'msvn'
+    ) {
       return {
         ok: false,
         error:
@@ -66,23 +70,31 @@ export function parseMpvnProject(rawText: string): {
       };
     }
 
-    // 标准 .mpvn 封装结构
+    // 标准 .mpvn 封装结构（兼容 MPVN_STUDIO_PROJECT / MOOVN_PROJECT_MPVN_V1 以及任意带 project.nodes 的 .mpvn 包）
     if (
-      (parsed.magic === 'MPVN_STUDIO_PROJECT' || parsed.format === 'mpvn') &&
       parsed.project &&
+      typeof parsed.project === 'object' &&
       Array.isArray(parsed.project.nodes) &&
       Array.isArray(parsed.project.chapters)
     ) {
-      return { ok: true, project: parsed.project as VNProject };
+      const proj = parsed.project as VNProject;
+      if (!proj.startNodeId && proj.nodes.length > 0) {
+        proj.startNodeId = proj.nodes[0].id;
+      }
+      return { ok: true, project: proj };
     }
 
     // 兼容直接包含 VNProject 结构的 .mpvn / .moovn.json 文件
     if (
-      parsed.id &&
       Array.isArray(parsed.nodes) &&
       Array.isArray(parsed.chapters)
     ) {
-      return { ok: true, project: parsed as VNProject };
+      const proj = parsed as VNProject;
+      if (!proj.id) proj.id = `proj-${Date.now()}`;
+      if (!proj.startNodeId && proj.nodes.length > 0) {
+        proj.startNodeId = proj.nodes[0].id;
+      }
+      return { ok: true, project: proj };
     }
 
     return {

@@ -11,12 +11,13 @@ on:
   workflow_dispatch:
     inputs:
       build_target:
-        description: "选择编译目标平台 (all / web / windows / android / ios / macos)"
+        description: "选择编译目标平台 (all / engine / web / windows / android / ios / macos)"
         required: false
         default: "all"
         type: choice
         options:
           - all
+          - engine
           - web
           - windows
           - android
@@ -38,15 +39,38 @@ defaults:
 
 jobs:
   # ============================================================================
-  # 1. Web 构建 (同时包含 PC 桌面端与 Mobile 移动端响应式 Web 编译包)
+  # 0. MooVN Engine 构建 (Rust 核心引擎 + C++20 预留渲染器桥接)
+  # ============================================================================
+  build-engine:
+    name: Build MooVN Engine (Rust + C++20 Bridge)
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_target == 'all' || inputs.build_target == 'engine' }}
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: "MooVN Engine"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build MooVN Engine (Rust + FFI)
+        run: cargo build --release
+
+      - name: Compile C++20 Renderer Bridge
+        run: g++ -std=c++20 -Wall -Wextra -Icpp/include -c cpp/src/moovn_renderer_bridge.cpp -o moovn_renderer_bridge.o
+
+  # ============================================================================
+  # 1. MooVN Web 构建 (同时包含 PC 桌面端与 Mobile 移动端响应式 Web 编译包)
   # ============================================================================
   build-web:
-    name: Build Web (PC & Mobile)
+    name: Build MooVN Web (PC & Mobile)
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_target == 'all' || inputs.build_target == 'web' }}
     runs-on: ubuntu-24.04
     defaults:
       run:
-        working-directory: "Web"
+        working-directory: "MooVN Web"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -66,7 +90,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: MooVN-Web-PC-and-Mobile
-          path: Web/dist/
+          path: "MooVN Web/dist/"
           if-no-files-found: error
 
   # ============================================================================

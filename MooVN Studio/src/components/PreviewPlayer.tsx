@@ -222,6 +222,16 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
       (snap) => setStreamEntries(snap)
     );
 
+    if (currentNode.customScript) {
+      if (
+        /moovn\.save:create|moobn\.sava:create|moovn::save::create/i.test(
+          currentNode.customScript
+        )
+      ) {
+        persistSaveSlot('auto', 0);
+      }
+    }
+
     if (currentNode.type === 'game_settings_modify' && currentNode.settingsActionConfig) {
       if (typeof currentNode.settingsActionConfig.textSpeedMs === 'number') {
         setTextSpeedMs(currentNode.settingsActionConfig.textSpeedMs);

@@ -18,7 +18,9 @@ import {
   Cpu,
   Workflow,
   AlertTriangle,
+  Languages,
 } from 'lucide-react';
+import { SUPPORTED_UI_LANGUAGES, UILanguage, useUILanguage } from '../lib/i18n';
 
 interface OfficialPortalProps {
   onEnterStudio?: () => void;
@@ -61,6 +63,7 @@ const EDITOR_SCREENSHOTS = [
 ];
 
 export const OfficialPortal: React.FC<OfficialPortalProps> = () => {
+  const { lang, setLang } = useUILanguage();
   const repoUrl = 'https://github.com/Moonano-MG/MooVN';
   const branchTreeUrl = 'https://github.com/Moonano-MG/MooVN/tree/v0.1.0-dev';
   const studioFolderUrl = 'https://github.com/Moonano-MG/MooVN/tree/v0.1.0-dev/MooVN%20Studio';
@@ -250,6 +253,21 @@ export const OfficialPortal: React.FC<OfficialPortalProps> = () => {
               <span>GitHub</span>
               <ExternalLink className="w-3.5 h-3.5 text-sky-400" />
             </a>
+            <div className="flex items-center gap-1 px-2 py-1 rounded-lg bg-[#0d1f3d] border border-sky-400/25">
+              <Languages className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+              <select
+                value={lang}
+                onChange={(e) => setLang(e.target.value as UILanguage)}
+                className="bg-transparent border-0 text-xs text-slate-200 focus:outline-none cursor-pointer"
+                title="Language / 语言切换"
+              >
+                {SUPPORTED_UI_LANGUAGES.map((item) => (
+                  <option key={item.id} value={item.id} className="bg-[#09162c] text-white">
+                    {item.nativeName}
+                  </option>
+                ))}
+              </select>
+            </div>
           </nav>
         </div>
       </header>

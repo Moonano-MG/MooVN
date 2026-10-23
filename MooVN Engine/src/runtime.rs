@@ -1,0 +1,382 @@
+//! Core Visual Novel Runtime for MooVN Engine.
+
+use std::collections::HashMap;
+
+use crate::ir::{EngineOp, SourceLanguage};
+use crate::renderer::{RenderLayerCommand, RendererBridge};
+use crate::save::{SaveManager, SaveSlotRecord};
+use crate::translator::PolyglotTranslator;
+
+#[derive(Debug, Clone, Default)]
+pub struct VNWorldState {
+    pub current_chapter_id: String,
+    pub current_node_id: String,
+    pub dialogue_index: usize,
+    pub active_background: String,
+    pub active_bgm: String,
+    pub variables: HashMap<String, String>,
+    pub affection: HashMap<String, i32>,
+    pub unlocked_clues: Vec<(String, String)>,
+}
+
+pub struct MooVNEngineRuntime {
+    pub state: VNWorldState,
+    pub saves: SaveManager,
+    pub renderer: RendererBridge,
+    pub execution_logs: Vec<String>,
+}
+
+impl Default for MooVNEngineRuntime {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl MooVNEngineRuntime {
+    pub fn new() -> Self {
+        Self {
+            state: VNWorldState {
+                current_chapter_id: "ch-1".to_string(),
+                current_node_id: "ch-1-node-01".to_string(),
+                dialogue_index: 0,
+                active_background: "bg-street-rain".to_string(),
+                active_bgm: "bgm-rain-nocturne".to_string(),
+                variables: HashMap::new(),
+                affection: HashMap::new(),
+                unlocked_clues: Vec::new(),
+            },
+            saves: SaveManager::new(),
+            renderer: RendererBridge::new(),
+            execution_logs: Vec::new(),
+        }
+    }
+
+    /// Evaluates a script written in JS, TS, C++, C#, or Rust through the Polyglot Translator.
+    pub fn eval_polyglot_script(&mut self, script: &str, lang: SourceLanguage) -> Vec<String> {
+        let (program, _diags) = PolyglotTranslator::compile_to_ir(script, lang);
+        let mut logs = Vec::new();
+        for op in &program.operations {
+            let msg = self.execute_op(op.clone());
+            logs.push(msg);
+        }
+        logs
+    }
+
+    pub fn execute_op(&mut self, op: EngineOp) -> String {
+        let log_line = match op {
+            EngineOp::SaveCreate { slot_name } => {
+                let record = self.snapshot_to_save_record(&slot_name);
+                let saved = self.saves.create_save(record);
+                format!(
+                    "[MooVN Engine::Save] 已创建存档槽位 '{}' (checksum={:016x}, node={})",
+                    saved.slot_name, saved.checksum_fnv1a, saved.node_id
+                )
+            }
+            EngineOp::SaveLoad { slot_name } => {
+                if let Some(rec) = self.saves.load_save(&slot_name).cloned() {
+                    self.restore_from_save_record(&rec);
+                    format!(
+                        "[MooVN Engine::Save] 已读取存档槽位 '{}' -> 恢复至节点 {}",
+                        rec.slot_name, rec.node_id
+                    )
+                } else {
+                    format!("[MooVN Engine::Save] 存档槽位 '{}' 不存在", slot_name)
+                }
+            }
+            EngineOp::SaveDelete { slot_name } => {
+                let removed = self.saves.delete_save(&slot_name);
+                format!(
+                    "[MooVN Engine::Save] 删除存档槽位 '{}' (结果={})",
+                    slot_name, removed
+                )
+            }
+            EngineOp::SaveQuickSave => {
+                let record = self.snapshot_to_save_record("QuickSave_01");
+                self.saves.create_save(record);
+                "[MooVN Engine::Save] 已执行快速存档 (QuickSave_01)".to_string()
+            }
+            EngineOp::SaveQuickLoad => {
+                if let Some(rec) = self.saves.load_save("QuickSave_01").cloned() {
+                    self.restore_from_save_record(&rec);
+                    "[MooVN Engine::Save] 已读取快速存档 (QuickSave_01)".to_string()
+                } else {
+                    "[MooVN Engine::Save] 尚无快速存档记录".to_string()
+                }
+            }
+            EngineOp::SaveAutoSave => {
+                let record = self.snapshot_to_save_record("AutoSave_01");
+                self.saves.create_save(record);
+                "[MooVN Engine::Save] 已触发自动存档 (AutoSave_01)".to_string()
+            }
+            EngineOp::SaveList => {
+                let count = self.saves.list_saves().len();
+                format!("[MooVN Engine::Save] 当前共有 {} 个有效存档槽位", count)
+            }
+            EngineOp::BgShow { bg_id, transition } => {
+                self.state.active_background = bg_id.clone();
+                self.renderer.push_command(RenderLayerCommand::DrawBackground {
+                    bg_id: bg_id.clone(),
+                    transition: transition.clone(),
+                });
+                format!("[MooVN Engine::BG] 切换背景 '{}' (过渡={})", bg_id, transition)
+            }
+            EngineOp::BgWeather { effect, intensity } => {
+                self.renderer
+                    .push_command(RenderLayerCommand::ApplyWeatherParticles {
+                        effect: effect.clone(),
+                        intensity,
+                    });
+                format!(
+                    "[MooVN Engine::Weather] 粒子天气 '{}' (强度={}%)",
+                    effect, intensity
+                )
+            }
+            EngineOp::BgFilter {
+                filter_name,
+                intensity,
+            } => {
+                self.renderer
+                    .push_command(RenderLayerCommand::ApplyColorFilter {
+                        filter_name: filter_name.clone(),
+                        intensity,
+                    });
+                format!(
+                    "[MooVN Engine::Filter] 滤镜 '{}' (强度={}%)",
+                    filter_name, intensity
+                )
+            }
+            EngineOp::CharEnter { char_id, position } => {
+                let x = match position.as_str() {
+                    "left" => 0.25,
+                    "right" => 0.75,
+                    _ => 0.50,
+                };
+                self.renderer
+                    .push_command(RenderLayerCommand::DrawCharacterSprite {
+                        char_id: char_id.clone(),
+                        sprite_id: format!("{}-1", char_id),
+                        x_norm: x,
+                        y_norm: 0.58,
+                        scale: 1.0,
+                        opacity: 1.0,
+                    });
+                format!(
+                    "[MooVN Engine::Char] 角色 '{}' 登场 (位置={})",
+                    char_id, position
+                )
+            }
+            EngineOp::CharExit { char_id } => {
+                format!("[MooVN Engine::Char] 角色 '{}' 退场", char_id)
+            }
+            EngineOp::CharExpression { char_id, sprite_id } => {
+                format!(
+                    "[MooVN Engine::Char] 角色 '{}' 切换神态立绘 -> '{}'",
+                    char_id, sprite_id
+                )
+            }
+            EngineOp::CharMove {
+                char_id,
+                x,
+                y,
+                duration_ms,
+            } => {
+                format!(
+                    "[MooVN Engine::Char] 角色 '{}' 移动至 ({}, {}) 耗时 {}ms",
+                    char_id, x, y, duration_ms
+                )
+            }
+            EngineOp::CharAction { char_id, action } => {
+                format!(
+                    "[MooVN Engine::Char] 角色 '{}' 执行动作 '{}'",
+                    char_id, action
+                )
+            }
+            EngineOp::CharAffection { char_id, delta } => {
+                let entry = self.state.affection.entry(char_id.clone()).or_insert(50);
+                *entry += delta;
+                format!(
+                    "[MooVN Engine::Affection] 角色 '{}' 好感度 {:+} -> 当前 {}",
+                    char_id, delta, *entry
+                )
+            }
+            EngineOp::TextSay { speaker, text } => {
+                format!("[MooVN Engine::Dialogue] {}: 「{}」", speaker, text)
+            }
+            EngineOp::TextNarrate { text } => {
+                format!("[MooVN Engine::Narration] {}", text)
+            }
+            EngineOp::TextMonologue { text } => {
+                format!("[MooVN Engine::Monologue] （{}）", text)
+            }
+            EngineOp::ChoiceAdd {
+                label,
+                target_node_id,
+            } => {
+                format!(
+                    "[MooVN Engine::Choice] 注册选项 '{}' -> 跳转 '{}'",
+                    label, target_node_id
+                )
+            }
+            EngineOp::ChoiceTimed {
+                seconds,
+                default_target_id,
+            } => {
+                format!(
+                    "[MooVN Engine::TimedChoice] 限时 {}s 抉择 (超时默认 -> '{}')",
+                    seconds, default_target_id
+                )
+            }
+            EngineOp::AudioBgmPlay { bgm_id, loop_track } => {
+                self.state.active_bgm = bgm_id.clone();
+                format!(
+                    "[MooVN Engine::Audio] 播放 BGM '{}' (loop={})",
+                    bgm_id, loop_track
+                )
+            }
+            EngineOp::AudioBgmStop { fade_ms } => {
+                self.state.active_bgm.clear();
+                format!("[MooVN Engine::Audio] 停止 BGM (淡出={}ms)", fade_ms)
+            }
+            EngineOp::AudioSfxPlay { sfx_id } => {
+                format!("[MooVN Engine::Audio] 播放音效 '{}'", sfx_id)
+            }
+            EngineOp::AudioVoicePlay { voice_id } => {
+                format!("[MooVN Engine::Audio] 播放角色语音 '{}'", voice_id)
+            }
+            EngineOp::CameraPanZoom {
+                zoom,
+                offset_x,
+                offset_y,
+                duration_ms,
+            } => {
+                self.renderer
+                    .push_command(RenderLayerCommand::ApplyCameraTransform {
+                        zoom,
+                        offset_x,
+                        offset_y,
+                    });
+                format!(
+                    "[MooVN Engine::Camera] 推拉缩放 zoom={} offset=({}, {}) {}ms",
+                    zoom, offset_x, offset_y, duration_ms
+                )
+            }
+            EngineOp::CameraShake {
+                intensity,
+                duration_ms,
+            } => {
+                format!(
+                    "[MooVN Engine::Camera] 震屏特效 '{}' ({}ms)",
+                    intensity, duration_ms
+                )
+            }
+            EngineOp::CameraFlash { color, duration_ms } => {
+                format!(
+                    "[MooVN Engine::Camera] 闪白/色块冲击 '{}' ({}ms)",
+                    color, duration_ms
+                )
+            }
+            EngineOp::CameraFade {
+                direction,
+                duration_ms,
+            } => {
+                format!(
+                    "[MooVN Engine::Camera] 画面转场 '{}' ({}ms)",
+                    direction, duration_ms
+                )
+            }
+            EngineOp::VarSet { key, value } => {
+                self.state.variables.insert(key.clone(), value.clone());
+                format!("[MooVN Engine::Var] {} = {}", key, value)
+            }
+            EngineOp::VarAdd { key, delta } => {
+                let cur: f64 = self
+                    .state
+                    .variables
+                    .get(&key)
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(0.0);
+                let next = cur + delta;
+                self.state.variables.insert(key.clone(), next.to_string());
+                format!("[MooVN Engine::Var] {} += {} -> {}", key, delta, next)
+            }
+            EngineOp::ClueUnlock { title, description } => {
+                self.state
+                    .unlocked_clues
+                    .push((title.clone(), description.clone()));
+                format!("[MooVN Engine::Clue] 解锁线索 『{}』: {}", title, description)
+            }
+            EngineOp::SceneLoad { chapter_id } => {
+                self.state.current_chapter_id = chapter_id.clone();
+                format!("[MooVN Engine::Scene] 加载章节 '{}'", chapter_id)
+            }
+            EngineOp::SceneJump { node_id } => {
+                self.state.current_node_id = node_id.clone();
+                format!("[MooVN Engine::Scene] 跳转节点 '{}'", node_id)
+            }
+            EngineOp::StreamPreload { ahead_scenes } => {
+                format!(
+                    "[MooVN Engine::Stream] 流式预加载后续 {} 个场景至内存池",
+                    ahead_scenes
+                )
+            }
+            EngineOp::StreamUnload { behind_scenes } => {
+                format!(
+                    "[MooVN Engine::Stream] 释放前序 {} 个历史场景纹理缓存",
+                    behind_scenes
+                )
+            }
+            EngineOp::StreamMountMsvn { package_path } => {
+                format!(
+                    "[MooVN Engine::Stream] 动态挂载 .msvn 章节资源包 '{}'",
+                    package_path
+                )
+            }
+            EngineOp::RendererCommand { pass_name, payload } => {
+                self.renderer
+                    .push_command(RenderLayerCommand::CustomShaderPass {
+                        pass_name: pass_name.clone(),
+                        payload: payload.clone(),
+                    });
+                format!(
+                    "[MooVN Engine::RendererBridge] 提交预留渲染器指令 pass='{}' payload='{}'",
+                    pass_name, payload
+                )
+            }
+        };
+
+        self.execution_logs.push(log_line.clone());
+        log_line
+    }
+
+    fn snapshot_to_save_record(&self, slot_name: &str) -> SaveSlotRecord {
+        let summary = format!(
+            "{}:{}:{}:{}",
+            slot_name,
+            self.state.current_chapter_id,
+            self.state.current_node_id,
+            self.state.active_background
+        );
+        SaveSlotRecord {
+            slot_name: slot_name.to_string(),
+            chapter_id: self.state.current_chapter_id.clone(),
+            node_id: self.state.current_node_id.clone(),
+            dialogue_index: self.state.dialogue_index,
+            active_background: self.state.active_background.clone(),
+            active_bgm: self.state.active_bgm.clone(),
+            variables: self.state.variables.clone(),
+            affection: self.state.affection.clone(),
+            checksum_fnv1a: SaveManager::compute_fnv1a64(&summary),
+            timestamp_epoch_ms: 1792800000000,
+        }
+    }
+
+    fn restore_from_save_record(&mut self, rec: &SaveSlotRecord) {
+        self.state.current_chapter_id = rec.chapter_id.clone();
+        self.state.current_node_id = rec.node_id.clone();
+        self.state.dialogue_index = rec.dialogue_index;
+        self.state.active_background = rec.active_background.clone();
+        self.state.active_bgm = rec.active_bgm.clone();
+        self.state.variables = rec.variables.clone();
+        self.state.affection = rec.affection.clone();
+    }
+}
