@@ -41,6 +41,7 @@ import { ProjectLauncher } from './components/ProjectLauncher';
 import { TerminalPanel } from './components/TerminalPanel';
 import { AssetStudioPanel } from './components/AssetStudioPanel';
 import { SettingsModal } from './components/SettingsModal';
+import { OfficialPortal } from './components/OfficialPortal';
 import { PanelId } from './types';
 import { saveProjectToWorkspace } from './lib/workspaceManager';
 
@@ -384,6 +385,24 @@ export function App() {
 
   // Dark / Light 2 UI Themes (`开发方案 2: 界面风格有黑和白2种风格`)
   const [editorTheme, setEditorTheme] = useState<'dark' | 'light'>('dark');
+
+  // 网站分 2 部分：
+  // 1) 'portal' (默认进入 Vercel 时的引导与 GitHub Release 客户端下载站 + GitHub Issues 客服中心)
+  // 2) 'studio' (网页版 MooVN Studio 完整 IDE 工作台)
+  const [siteSection, setSiteSection] = useState<'portal' | 'studio'>(() => {
+    if (typeof window !== 'undefined') {
+      const isTauri = Boolean((window as unknown as Record<string, unknown>).__TAURI_INTERNALS__);
+      const params = new URLSearchParams(window.location.search);
+      if (
+        isTauri ||
+        params.get('mode') === 'studio' ||
+        window.location.hash === '#studio'
+      ) {
+        return 'studio';
+      }
+    }
+    return 'portal';
+  });
 
   const updateProjectMeta = (patch: Partial<typeof project>) => {
     setProject((prev) => ({ ...prev, ...patch }));
@@ -1325,6 +1344,20 @@ export function App() {
     allLeaves.some((l) => l.activeTab === id) ||
     floatingWindows.some((f) => f.id === id);
 
+  if (siteSection === 'portal') {
+    return (
+      <OfficialPortal
+        onLaunchWebStudio={() => setSiteSection('studio')}
+        onImportMpvnAndLaunch={(proj) => {
+          setProject(proj);
+          setSelectedChapterId(proj.chapters[0]?.id || 'chapter-1');
+          setSelectedNodeId(proj.startNodeId || proj.nodes[0]?.id || '');
+          setSiteSection('studio');
+        }}
+      />
+    );
+  }
+
   return (
     <div
       onMouseMove={handleGlobalMouseMove}
@@ -1350,6 +1383,13 @@ export function App() {
         onPlayPreview={() => setIsPlayingPreview(true)}
         onOpenExportModal={() => setIsExportModalOpen(true)}
         onOpenProjectLauncher={() => setIsLauncherOpen(true)}
+        project={project}
+        onImportProject={(proj) => {
+          setProject(proj);
+          setSelectedChapterId(proj.chapters[0]?.id || 'chapter-1');
+          setSelectedNodeId(proj.startNodeId || proj.nodes[0]?.id || '');
+        }}
+        onOpenOfficialPortal={() => setSiteSection('portal')}
       />
 
       {/* Main Body: VS Code Left Activity Rail + Recursive 2D Multi-Row/Multi-Column Dock Grid */}
