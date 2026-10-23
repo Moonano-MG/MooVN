@@ -32,6 +32,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name || github.ref }}
   cancel-in-progress: true
 
+defaults:
+  run:
+    working-directory: "MooVN Studio"
+
 jobs:
   # ============================================================================
   # 1. Web 构建 (同时包含 PC 桌面端与 Mobile 移动端响应式 Web 编译包)
@@ -40,6 +44,9 @@ jobs:
     name: Build Web (PC & Mobile)
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_target == 'all' || inputs.build_target == 'web' }}
     runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: "Web"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -48,7 +55,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
 
       - name: Install dependencies
         run: npm ci
@@ -60,7 +66,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: MooVN-Web-PC-and-Mobile
-          path: dist/
+          path: Web/dist/
           if-no-files-found: error
 
   # ============================================================================
