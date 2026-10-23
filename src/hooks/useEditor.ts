@@ -18,7 +18,7 @@ import { getNodeMeta } from '../data/nodeRegistry';
 export function useEditor() {
   const [project, setProject] = useState<VNProject>(() => {
     try {
-      const saved = localStorage.getItem('moovn_project_v4');
+      const saved = localStorage.getItem('moovn_project_v5');
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed && Array.isArray(parsed.chapters) && Array.isArray(parsed.nodes) && parsed.uiConfig) {
@@ -47,7 +47,7 @@ export function useEditor() {
       setHistory((h) => [...h.slice(-24), prev]);
       setFuture([]);
       try {
-        localStorage.setItem('moovn_project_v4', JSON.stringify(next));
+        localStorage.setItem('moovn_project_v5', JSON.stringify(next));
       } catch {
         // ignore quota error
       }
@@ -196,29 +196,32 @@ export function useEditor() {
         colorFilter: type === 'color_filter' ? 'sepia' : 'none',
         characters:
           selectedNode?.characters.map((c) => ({ ...c, id: `pl-${Date.now()}-${Math.random().toString(36).slice(2, 5)}` })) || [],
-        dialogues: [
-          {
-            id: `dlg-${Date.now()}`,
-            speakerId:
-              type === 'narration' || type === 'inner_monologue'
-                ? 'narrator'
-                : project.characters[0]?.id || 'yukina',
-            speakerName:
-              type === 'narration'
-                ? '旁白'
-                : type === 'inner_monologue'
-                ? '内心独白'
-                : project.characters[0]?.name || '星野雪奈',
-            speakerColor:
-              type === 'narration' || type === 'inner_monologue'
-                ? '#94a3b8'
-                : project.characters[0]?.color || '#60a5fa',
-            text:
-              type === 'screen_text' || type === 'chapter_title' || type === 'floating_subtitle'
-                ? '屏幕中央浮现的关键演出字幕。'
-                : '在此输入当前节点的演出台词或说明文本……',
-          },
-        ],
+        dialogues:
+          type === 'dialogue' ||
+          type === 'narration' ||
+          type === 'inner_monologue' ||
+          type === 'cg_caption'
+            ? [
+                {
+                  id: `dlg-${Date.now()}`,
+                  speakerId:
+                    type === 'narration' || type === 'inner_monologue'
+                      ? 'narrator'
+                      : project.characters[0]?.id || 'yukina',
+                  speakerName:
+                    type === 'narration'
+                      ? '旁白'
+                      : type === 'inner_monologue'
+                      ? '内心独白'
+                      : project.characters[0]?.name || '星野雪奈',
+                  speakerColor:
+                    type === 'narration' || type === 'inner_monologue'
+                      ? '#94a3b8'
+                      : project.characters[0]?.color || '#60a5fa',
+                  text: '在此输入当前节点的剧情台词……',
+                },
+              ]
+            : [],
         choices:
           type === 'choice' || type === 'timed_choice' || type === 'switch_branch' || type === 'random_branch'
             ? [
@@ -609,7 +612,7 @@ export function useEditor() {
   );
 
   const resetToDefault = useCallback(() => {
-    localStorage.removeItem('moovn_project_v4');
+    localStorage.removeItem('moovn_project_v5');
     setProject(DEFAULT_PROJECT);
     setSelectedChapterId(DEFAULT_PROJECT.chapters[0].id);
     setSelectedNodeId(DEFAULT_PROJECT.startNodeId);
