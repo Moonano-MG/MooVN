@@ -29,6 +29,7 @@ import {
 } from '../data/nodeRegistry';
 import { generateSingleNodeCode } from '../lib/nodeCodeCompiler';
 import { soundEngine } from '../lib/soundEngine';
+import { ScratchBlockTree } from './ScratchBlockTree';
 
 interface InspectorProps {
   node: SceneNode;
@@ -118,9 +119,15 @@ export const Inspector: React.FC<InspectorProps> = ({
   onUpdateChoice,
   onDeleteChoice,
   onSetStartNode,
+  onUpdateCharacterProfile,
+  onAddCharacterProfile,
+  onUpdateChapter,
 }) => {
-  const [viewMode, setViewMode] = useState<'config' | 'script'>('config');
+  const [viewMode, setViewMode] = useState<'config' | 'scratch' | 'char' | 'script'>('config');
   const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
+  const [newAttrInputs, setNewAttrInputs] = useState<
+    Record<string, { key: string; val: string }>
+  >({});
   const meta = getNodeMeta(node.type);
 
   // Recursive helper to update or append nested children at any depth
@@ -334,29 +341,49 @@ export const Inspector: React.FC<InspectorProps> = ({
           </span>
         </div>
 
-        {/* 2-Mode Toggle: Dedicated Node Config vs JS/TS Node Script */}
+        {/* 4-Mode Toggle: Dedicated Node Config | Scratch Blocks | Characters & Chapter | JS/TS Script */}
         <div className="flex items-center bg-[#121216] p-0.5 rounded border border-[#2c2c34] shrink-0">
           <button
             onClick={() => setViewMode('config')}
-            className={`px-2 py-0.5 rounded text-[10px] font-medium flex items-center gap-1 transition ${
+            className={`px-1.5 py-0.5 rounded text-[10px] font-medium flex items-center gap-1 transition ${
               viewMode === 'config'
                 ? 'bg-zinc-200 text-zinc-950 font-semibold'
                 : 'text-zinc-400 hover:text-zinc-200'
             }`}
           >
             <Sliders className="w-2.5 h-2.5" />
-            专属参数
+            参数
+          </button>
+          <button
+            onClick={() => setViewMode('scratch')}
+            className={`px-1.5 py-0.5 rounded text-[10px] font-medium flex items-center gap-1 transition ${
+              viewMode === 'scratch'
+                ? 'bg-amber-400 text-zinc-950 font-semibold'
+                : 'text-zinc-400 hover:text-zinc-200'
+            }`}
+          >
+            积木栈
+          </button>
+          <button
+            onClick={() => setViewMode('char')}
+            className={`px-1.5 py-0.5 rounded text-[10px] font-medium flex items-center gap-1 transition ${
+              viewMode === 'char'
+                ? 'bg-pink-400 text-zinc-950 font-semibold'
+                : 'text-zinc-400 hover:text-zinc-200'
+            }`}
+          >
+            角色/章节
           </button>
           <button
             onClick={() => setViewMode('script')}
-            className={`px-2 py-0.5 rounded text-[10px] font-medium flex items-center gap-1 transition ${
+            className={`px-1.5 py-0.5 rounded text-[10px] font-medium flex items-center gap-1 transition ${
               viewMode === 'script'
                 ? 'bg-sky-400 text-zinc-950 font-semibold'
                 : 'text-zinc-400 hover:text-zinc-200'
             }`}
           >
             <Code2 className="w-2.5 h-2.5" />
-            JS/TS 脚本
+            脚本
           </button>
         </div>
       </div>
@@ -541,6 +568,226 @@ export const Inspector: React.FC<InspectorProps> = ({
               />
             </div>
           </div>
+        ) : viewMode === 'scratch' ? (
+          /* ==================== MODE 2: SCRATCH PUZZLE & C-BLOCK STACK ==================== */
+          <div className="p-2.5 rounded-lg bg-[#1b1b21] border border-[#2a2a33] space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-semibold text-amber-300">
+                Scratch 凹凸拼图积木与 C 型多重嵌套容器
+              </span>
+              <span className="text-[10px] font-mono text-zinc-500">
+                {(node.childrenNodes || []).length} 顶层积木
+              </span>
+            </div>
+            <ScratchBlockTree
+              blocks={node.childrenNodes || []}
+              onChange={(nextBlocks) =>
+                onUpdateNode((prev) => ({
+                  ...prev,
+                  childrenNodes: nextBlocks,
+                }))
+              }
+            />
+          </div>
+        ) : viewMode === 'char' ? (
+          /* ==================== MODE 3: CHARACTER PROFILES, CUSTOM ATTRIBUTES & CHAPTER .MSVN ==================== */
+          <div className="space-y-3">
+            {(() => {
+              const currentChapter = chapters.find(
+                (c) => c.id === node.chapterId
+              );
+              if (!currentChapter) return null;
+              return (
+                <div className="p-2.5 rounded-lg bg-[#1b1b21] border border-[#2a2a33] space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-semibold text-zinc-200">
+                      所属章节：{currentChapter.title}
+                    </span>
+                    <span className="text-[10px] font-mono text-zinc-400">
+                      {currentChapter.yamlFileName}
+                    </span>
+                  </div>
+                  <div className="text-[10px] text-zinc-400">
+                    跳章最低好感度保底配置 (minCharacterAffection)：
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {characters.map((ch) => (
+                      <div
+                        key={ch.id}
+                        className="flex items-center justify-between px-2 py-1 rounded bg-[#141418] border border-[#272730] text-[10px]"
+                      >
+                        <span className="text-zinc-300 truncate">{ch.name}</span>
+                        <input
+                          type="number"
+                          value={
+                            (currentChapter.minCharacterAffection || {})[ch.id] ??
+                            0
+                          }
+                          onChange={(e) =>
+                            onUpdateChapter?.(currentChapter.id, (prev) => ({
+                              ...prev,
+                              minCharacterAffection: {
+                                ...(prev.minCharacterAffection || {}),
+                                [ch.id]: Number(e.target.value),
+                              },
+                            }))
+                          }
+                          className="w-12 px-1 py-0.5 text-center font-mono text-[10px]"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] text-zinc-400">
+                角色设定与自定义属性 ({characters.length})
+              </span>
+              <button
+                onClick={onAddCharacterProfile}
+                className="px-2 py-0.5 rounded bg-[#272730] hover:bg-zinc-700 text-zinc-200 text-[10px] flex items-center gap-1"
+              >
+                <Plus className="w-3 h-3" strokeWidth={1.6} />
+                新增角色
+              </button>
+            </div>
+
+            {characters.map((char) => {
+              const attrDraft = newAttrInputs[char.id] || { key: '', val: '' };
+              return (
+                <div
+                  key={char.id}
+                  className="p-2.5 rounded-lg bg-[#1b1b21] border border-[#2a2a33] space-y-2"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium text-zinc-100">
+                      {char.name}
+                    </span>
+                    <span className="text-[10px] text-zinc-500">
+                      {char.expressions?.length || 1} 差分
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <input
+                      type="number"
+                      value={char.initialAffection}
+                      onChange={(e) =>
+                        onUpdateCharacterProfile(char.id, (prev) => ({
+                          ...prev,
+                          initialAffection: Number(e.target.value),
+                        }))
+                      }
+                      className="px-2 py-1 font-mono text-[11px]"
+                      title="初始好感度"
+                    />
+                    <select
+                      value={char.spriteId}
+                      onChange={(e) =>
+                        onUpdateCharacterProfile(char.id, (prev) => ({
+                          ...prev,
+                          spriteId: e.target.value,
+                        }))
+                      }
+                      className="px-2 py-1 text-[11px]"
+                    >
+                      {CHARACTER_ASSETS.filter(
+                        (a) => a.characterGroup === char.name
+                      ).map((sp) => (
+                        <option key={sp.id} value={sp.id}>
+                          {sp.expressionLabel}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Custom Attributes (customAttributes) */}
+                  <div className="pt-1 border-t border-[#272730] space-y-1">
+                    <div className="text-[10px] text-zinc-400">
+                      自定义属性 (customAttributes)：
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {(char.customAttributes || []).map((attr, idx) => (
+                        <span
+                          key={attr.key}
+                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#141418] border border-[#272730] text-[10px] font-mono text-zinc-300"
+                        >
+                          {attr.label || attr.key}: {String(attr.value)}
+                          <button
+                            onClick={() =>
+                              onUpdateCharacterProfile(char.id, (prev) => ({
+                                ...prev,
+                                customAttributes: (
+                                  prev.customAttributes || []
+                                ).filter((_, i) => i !== idx),
+                              }))
+                            }
+                            className="text-zinc-500 hover:text-rose-400"
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                    <div className="flex items-center gap-1 pt-0.5">
+                      <input
+                        type="text"
+                        placeholder="属性名(如勇气)"
+                        value={attrDraft.key}
+                        onChange={(e) =>
+                          setNewAttrInputs((prev) => ({
+                            ...prev,
+                            [char.id]: { ...attrDraft, key: e.target.value },
+                          }))
+                        }
+                        className="w-24 px-1.5 py-0.5 text-[10px]"
+                      />
+                      <input
+                        type="text"
+                        placeholder="值"
+                        value={attrDraft.val}
+                        onChange={(e) =>
+                          setNewAttrInputs((prev) => ({
+                            ...prev,
+                            [char.id]: { ...attrDraft, val: e.target.value },
+                          }))
+                        }
+                        className="flex-1 px-1.5 py-0.5 text-[10px]"
+                      />
+                      <button
+                        onClick={() => {
+                          if (!attrDraft.key.trim()) return;
+                          const raw = attrDraft.val.trim();
+                          const isNum =
+                            !Number.isNaN(Number(raw)) && raw !== '';
+                          onUpdateCharacterProfile(char.id, (prev) => ({
+                            ...prev,
+                            customAttributes: [
+                              ...(prev.customAttributes || []),
+                              {
+                                id: `attr-${Date.now()}`,
+                                key: attrDraft.key.trim(),
+                                label: attrDraft.key.trim(),
+                                value: isNum ? Number(raw) : raw,
+                              },
+                            ],
+                          }));
+                          setNewAttrInputs((prev) => ({
+                            ...prev,
+                            [char.id]: { key: '', val: '' },
+                          }));
+                        }}
+                        className="px-2 py-0.5 rounded bg-[#272730] hover:bg-zinc-700 text-[10px] text-zinc-200"
+                      >
+                        +属性
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         ) : (
           /* ==================== MODE 1: DEDICATED NODE-TYPE-SPECIFIC CONFIG ==================== */
           <>
@@ -549,10 +796,10 @@ export const Inspector: React.FC<InspectorProps> = ({
               <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/35 space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="font-semibold text-emerald-300">
-                    {meta.title} · 多重嵌套子节点容器
+                    {meta.title} · Scratch C型多重嵌套容器
                   </span>
                   <span className="text-[10px] text-emerald-400 font-mono">
-                    {(node.childrenNodes || []).length} 个顶层子节点
+                    {(node.childrenNodes || []).length} 个顶层积木
                   </span>
                 </div>
 
@@ -650,41 +897,16 @@ export const Inspector: React.FC<InspectorProps> = ({
                   </div>
                 )}
 
-                {/* Recursive Tree of Nested Child Nodes */}
-                {renderNestedTreeEditor(node.childrenNodes || [], 0)}
-
-                {/* Add Child Node Buttons */}
-                <div className="pt-1 border-t border-emerald-500/20 space-y-1">
-                  <div className="text-[10px] text-emerald-300/80">
-                    向容器内添加子节点（支持添加普通节点或继续嵌套容器节点）：
-                  </div>
-                  <div className="flex flex-wrap gap-1">
-                    {NESTED_ADD_OPTIONS.map((opt) => (
-                      <button
-                        key={opt.type}
-                        onClick={() =>
-                          onUpdateNode((prev) => ({
-                            ...prev,
-                            childrenNodes: [
-                              ...(prev.childrenNodes || []),
-                              {
-                                id: `child-${Date.now()}-${Math.random()
-                                  .toString(36)
-                                  .slice(2, 5)}`,
-                                type: opt.type,
-                                title: opt.label.replace('+ ', ''),
-                                params: { ...opt.defaultParams },
-                              },
-                            ],
-                          }))
-                        }
-                        className="px-2 py-1 rounded bg-[#1e1e26] hover:bg-[#282834] border border-emerald-500/35 text-emerald-200 text-[10px]"
-                      >
-                        {opt.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+                {/* Authentic Scratch C-Shaped Interlocking Block Stack */}
+                <ScratchBlockTree
+                  blocks={node.childrenNodes || []}
+                  onChange={(nextBlocks) =>
+                    onUpdateNode((prev) => ({
+                      ...prev,
+                      childrenNodes: nextBlocks,
+                    }))
+                  }
+                />
               </div>
             )}
 
@@ -1898,6 +2120,24 @@ export const Inspector: React.FC<InspectorProps> = ({
                             {characters.map((c) => (
                               <option key={c.id} value={c.id}>
                                 {c.name}
+                              </option>
+                            ))}
+                          </select>
+
+                          <select
+                            value={line.expressionSpriteId || ''}
+                            onChange={(e) =>
+                              onUpdateDialogue(line.id, {
+                                expressionSpriteId: e.target.value || undefined,
+                              })
+                            }
+                            className="px-1.5 py-0.5 text-[10px] max-w-[115px]"
+                            title="该句台词同步切换差分表情"
+                          >
+                            <option value="">默认表情</option>
+                            {CHARACTER_ASSETS.map((sp) => (
+                              <option key={sp.id} value={sp.id}>
+                                {sp.name}
                               </option>
                             ))}
                           </select>

@@ -24,6 +24,7 @@ import {
 import { getBackgroundById } from '../data/assets';
 import { NODE_CATEGORIES, NODE_REGISTRY, getNodeMeta } from '../data/nodeRegistry';
 import { generateSingleNodeCode } from '../lib/nodeCodeCompiler';
+import { ScratchBlockTree } from './ScratchBlockTree';
 
 interface NodeCanvasProps {
   nodes: SceneNode[];
@@ -717,46 +718,21 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
                       )}
                     </div>
 
-                    {/* Recursive Indented Child Nodes Stack */}
-                    {renderNestedChildrenSlot(node, node.childrenNodes || [], 0)}
-
-                    {/* Inline Multi-Add Child Node Bar (`多重添加`) */}
-                    <div className="pt-1 flex flex-wrap gap-1">
-                      {QUICK_CHILD_TYPES.map((qt) => (
-                        <button
-                          key={qt.type}
-                          onClick={() => {
-                            const newChild: NestedChildNode = {
-                              id: `child-${Date.now()}-${Math.random()
-                                .toString(36)
-                                .slice(2, 5)}`,
-                              type: qt.type,
-                              title: qt.label.replace('+ ', ''),
-                              params: { ...qt.defaultParams },
-                              childrenNodes: qt.isNestedContainer
-                                ? [
-                                    {
-                                      id: `inner-${Date.now()}`,
-                                      type: 'dialogue',
-                                      title: '内层对白',
-                                      params: {
-                                        speaker: '星野 雪奈',
-                                        text: '二重嵌套内部节点执行',
-                                      },
-                                    },
-                                  ]
-                                : undefined,
-                            };
-                            onUpdateNode(node.id, (prev) => ({
-                              ...prev,
-                              childrenNodes: [...(prev.childrenNodes || []), newChild],
-                            }));
-                          }}
-                          className="px-1.5 py-0.5 rounded bg-[#202028] hover:bg-[#2a2a35] border border-[#30303c] text-[10px] text-zinc-200"
-                        >
-                          {qt.label}
-                        </button>
-                      ))}
+                    {/* Authentic Scratch C-Shaped Indented Mouth with Multi-Level Puzzle Blocks */}
+                    <div
+                      style={{ borderLeftColor: meta.accentColor }}
+                      className="border-l-[10px] pl-2 py-1.5 bg-black/25 rounded-r"
+                    >
+                      <ScratchBlockTree
+                        compact
+                        blocks={node.childrenNodes || []}
+                        onChange={(nextBlocks) =>
+                          onUpdateNode(node.id, (prev) => ({
+                            ...prev,
+                            childrenNodes: nextBlocks,
+                          }))
+                        }
+                      />
                     </div>
                   </div>
                 ) : node.type === 'math_operation' ||
@@ -938,57 +914,28 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
                 </div>
               )}
 
-              {/* Optional Collapsible Scratch Blocks Drawer */}
+              {/* Authentic Interlocking Scratch Puzzle Block Stack Drawer on Any Node */}
               {isBlocksOpen && (
                 <div
                   onClick={(e) => e.stopPropagation()}
-                  className="p-2 border-t border-[#25252c] bg-[#141417] rounded-b-lg space-y-1.5"
+                  className="p-2.5 border-t border-[#25252c] bg-[#121217] rounded-b-lg space-y-2"
                 >
-                  <div className="flex flex-wrap gap-1">
-                    {BLOCK_ITEMS.map((b) => (
-                      <button
-                        key={b.kind}
-                        onClick={() =>
-                          onAddVisualBlock(node.id, {
-                            id: `vb-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
-                            category: b.category,
-                            kind: b.kind,
-                            params: { ...b.defaultParams },
-                          })
-                        }
-                        className="px-1.5 py-0.5 rounded bg-[#222228] hover:bg-[#2c2c34] text-[10px] text-zinc-300 border border-[#2e2e36]"
-                      >
-                        + {b.label}
-                      </button>
-                    ))}
+                  <div className="text-[10px] font-medium text-amber-300 flex items-center justify-between">
+                    <span>Scratch 积木栈 (支持多重嵌套 C 型槽)</span>
+                    <span className="text-zinc-500 font-mono">
+                      {(node.childrenNodes || []).length} 块积木
+                    </span>
                   </div>
-                  {(node.visualBlocks || []).map((blk) => (
-                    <div
-                      key={blk.id}
-                      className="p-1.5 rounded bg-[#1c1c21] border border-[#2a2a32] text-[10px] space-y-1"
-                    >
-                      <div className="flex items-center justify-between text-zinc-300">
-                        <span>{blk.kind}</span>
-                        <button
-                          onClick={() => onRemoveVisualBlock(node.id, blk.id)}
-                          className="icon-btn !w-4 !h-4"
-                        >
-                          <Trash2 className="w-2.5 h-2.5" strokeWidth={1.6} />
-                        </button>
-                      </div>
-                      {Object.entries(blk.params).map(([k, v]) => (
-                        <input
-                          key={k}
-                          type="text"
-                          value={String(v)}
-                          onChange={(e) =>
-                            onUpdateVisualBlock(node.id, blk.id, { [k]: e.target.value })
-                          }
-                          className="w-full px-1.5 py-0.5 text-[10px]"
-                        />
-                      ))}
-                    </div>
-                  ))}
+                  <ScratchBlockTree
+                    compact
+                    blocks={node.childrenNodes || []}
+                    onChange={(nextBlocks) =>
+                      onUpdateNode(node.id, (prev) => ({
+                        ...prev,
+                        childrenNodes: nextBlocks,
+                      }))
+                    }
+                  />
                 </div>
               )}
             </div>

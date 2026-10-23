@@ -2,19 +2,12 @@ name: MooVN Multi-Platform Build (v0.1.0-dev)
 
 # ============================================================================
 # 仅针对 v0.1.0-dev 及开发分支生效，绝不覆盖或触发 main 分支（main 仅放介绍文件）
-# 支持自动触发 (push / pull_request -> v0.1.0-dev) + 手动触发 (workflow_dispatch)
+# 仅支持手动触发 (workflow_dispatch)，推送代码时不自动触发编译
 # 同分支并发控制：若同一分支开启新 Action 且上个 Action 仍在跑，立即停止上个 Action
 # 输出产物：Web (包含 PC 和 Mobile)、Android、Windows、iOS、macOS
 # ============================================================================
 
 on:
-  push:
-    branches:
-      - v0.1.0-dev
-      - "arena/**"
-  pull_request:
-    branches:
-      - v0.1.0-dev
   workflow_dispatch:
     inputs:
       build_target:

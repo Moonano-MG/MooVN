@@ -12,6 +12,9 @@ import { SceneNode, VNProject } from '../types';
 import {
   generateChapterYaml,
   exportChapterYaml,
+  generateLuaScript,
+  generateTealScript,
+  generatePythonScript,
 } from '../lib/projectUtils';
 import {
   generateSingleNodeCode,
@@ -36,9 +39,9 @@ export const ScriptView: React.FC<ScriptViewProps> = ({
   onUpdateNode,
   mode: initialMode = 'ts',
 }) => {
-  const [currentMode, setCurrentMode] = useState<'node_edit' | 'js' | 'ts' | 'yaml'>(
-    initialMode === 'yaml' ? 'yaml' : 'ts'
-  );
+  const [currentMode, setCurrentMode] = useState<
+    'node_edit' | 'js' | 'ts' | 'lua' | 'teal' | 'python' | 'yaml'
+  >(initialMode === 'yaml' ? 'yaml' : 'ts');
   const [nodeLang, setNodeLang] = useState<'javascript' | 'typescript'>('javascript');
   const [editableNodeCode, setEditableNodeCode] = useState<string>('');
   const [copied, setCopied] = useState(false);
@@ -63,6 +66,12 @@ export const ScriptView: React.FC<ScriptViewProps> = ({
       ? generateFullProjectCode(project, 'javascript')
       : currentMode === 'ts'
       ? generateFullProjectCode(project, 'typescript')
+      : currentMode === 'lua'
+      ? generateLuaScript(project)
+      : currentMode === 'teal'
+      ? generateTealScript(project)
+      : currentMode === 'python'
+      ? generatePythonScript(project)
       : generateChapterYaml(project, activeChapterId || selectedChapterId);
 
   const handleCopy = () => {
@@ -145,6 +154,36 @@ export const ScriptView: React.FC<ScriptViewProps> = ({
               }`}
             >
               全工程 TS (严格类型)
+            </button>
+            <button
+              onClick={() => setCurrentMode('lua')}
+              className={`px-2 py-0.5 rounded text-[11px] font-medium transition ${
+                currentMode === 'lua'
+                  ? 'bg-indigo-400 text-zinc-950 font-semibold'
+                  : 'text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              Lua (TS桥接)
+            </button>
+            <button
+              onClick={() => setCurrentMode('teal')}
+              className={`px-2 py-0.5 rounded text-[11px] font-medium transition ${
+                currentMode === 'teal'
+                  ? 'bg-teal-400 text-zinc-950 font-semibold'
+                  : 'text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              Teal (TS桥接)
+            </button>
+            <button
+              onClick={() => setCurrentMode('python')}
+              className={`px-2 py-0.5 rounded text-[11px] font-medium transition ${
+                currentMode === 'python'
+                  ? 'bg-emerald-400 text-zinc-950 font-semibold'
+                  : 'text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              Python (TS桥接)
             </button>
             <button
               onClick={() => setCurrentMode('yaml')}

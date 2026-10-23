@@ -198,3 +198,18 @@ input[type="color"]::-webkit-color-swatch {
   opacity: 0.3;
   cursor: not-allowed;
 }
+
+/* ============================================================================
+   黑 / 白 双主题支持 (开发方案 2: 界面风格有黑和白2种风格)
+   ============================================================================ */
+.theme-light {
+  filter: invert(0.93) hue-rotate(180deg);
+}
+
+.theme-light img,
+.theme-light video,
+.theme-light canvas,
+.theme-light .preserve-theme-color {
+  filter: invert(1) hue-rotate(180deg);
+}
+

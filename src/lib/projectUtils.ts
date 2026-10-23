@@ -146,3 +146,91 @@ export function exportChapterYaml(project: VNProject, chapterId: string) {
   a.click();
   URL.revokeObjectURL(url);
 }
+
+export function generateLuaScript(project: VNProject): string {
+  const lines: string[] = [
+    `-- ============================================================================`,
+    `-- ${project.title} — Lua 5.4 脚本 (由 MooVN TypeScript/JavaScript Bridge 驱动)`,
+    `-- ============================================================================`,
+    `local moovn = require("moovn.bridge")`,
+    `local M = {}`,
+    ``,
+  ];
+  project.nodes.forEach((node) => {
+    const fnName = node.id.replace(/[^a-zA-Z0-9_]/g, '_');
+    lines.push(`--- [${node.type}] ${node.title}`);
+    lines.push(`function M.${fnName}(ctx)`);
+    lines.push(`  moovn.set_background("${node.backgroundId}", "${node.transition}")`);
+    node.dialogues.forEach((d) => {
+      lines.push(
+        `  moovn.say(${JSON.stringify(d.speakerName)}, ${JSON.stringify(d.text)}, "${
+          d.expressionSpriteId || ''
+        }")`
+      );
+    });
+    if (node.nextNodeId) {
+      lines.push(`  return moovn.jump("${node.nextNodeId}")`);
+    }
+    lines.push(`end`);
+    lines.push(``);
+  });
+  lines.push(`return M`);
+  return lines.join('\n');
+}
+
+export function generateTealScript(project: VNProject): string {
+  const lines: string[] = [
+    `-- ============================================================================`,
+    `-- ${project.title} — Teal 类型化 Lua 脚本 (由 TypeScript/JavaScript Bridge 驱动)`,
+    `-- ============================================================================`,
+    `local record Context`,
+    `  vars: {string: any}`,
+    `  affection: {string: integer}`,
+    `end`,
+    `local M = {}`,
+    ``,
+  ];
+  project.nodes.forEach((node) => {
+    const fnName = node.id.replace(/[^a-zA-Z0-9_]/g, '_');
+    lines.push(`function M.${fnName}(ctx: Context): string`);
+    node.dialogues.forEach((d) => {
+      lines.push(
+        `  -- ${d.speakerName}: ${d.text.replace(/\n/g, ' ')}`
+      );
+    });
+    lines.push(`  return "${node.nextNodeId || ''}"`);
+    lines.push(`end`);
+    lines.push(``);
+  });
+  lines.push(`return M`);
+  return lines.join('\n');
+}
+
+export function generatePythonScript(project: VNProject): string {
+  const lines: string[] = [
+    `# ============================================================================`,
+    `# ${project.title} — Python 3.12 脚本 (由 MooVN TypeScript/JavaScript Bridge 驱动)`,
+    `# ============================================================================`,
+    `from moovn_bridge import VNContext, register_node`,
+    ``,
+  ];
+  project.nodes.forEach((node) => {
+    const fnName = node.id.replace(/[^a-zA-Z0-9_]/g, '_');
+    lines.push(`@register_node("${node.id}")`);
+    lines.push(`async def ${fnName}(ctx: VNContext):`);
+    lines.push(`    await ctx.set_background("${node.backgroundId}", "${node.transition}")`);
+    node.dialogues.forEach((d) => {
+      lines.push(
+        `    await ctx.say(${JSON.stringify(d.speakerName)}, ${JSON.stringify(d.text)})`
+      );
+    });
+    if (node.nextNodeId) {
+      lines.push(`    return await ctx.jump("${node.nextNodeId}")`);
+    } else {
+      lines.push(`    return None`);
+    }
+    lines.push(``);
+  });
+  return lines.join('\n');
+}
+
