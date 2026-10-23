@@ -180,15 +180,15 @@ export const AssetStudioPanel: React.FC<AssetStudioPanelProps> = ({
     setMattingStatus(`智能抠图完成：已清理 ${removedCount.toLocaleString()} 个背景与发丝残留像素`);
   };
 
-  // Click-to-floodfill wand or brush erase on canvas
-  const handleCanvasPointer = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  // Click/Touch-to-floodfill wand or brush erase on canvas
+  const handleCanvasClientXY = (clientX: number, clientY: number) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
     const scaleX = canvas.width / rect.width;
     const scaleY = canvas.height / rect.height;
-    const startX = Math.floor((e.clientX - rect.left) * scaleX);
-    const startY = Math.floor((e.clientY - rect.top) * scaleY);
+    const startX = Math.floor((clientX - rect.left) * scaleX);
+    const startY = Math.floor((clientY - rect.top) * scaleY);
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
@@ -422,9 +422,9 @@ export const AssetStudioPanel: React.FC<AssetStudioPanelProps> = ({
 
       {/* ==================== TAB 1: Interactive Sprite Alpha Matting ==================== */}
       {mode === 'matting' && (
-        <div className="flex-1 flex overflow-hidden">
+        <div className="flex-1 flex flex-col md:flex-row overflow-y-auto md:overflow-hidden">
           {/* Left Control Column */}
-          <div className="w-64 border-r border-[#27272c] p-3 space-y-3 overflow-y-auto shrink-0 bg-[#16161a]">
+          <div className="w-full md:w-64 border-b md:border-b-0 md:border-r border-[#27272c] p-3 space-y-3 md:overflow-y-auto shrink-0 bg-[#16161a]">
             <div>
               <label className="block text-[11px] text-zinc-400 mb-1">
                 选择工程角色立绘或上传本地图片
@@ -593,11 +593,11 @@ export const AssetStudioPanel: React.FC<AssetStudioPanelProps> = ({
                 ref={canvasRef}
                 onMouseDown={(e) => {
                   isDrawingRef.current = true;
-                  handleCanvasPointer(e);
+                  handleCanvasClientXY(e.clientX, e.clientY);
                 }}
                 onMouseMove={(e) => {
                   if (isDrawingRef.current && toolMode === 'eraser') {
-                    handleCanvasPointer(e);
+                    handleCanvasClientXY(e.clientX, e.clientY);
                   }
                 }}
                 onMouseUp={() => {
@@ -606,7 +606,23 @@ export const AssetStudioPanel: React.FC<AssetStudioPanelProps> = ({
                 onMouseLeave={() => {
                   isDrawingRef.current = false;
                 }}
-                className="max-h-[420px] w-auto object-contain cursor-crosshair"
+                onTouchStart={(e) => {
+                  const t = e.touches[0];
+                  if (!t) return;
+                  isDrawingRef.current = true;
+                  handleCanvasClientXY(t.clientX, t.clientY);
+                }}
+                onTouchMove={(e) => {
+                  const t = e.touches[0];
+                  if (!t) return;
+                  if (isDrawingRef.current && toolMode === 'eraser') {
+                    handleCanvasClientXY(t.clientX, t.clientY);
+                  }
+                }}
+                onTouchEnd={() => {
+                  isDrawingRef.current = false;
+                }}
+                className="max-h-[420px] w-auto object-contain cursor-crosshair touch-none"
               />
             </div>
           </div>
@@ -615,8 +631,8 @@ export const AssetStudioPanel: React.FC<AssetStudioPanelProps> = ({
 
       {/* ==================== TAB 2: AI Image & Character Generator ==================== */}
       {mode === 'ai_gen' && (
-        <div className="flex-1 flex overflow-hidden">
-          <div className="w-72 border-r border-[#27272c] p-3 space-y-3 overflow-y-auto shrink-0 bg-[#16161a]">
+        <div className="flex-1 flex flex-col md:flex-row overflow-y-auto md:overflow-hidden">
+          <div className="w-full md:w-72 border-b md:border-b-0 md:border-r border-[#27272c] p-3 space-y-3 md:overflow-y-auto shrink-0 bg-[#16161a]">
             <div>
               <label className="block text-[11px] text-zinc-400 mb-1">生成素材类型</label>
               <div className="grid grid-cols-2 gap-1.5">

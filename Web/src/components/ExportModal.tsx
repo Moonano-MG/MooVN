@@ -187,9 +187,9 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         <div className="flex-1 overflow-y-auto p-4 text-xs">
           {/* TAB 1: Platform & Export Path */}
           {activeTab === 'package' && (
-            <div className="grid grid-cols-12 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
               {/* Left: Platform list */}
-              <div className="col-span-4 space-y-1.5">
+              <div className="md:col-span-4 space-y-1.5">
                 {PLATFORMS.map((p) => (
                   <button
                     key={p.id}
@@ -219,7 +219,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
               </div>
 
               {/* Right: Config + Export Directory */}
-              <div className="col-span-8 space-y-3">
+              <div className="md:col-span-8 space-y-3">
                 <div className="p-3 rounded-md bg-[#1c1c20] border border-[#27272c] space-y-2.5">
                   <div>
                     <div className="text-[10px] text-zinc-500 mb-1">导出目标路径 (MooVN 导出目录)</div>
