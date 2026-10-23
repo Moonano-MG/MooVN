@@ -1,0 +1,215 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --font-serif: "Noto Serif SC", "Songti SC", serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
+:root,
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  color-scheme: dark;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: #111113;
+  color: #e4e4e7;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+/* ============================================================================
+   全局统一深色滚动条（彻底消除原生 HTML 纯白+灰滚动条）
+   ============================================================================ */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #323238 transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: #2e2e34;
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: #484852;
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* ============================================================================
+   全局统一深色拖拉条 input[type="range"]（彻底消除原生纯白+灰轨道）
+   ============================================================================ */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  background: #27272c;
+  border-radius: 999px;
+  outline: none;
+  cursor: pointer;
+}
+
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  background: #27272c;
+  border-radius: 999px;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #d4d4d8;
+  border: 2px solid #18181b;
+  margin-top: -4px;
+  transition: transform 0.12s ease, background-color 0.12s ease;
+}
+
+input[type="range"]::-webkit-slider-thumb:hover {
+  background: #ffffff;
+  transform: scale(1.12);
+}
+
+input[type="range"]::-moz-range-track {
+  height: 4px;
+  background: #27272c;
+  border-radius: 999px;
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #d4d4d8;
+  border: 2px solid #18181b;
+  cursor: pointer;
+}
+
+/* ============================================================================
+   全局统一深色输入框、下拉框、复选框与颜色选择器
+   ============================================================================ */
+input[type="text"],
+input[type="number"],
+input[type="password"],
+textarea,
+select {
+  background-color: #1c1c20;
+  border: 1px solid #2c2c32;
+  color: #e4e4e7;
+  border-radius: 6px;
+  font-size: 12px;
+  outline: none;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+input[type="text"]:focus,
+input[type="number"]:focus,
+input[type="password"]:focus,
+textarea:focus,
+select:focus {
+  border-color: #52525b;
+  background-color: #202025;
+}
+
+select option {
+  background-color: #18181b;
+  color: #e4e4e7;
+}
+
+input[type="checkbox"] {
+  accent-color: #71717a;
+  width: 13px;
+  height: 13px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+input[type="color"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: #1c1c20;
+  border: 1px solid #2c2c32;
+  border-radius: 6px;
+  padding: 2px;
+  cursor: pointer;
+}
+
+input[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+input[type="color"]::-webkit-color-swatch {
+  border: none;
+  border-radius: 4px;
+}
+
+/* 统一无色极简图标按钮 */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 5px;
+  color: #a1a1aa;
+  background: transparent;
+  border: 1px solid transparent;
+  transition: color 0.12s ease, background-color 0.12s ease, border-color 0.12s ease;
+  cursor: pointer;
+}
+
+.icon-btn:hover:not(:disabled) {
+  color: #f4f4f5;
+  background: #27272c;
+}
+
+.icon-btn.active {
+  color: #ffffff;
+  background: #27272c;
+  border-color: #3f3f46;
+}
+
+.icon-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+/* ============================================================================
+   黑 / 白 双主题支持 (开发方案 2: 界面风格有黑和白2种风格)
+   ============================================================================ */
+.theme-light {
+  filter: invert(0.93) hue-rotate(180deg);
+}
+
+.theme-light img,
+.theme-light video,
+.theme-light canvas,
+.theme-light .preserve-theme-color {
+  filter: invert(1) hue-rotate(180deg);
+}
+
