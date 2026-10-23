@@ -7,14 +7,23 @@ import {
   SplitSquareHorizontal,
   GripHorizontal,
   FolderTree,
+  Blocks,
   Workflow,
   MonitorPlay,
+  Sliders,
   Code2,
-  Wand2,
-  Palette,
+  Terminal,
   Bot,
-  Terminal as TerminalIcon,
+  Scissors,
+  Palette,
   Settings,
+  Sun,
+  Moon,
+  ArrowUp,
+  ArrowDown,
+  ArrowLeft,
+  ArrowRight,
+  CircleDot,
 } from 'lucide-react';
 import { useEditor } from './hooks/useEditor';
 import { MenuBar, WindowPanelDescriptor } from './components/MenuBar';
@@ -36,28 +45,29 @@ import { PanelId } from './types';
 import { saveProjectToWorkspace } from './lib/workspaceManager';
 
 const PANEL_TITLES: Record<PanelId, string> = {
-  explorer: '章节与目录',
-  node_library: '节点库',
-  canvas: '节点画布',
+  explorer: '工程资源与章节',
+  node_library: '节点与积木库',
+  canvas: 'Dify + Scratch 节点画布',
   stage: '场景舞台',
   ui_customizer: '界面定制',
-  ts_code: '脚本编辑器',
+  ts_code: '多语言脚本 (TS/JS/Lua/Teal/Python)',
   yaml_code: 'YAML 剧本',
-  inspector: '节点属性',
+  inspector: '属性与积木检查器',
   characters: '角色好感表',
   ai_agent: 'AI 助手',
-  terminal: '终端',
-  asset_studio: '抠图与生图',
+  terminal: '终端与编译诊断',
+  asset_studio: '抠图与生图工坊',
   settings: '系统设置',
 };
 
 const ALL_WINDOW_IDS: PanelId[] = [
-  'node_library',
   'explorer',
+  'node_library',
   'canvas',
   'stage',
   'inspector',
   'ts_code',
+  'yaml_code',
   'terminal',
   'ai_agent',
   'asset_studio',
@@ -70,34 +80,39 @@ const ACTIVITY_RAIL_ITEMS: {
   icon: React.ReactNode;
 }[] = [
   {
-    id: 'node_library',
-    label: '节点库与工程章节',
+    id: 'explorer',
+    label: '工程资源与章节',
     icon: <FolderTree className="w-4 h-4" strokeWidth={1.7} />,
   },
   {
+    id: 'node_library',
+    label: '彩色分类节点与积木库',
+    icon: <Blocks className="w-4 h-4" strokeWidth={1.7} />,
+  },
+  {
     id: 'canvas',
-    label: '节点画布',
+    label: 'Dify + Scratch 节点画布',
     icon: <Workflow className="w-4 h-4" strokeWidth={1.7} />,
   },
   {
     id: 'stage',
-    label: '场景舞台',
+    label: '场景舞台演播',
     icon: <MonitorPlay className="w-4 h-4" strokeWidth={1.7} />,
   },
   {
+    id: 'inspector',
+    label: '节点专属属性与积木检查器',
+    icon: <Sliders className="w-4 h-4" strokeWidth={1.7} />,
+  },
+  {
     id: 'ts_code',
-    label: '脚本编辑器 (JS/TS)',
+    label: '多语言脚本编译器',
     icon: <Code2 className="w-4 h-4" strokeWidth={1.7} />,
   },
   {
-    id: 'asset_studio',
-    label: '智能抠图与 AI 生图',
-    icon: <Wand2 className="w-4 h-4" strokeWidth={1.7} />,
-  },
-  {
-    id: 'ui_customizer',
-    label: '游戏界面定制',
-    icon: <Palette className="w-4 h-4" strokeWidth={1.7} />,
+    id: 'terminal',
+    label: '终端与编译诊断',
+    icon: <Terminal className="w-4 h-4" strokeWidth={1.7} />,
   },
   {
     id: 'ai_agent',
@@ -105,24 +120,16 @@ const ACTIVITY_RAIL_ITEMS: {
     icon: <Bot className="w-4 h-4" strokeWidth={1.7} />,
   },
   {
-    id: 'terminal',
-    label: '终端与 tsc 诊断',
-    icon: <TerminalIcon className="w-4 h-4" strokeWidth={1.7} />,
+    id: 'asset_studio',
+    label: '智能抠图与 AI 生图',
+    icon: <Scissors className="w-4 h-4" strokeWidth={1.7} />,
+  },
+  {
+    id: 'ui_customizer',
+    label: '游戏界面定制',
+    icon: <Palette className="w-4 h-4" strokeWidth={1.7} />,
   },
 ];
-
-export interface DockCell {
-  id: string;
-  tabs: PanelId[];
-  activeTab: PanelId;
-  heightRatio: number;
-}
-
-export interface DockColumn {
-  id: string;
-  widthRatio: number;
-  cells: DockCell[];
-}
 
 export interface FloatingWindowState {
   id: PanelId;
@@ -135,44 +142,206 @@ export interface FloatingWindowState {
 
 type DropZonePosition = 'top' | 'bottom' | 'left' | 'right' | 'center';
 
-const createDefaultColumns = (): DockColumn[] => [
-  {
-    id: 'col-left',
-    widthRatio: 19,
-    cells: [
-      {
-        id: 'cell-left',
-        tabs: ['node_library', 'explorer'],
-        activeTab: 'node_library',
-        heightRatio: 100,
-      },
-    ],
+// ============================================================================
+// True VS Code Recursive 2D Split Tree (`EditorSplitNode = Leaf | Branch`)
+// Supports arbitrary 2D layouts: [A | C] over [B | D], [A | C] over [B], etc.
+// ============================================================================
+export interface EditorGroupLeaf {
+  kind: 'leaf';
+  id: string;
+  tabs: PanelId[];
+  activeTab: PanelId;
+}
+
+export interface EditorSplitBranch {
+  kind: 'branch';
+  id: string;
+  direction: 'horizontal' | 'vertical';
+  ratio: number; // 0.15 .. 0.85
+  first: EditorSplitNode;
+  second: EditorSplitNode;
+}
+
+export type EditorSplitNode = EditorGroupLeaf | EditorSplitBranch;
+
+const createDefaultSplitTree = (): EditorSplitNode => ({
+  kind: 'branch',
+  id: 'root-h-1',
+  direction: 'horizontal',
+  ratio: 0.18,
+  first: {
+    kind: 'leaf',
+    id: 'leaf-left',
+    tabs: ['node_library', 'explorer'],
+    activeTab: 'node_library',
   },
-  {
-    id: 'col-center',
-    widthRatio: 55,
-    cells: [
-      {
-        id: 'cell-main',
-        tabs: ['canvas', 'stage', 'ts_code'],
+  second: {
+    kind: 'branch',
+    id: 'root-h-2',
+    direction: 'horizontal',
+    ratio: 0.67,
+    first: {
+      kind: 'branch',
+      id: 'center-v-1',
+      direction: 'vertical',
+      ratio: 0.72,
+      first: {
+        kind: 'leaf',
+        id: 'leaf-center-top',
+        tabs: ['canvas', 'stage', 'ts_code', 'yaml_code', 'ui_customizer', 'asset_studio'],
         activeTab: 'canvas',
-        heightRatio: 100,
       },
-    ],
-  },
-  {
-    id: 'col-right',
-    widthRatio: 26,
-    cells: [
-      {
-        id: 'cell-inspector',
-        tabs: ['inspector'],
-        activeTab: 'inspector',
-        heightRatio: 100,
+      second: {
+        kind: 'leaf',
+        id: 'leaf-center-bottom',
+        tabs: ['terminal'],
+        activeTab: 'terminal',
       },
-    ],
+    },
+    second: {
+      kind: 'leaf',
+      id: 'leaf-right',
+      tabs: ['inspector', 'ai_agent'],
+      activeTab: 'inspector',
+    },
   },
-];
+});
+
+function collectLeaves(node: EditorSplitNode | null): EditorGroupLeaf[] {
+  if (!node) return [];
+  if (node.kind === 'leaf') return [node];
+  return [...collectLeaves(node.first), ...collectLeaves(node.second)];
+}
+
+function removePanelFromSplitTree(
+  node: EditorSplitNode | null,
+  panelId: PanelId
+): EditorSplitNode | null {
+  if (!node) return null;
+  if (node.kind === 'leaf') {
+    if (!node.tabs.includes(panelId)) return node;
+    const remaining = node.tabs.filter((t) => t !== panelId);
+    if (remaining.length === 0) return null;
+    return {
+      ...node,
+      tabs: remaining,
+      activeTab: node.activeTab === panelId ? remaining[0] : node.activeTab,
+    };
+  }
+  const nextFirst = removePanelFromSplitTree(node.first, panelId);
+  const nextSecond = removePanelFromSplitTree(node.second, panelId);
+  if (!nextFirst && !nextSecond) return null;
+  if (!nextFirst) return nextSecond;
+  if (!nextSecond) return nextFirst;
+  return {
+    ...node,
+    first: nextFirst,
+    second: nextSecond,
+  };
+}
+
+function updateLeafInTree(
+  node: EditorSplitNode | null,
+  leafId: string,
+  updater: (leaf: EditorGroupLeaf) => EditorSplitNode | null
+): EditorSplitNode | null {
+  if (!node) return null;
+  if (node.kind === 'leaf') {
+    if (node.id === leafId) return updater(node);
+    return node;
+  }
+  const nextFirst = updateLeafInTree(node.first, leafId, updater);
+  const nextSecond = updateLeafInTree(node.second, leafId, updater);
+  if (!nextFirst && !nextSecond) return null;
+  if (!nextFirst) return nextSecond;
+  if (!nextSecond) return nextFirst;
+  return {
+    ...node,
+    first: nextFirst,
+    second: nextSecond,
+  };
+}
+
+function updateBranchRatioInTree(
+  node: EditorSplitNode | null,
+  branchId: string,
+  ratio: number
+): EditorSplitNode | null {
+  if (!node) return null;
+  if (node.kind === 'leaf') return node;
+  if (node.id === branchId) {
+    return { ...node, ratio: Math.max(0.14, Math.min(0.86, ratio)) };
+  }
+  return {
+    ...node,
+    first: updateBranchRatioInTree(node.first, branchId, ratio) || node.first,
+    second: updateBranchRatioInTree(node.second, branchId, ratio) || node.second,
+  };
+}
+
+function dockPanelIntoTree(
+  root: EditorSplitNode | null,
+  panelId: PanelId,
+  targetLeafId: string,
+  zone: DropZonePosition
+): EditorSplitNode {
+  const cleaned = removePanelFromSplitTree(root, panelId);
+  const leaves = collectLeaves(cleaned);
+  if (!cleaned || leaves.length === 0) {
+    return {
+      kind: 'leaf',
+      id: `leaf-${Date.now()}`,
+      tabs: [panelId],
+      activeTab: panelId,
+    };
+  }
+
+  const effectiveLeafId = leaves.some((l) => l.id === targetLeafId)
+    ? targetLeafId
+    : leaves[0].id;
+
+  const updated = updateLeafInTree(cleaned, effectiveLeafId, (leaf) => {
+    if (zone === 'center') {
+      const nextTabs = leaf.tabs.includes(panelId)
+        ? leaf.tabs
+        : [...leaf.tabs, panelId];
+      return {
+        ...leaf,
+        tabs: nextTabs,
+        activeTab: panelId,
+      };
+    }
+
+    const newLeaf: EditorGroupLeaf = {
+      kind: 'leaf',
+      id: `leaf-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+      tabs: [panelId],
+      activeTab: panelId,
+    };
+
+    const direction: 'horizontal' | 'vertical' =
+      zone === 'left' || zone === 'right' ? 'horizontal' : 'vertical';
+    const isFirst = zone === 'left' || zone === 'top';
+
+    return {
+      kind: 'branch',
+      id: `branch-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+      direction,
+      ratio: 0.5,
+      first: isFirst ? newLeaf : leaf,
+      second: isFirst ? leaf : newLeaf,
+    };
+  });
+
+  return (
+    updated || {
+      kind: 'leaf',
+      id: `leaf-${Date.now()}`,
+      tabs: [panelId],
+      activeTab: panelId,
+    }
+  );
+}
 
 export function App() {
   const {
@@ -213,6 +382,9 @@ export function App() {
     removeVisualBlock,
   } = useEditor();
 
+  // Dark / Light 2 UI Themes (`开发方案 2: 界面风格有黑和白2种风格`)
+  const [editorTheme, setEditorTheme] = useState<'dark' | 'light'>('dark');
+
   const updateProjectMeta = (patch: Partial<typeof project>) => {
     setProject((prev) => ({ ...prev, ...patch }));
   };
@@ -225,38 +397,43 @@ export function App() {
     setProject(proj);
   };
 
-  // ==================== 2D Grid Dock + Floating State ====================
-  const [columns, setColumns] = useState<DockColumn[]>(createDefaultColumns);
+  // ==================== Recursive 2D Split Tree + Floating State ====================
+  const [splitRoot, setSplitRoot] = useState<EditorSplitNode | null>(() =>
+    createDefaultSplitTree()
+  );
   const [floatingWindows, setFloatingWindows] = useState<FloatingWindowState[]>([]);
   const [topZ, setTopZ] = useState<number>(60);
 
-  const [draggingFloatingId, setDraggingFloatingId] = useState<PanelId | null>(null);
+  // Dragging state for seamless Dock <-> Float transitions
+  const [draggingFloatingId, setDraggingFloatingId] = useState<PanelId | null>(
+    null
+  );
   const [floatDragOffset, setFloatDragOffset] = useState({ x: 0, y: 0 });
   const [hoverDropTarget, setHoverDropTarget] = useState<{
-    colId: string;
-    cellId: string;
+    leafId: string;
     zone: DropZonePosition;
   } | null>(null);
 
+  // Pending drag on a docked tab (if dragged > 24px, smoothly detaches into Floating Window)
   const pendingTabDragRef = useRef<{
     panelId: PanelId;
     startX: number;
     startY: number;
   } | null>(null);
 
-  const resizingColRef = useRef<{
-    colIndex: number;
-    startX: number;
-    startLeftRatio: number;
-    startRightRatio: number;
+  // Branch Sash Resizing & Floating Window Corner Resizing
+  const resizingBranchRef = useRef<{
+    branchId: string;
+    direction: 'horizontal' | 'vertical';
+    rect: DOMRect;
   } | null>(null);
 
-  const resizingRowRef = useRef<{
-    colId: string;
-    cellIndex: number;
+  const resizingFloatRef = useRef<{
+    panelId: PanelId;
+    startX: number;
     startY: number;
-    startTopRatio: number;
-    startBottomRatio: number;
+    startW: number;
+    startH: number;
   } | null>(null);
 
   // Modals & Logs
@@ -265,227 +442,117 @@ export function App() {
   const [isLauncherOpen, setIsLauncherOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [runtimeLogs, setRuntimeLogs] = useState<string[]>([
-    `[${new Date().toLocaleTimeString().slice(0, 8)}] MooVN Engine 就绪：全局目录 /home/user/MooVN/MooVN_Workspace 已挂载`,
-    `[${new Date().toLocaleTimeString().slice(0, 8)}] 场景流加载器：预载 3 场景 / 卸载 5 场景前，PNG 免二次重压缩已开启`,
+    `[${new Date().toLocaleTimeString().slice(0, 8)}] MooVN Engine 初始化完成：已挂载 /home/user/MooVN/MooVN_Workspace 全局磁盘目录`,
+    `[${new Date().toLocaleTimeString().slice(0, 8)}] 流加载器就绪：提前解压 3 场景，经过 5 场景后自动释放旧场景内存，PNG 免二次重压缩已开启`,
   ]);
 
-  // Remove a panelId from all docked cells
-  const removePanelFromDock = (
-    cols: DockColumn[],
-    panelId: PanelId
-  ): DockColumn[] => {
-    return cols
-      .map((col) => {
-        const nextCells = col.cells
-          .map((cell) => {
-            if (!cell.tabs.includes(panelId)) return cell;
-            const remaining = cell.tabs.filter((t) => t !== panelId);
-            if (remaining.length === 0) return null;
-            return {
-              ...cell,
-              tabs: remaining,
-              activeTab:
-                cell.activeTab === panelId ? remaining[0] : cell.activeTab,
-            };
-          })
-          .filter((c): c is DockCell => c !== null);
-
-        if (nextCells.length === 0) return null;
-        return { ...col, cells: nextCells };
-      })
-      .filter((col): col is DockColumn => col !== null);
-  };
-
-  // Smoothly convert a docked panel directly into a Floating Window
+  // Convert a docked panel directly into a Floating Window
   const undockPanelToFloat = (
     panelId: PanelId,
-    clientX = 260,
-    clientY = 100,
+    clientX = 240,
+    clientY = 110,
     startDraggingImmediately = false
   ) => {
     const nextZ = topZ + 1;
     setTopZ(nextZ);
-    setColumns((prev) => removePanelFromDock(prev, panelId));
+    setSplitRoot((prev) => removePanelFromSplitTree(prev, panelId));
+
+    const defaultW =
+      panelId === 'canvas' || panelId === 'stage' ? 680 : 480;
+    const defaultH = panelId === 'terminal' ? 320 : 500;
+    const newX = Math.max(48, Math.min(window.innerWidth - 320, clientX - 120));
+    const newY = Math.max(42, Math.min(window.innerHeight - 180, clientY - 16));
+
     setFloatingWindows((prev) => {
-      const exists = prev.find((f) => f.id === panelId);
-      const win: FloatingWindowState = exists
-        ? {
-            ...exists,
-            x: Math.max(48, clientX - 150),
-            y: Math.max(40, clientY - 14),
-            zIndex: nextZ,
-          }
-        : {
-            id: panelId,
-            x: Math.max(48, clientX - 160),
-            y: Math.max(42, clientY - 14),
-            width:
-              panelId === 'ai_agent'
-                ? 440
-                : panelId === 'terminal'
-                ? 660
-                : 580,
-            height: panelId === 'terminal' ? 300 : 460,
-            zIndex: nextZ,
-          };
-      return [...prev.filter((f) => f.id !== panelId), win];
+      const exists = prev.find((w) => w.id === panelId);
+      if (exists) {
+        return prev.map((w) =>
+          w.id === panelId ? { ...w, x: newX, y: newY, zIndex: nextZ } : w
+        );
+      }
+      return [
+        ...prev,
+        {
+          id: panelId,
+          x: newX,
+          y: newY,
+          width: defaultW,
+          height: defaultH,
+          zIndex: nextZ,
+        },
+      ];
     });
 
     if (startDraggingImmediately) {
       setDraggingFloatingId(panelId);
-      setFloatDragOffset({ x: 160, y: 14 });
+      setFloatDragOffset({ x: 120, y: 16 });
     }
   };
 
-  // Dock a floating (or docked) panel into a target cell & zone in the 2D grid
+  // Dock a panel (from floating or anywhere) into a specific 2D Leaf & Zone
   const dockPanelIntoTarget = (
     panelId: PanelId,
-    targetColId: string,
-    targetCellId: string,
+    targetLeafId: string,
     zone: DropZonePosition
   ) => {
-    setFloatingWindows((prev) => prev.filter((f) => f.id !== panelId));
-
-    setColumns((prev) => {
-      const cleaned = removePanelFromDock(prev, panelId);
-      if (cleaned.length === 0) {
-        return [
-          {
-            id: `col-${Date.now()}`,
-            widthRatio: 100,
-            cells: [
-              {
-                id: `cell-${Date.now()}`,
-                tabs: [panelId],
-                activeTab: panelId,
-                heightRatio: 100,
-              },
-            ],
-          },
-        ];
-      }
-
-      if (zone === 'left' || zone === 'right') {
-        const colIdx = cleaned.findIndex((c) => c.id === targetColId);
-        const newCol: DockColumn = {
-          id: `col-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
-          widthRatio: 28,
-          cells: [
-            {
-              id: `cell-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
-              tabs: [panelId],
-              activeTab: panelId,
-              heightRatio: 100,
-            },
-          ],
-        };
-        const insertAt =
-          colIdx === -1
-            ? cleaned.length
-            : zone === 'left'
-            ? colIdx
-            : colIdx + 1;
-        const copy = [...cleaned];
-        copy.splice(insertAt, 0, newCol);
-        return copy;
-      }
-
-      return cleaned.map((col) => {
-        if (col.id !== targetColId) return col;
-
-        if (zone === 'center') {
-          return {
-            ...col,
-            cells: col.cells.map((cell) =>
-              cell.id === targetCellId
-                ? {
-                    ...cell,
-                    tabs: cell.tabs.includes(panelId)
-                      ? cell.tabs
-                      : [...cell.tabs, panelId],
-                    activeTab: panelId,
-                  }
-                : cell
-            ),
-          };
-        }
-
-        // 'top' or 'bottom': split vertically inside this column!
-        const cellIdx = col.cells.findIndex((c) => c.id === targetCellId);
-        const newCell: DockCell = {
-          id: `cell-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
-          tabs: [panelId],
-          activeTab: panelId,
-          heightRatio: 50,
-        };
-        const nextCells = [...col.cells];
-        const insertIdx =
-          cellIdx === -1
-            ? nextCells.length
-            : zone === 'top'
-            ? cellIdx
-            : cellIdx + 1;
-        nextCells.splice(insertIdx, 0, newCell);
-        return { ...col, cells: nextCells };
-      });
-    });
-  };
-
-  const handleToggleDockFloat = (panelId: PanelId) => {
-    const isFloating = floatingWindows.some((f) => f.id === panelId);
-    if (isFloating) {
-      const targetCol = columns[columns.length - 1] || columns[0];
-      const targetCell = targetCol?.cells[0];
-      if (targetCol && targetCell) {
-        dockPanelIntoTarget(panelId, targetCol.id, targetCell.id, 'center');
-      } else {
-        dockPanelIntoTarget(panelId, 'col-init', 'cell-init', 'center');
-      }
-    } else {
-      undockPanelToFloat(panelId, 280, 110, false);
-    }
+    setFloatingWindows((prev) => prev.filter((w) => w.id !== panelId));
+    setSplitRoot((prev) => dockPanelIntoTree(prev, panelId, targetLeafId, zone));
   };
 
   const handleOpenOrFocusWindow = (
     panelId: PanelId,
-    mode: 'dock' | 'float' = 'dock'
+    preferredMode: 'dock' | 'float' = 'dock'
   ) => {
-    if (mode === 'float') {
-      undockPanelToFloat(panelId, 280, 110, false);
+    if (preferredMode === 'float') {
+      undockPanelToFloat(panelId, 280, 120, false);
       return;
     }
 
-    const alreadyDocked = columns.some((col) =>
-      col.cells.some((c) => c.tabs.includes(panelId))
-    );
-    if (alreadyDocked) {
-      setColumns((prev) =>
-        prev.map((col) => ({
-          ...col,
-          cells: col.cells.map((cell) =>
-            cell.tabs.includes(panelId) ? { ...cell, activeTab: panelId } : cell
-          ),
+    // If floating, bring to front
+    const floating = floatingWindows.find((f) => f.id === panelId);
+    if (floating) {
+      const nextZ = topZ + 1;
+      setTopZ(nextZ);
+      setFloatingWindows((prev) =>
+        prev.map((w) => (w.id === panelId ? { ...w, zIndex: nextZ } : w))
+      );
+      return;
+    }
+
+    // If already docked in a leaf, activate its tab
+    const leaves = collectLeaves(splitRoot);
+    const foundLeaf = leaves.find((l) => l.tabs.includes(panelId));
+    if (foundLeaf) {
+      setSplitRoot((prev) =>
+        updateLeafInTree(prev, foundLeaf.id, (l) => ({
+          ...l,
+          activeTab: panelId,
         }))
       );
       return;
     }
 
-    const targetCol =
-      panelId === 'terminal'
-        ? columns[1] || columns[0]
-        : panelId === 'ai_agent' || panelId === 'inspector'
-        ? columns[columns.length - 1] || columns[0]
-        : columns[1] || columns[0];
-    const targetCell = targetCol?.cells[0];
-    if (targetCol && targetCell) {
+    // Otherwise dock into the best leaf
+    const targetLeafId = leaves[leaves.length - 1]?.id || 'leaf-init';
+    dockPanelIntoTarget(
+      panelId,
+      targetLeafId,
+      panelId === 'terminal' ? 'bottom' : 'center'
+    );
+  };
+
+  const handleToggleDockFloat = (panelId: PanelId) => {
+    const isFloating = floatingWindows.some((f) => f.id === panelId);
+    if (isFloating) {
+      const leaves = collectLeaves(splitRoot);
+      const targetLeafId = leaves[0]?.id || 'leaf-init';
       dockPanelIntoTarget(
         panelId,
-        targetCol.id,
-        targetCell.id,
+        targetLeafId,
         panelId === 'terminal' ? 'bottom' : 'center'
       );
     } else {
-      dockPanelIntoTarget(panelId, 'col-init', 'cell-init', 'center');
+      undockPanelToFloat(panelId, 260, 120, false);
     }
   };
 
@@ -494,170 +561,149 @@ export function App() {
   ) => {
     setFloatingWindows([]);
     if (preset === 'quad_2x2') {
-      setColumns([
-        {
-          id: 'col-q1',
-          widthRatio: 50,
-          cells: [
-            {
-              id: 'cell-a',
-              tabs: ['canvas', 'node_library'],
-              activeTab: 'canvas',
-              heightRatio: 55,
-            },
-            {
-              id: 'cell-b',
-              tabs: ['ts_code', 'terminal'],
-              activeTab: 'ts_code',
-              heightRatio: 45,
-            },
-          ],
+      // True 2D [A | C] over [B | D]
+      setSplitRoot({
+        kind: 'branch',
+        id: 'quad-v',
+        direction: 'vertical',
+        ratio: 0.54,
+        first: {
+          kind: 'branch',
+          id: 'quad-top-h',
+          direction: 'horizontal',
+          ratio: 0.52,
+          first: {
+            kind: 'leaf',
+            id: 'cell-a',
+            tabs: ['canvas', 'node_library'],
+            activeTab: 'canvas',
+          },
+          second: {
+            kind: 'leaf',
+            id: 'cell-c',
+            tabs: ['stage', 'asset_studio'],
+            activeTab: 'stage',
+          },
         },
-        {
-          id: 'col-q2',
-          widthRatio: 50,
-          cells: [
-            {
-              id: 'cell-c',
-              tabs: ['stage', 'asset_studio'],
-              activeTab: 'stage',
-              heightRatio: 55,
-            },
-            {
-              id: 'cell-d',
-              tabs: ['inspector', 'ai_agent'],
-              activeTab: 'inspector',
-              heightRatio: 45,
-            },
-          ],
+        second: {
+          kind: 'branch',
+          id: 'quad-bot-h',
+          direction: 'horizontal',
+          ratio: 0.52,
+          first: {
+            kind: 'leaf',
+            id: 'cell-b',
+            tabs: ['ts_code', 'terminal'],
+            activeTab: 'ts_code',
+          },
+          second: {
+            kind: 'leaf',
+            id: 'cell-d',
+            tabs: ['inspector', 'ai_agent'],
+            activeTab: 'inspector',
+          },
         },
-      ]);
+      });
     } else if (preset === 'multi_col_4') {
-      setColumns([
-        {
-          id: 'col-1',
-          widthRatio: 17,
-          cells: [
-            {
-              id: 'c-1',
-              tabs: ['node_library', 'explorer'],
-              activeTab: 'node_library',
-              heightRatio: 100,
-            },
-          ],
+      // [Col 1 | Col 2 | Col 3 | Col 4]
+      setSplitRoot({
+        kind: 'branch',
+        id: 'mc-1',
+        direction: 'horizontal',
+        ratio: 0.18,
+        first: {
+          kind: 'leaf',
+          id: 'c-1',
+          tabs: ['node_library', 'explorer'],
+          activeTab: 'node_library',
         },
-        {
-          id: 'col-2',
-          widthRatio: 33,
-          cells: [
-            {
-              id: 'c-2',
-              tabs: ['canvas'],
-              activeTab: 'canvas',
-              heightRatio: 100,
-            },
-          ],
-        },
-        {
-          id: 'col-3',
-          widthRatio: 28,
-          cells: [
-            {
-              id: 'c-3a',
-              tabs: ['stage', 'asset_studio'],
+        second: {
+          kind: 'branch',
+          id: 'mc-2',
+          direction: 'horizontal',
+          ratio: 0.42,
+          first: {
+            kind: 'leaf',
+            id: 'c-2',
+            tabs: ['canvas'],
+            activeTab: 'canvas',
+          },
+          second: {
+            kind: 'branch',
+            id: 'mc-3',
+            direction: 'horizontal',
+            ratio: 0.54,
+            first: {
+              kind: 'leaf',
+              id: 'c-3',
+              tabs: ['stage', 'terminal'],
               activeTab: 'stage',
-              heightRatio: 65,
             },
-            {
-              id: 'c-3b',
-              tabs: ['terminal'],
-              activeTab: 'terminal',
-              heightRatio: 35,
-            },
-          ],
-        },
-        {
-          id: 'col-4',
-          widthRatio: 22,
-          cells: [
-            {
+            second: {
+              kind: 'leaf',
               id: 'c-4',
               tabs: ['inspector', 'ai_agent'],
               activeTab: 'inspector',
-              heightRatio: 100,
             },
-          ],
+          },
         },
-      ]);
+      });
     } else if (preset === 'canvas_stage_terminal') {
-      setColumns([
-        {
-          id: 'col-left',
-          widthRatio: 48,
-          cells: [
-            {
-              id: 'c-top-l',
-              tabs: ['canvas', 'node_library'],
-              activeTab: 'canvas',
-              heightRatio: 68,
-            },
-            {
-              id: 'c-bot-l',
-              tabs: ['terminal'],
-              activeTab: 'terminal',
-              heightRatio: 32,
-            },
-          ],
-        },
-        {
-          id: 'col-mid',
-          widthRatio: 30,
-          cells: [
-            {
-              id: 'c-top-m',
-              tabs: ['stage', 'asset_studio'],
+      // Top row: [Canvas | Stage | Inspector], Bottom full-width row: [Terminal & TS Code]
+      setSplitRoot({
+        kind: 'branch',
+        id: 'cst-v',
+        direction: 'vertical',
+        ratio: 0.68,
+        first: {
+          kind: 'branch',
+          id: 'cst-top-1',
+          direction: 'horizontal',
+          ratio: 0.44,
+          first: {
+            kind: 'leaf',
+            id: 'cst-canvas',
+            tabs: ['canvas', 'node_library'],
+            activeTab: 'canvas',
+          },
+          second: {
+            kind: 'branch',
+            id: 'cst-top-2',
+            direction: 'horizontal',
+            ratio: 0.56,
+            first: {
+              kind: 'leaf',
+              id: 'cst-stage',
+              tabs: ['stage', 'ui_customizer'],
               activeTab: 'stage',
-              heightRatio: 68,
             },
-            {
-              id: 'c-bot-m',
-              tabs: ['ts_code'],
-              activeTab: 'ts_code',
-              heightRatio: 32,
-            },
-          ],
-        },
-        {
-          id: 'col-right',
-          widthRatio: 22,
-          cells: [
-            {
-              id: 'c-r1',
-              tabs: ['inspector'],
+            second: {
+              kind: 'leaf',
+              id: 'cst-insp',
+              tabs: ['inspector', 'ai_agent'],
               activeTab: 'inspector',
-              heightRatio: 55,
             },
-            {
-              id: 'c-r2',
-              tabs: ['ai_agent'],
-              activeTab: 'ai_agent',
-              heightRatio: 45,
-            },
-          ],
+          },
         },
-      ]);
+        second: {
+          kind: 'leaf',
+          id: 'cst-bottom-wide',
+          tabs: ['terminal', 'ts_code', 'yaml_code'],
+          activeTab: 'terminal',
+        },
+      });
     } else {
-      setColumns(createDefaultColumns());
+      setSplitRoot(createDefaultSplitTree());
     }
   };
 
-  // ==================== COORDINATE-BASED DRAG-TO-FLOAT & DRAG-TO-DOCK ====================
+  // ==================== CONFLICT-FREE DRAG-TO-FLOAT & DRAG-TO-DOCK ====================
   const handleGlobalMouseMove = (e: React.MouseEvent) => {
-    // 1. If dragging a docked tab out (> 22px), smoothly detach it into a Floating Window!
+    // 1. Dragging a docked tab out (> 24px) smoothly detaches it into a Floating Window!
     if (pendingTabDragRef.current) {
       const dx = Math.abs(e.clientX - pendingTabDragRef.current.startX);
       const dy = Math.abs(e.clientY - pendingTabDragRef.current.startY);
-      if (dx > 22 || dy > 22) {
+      if (dx > 24 || dy > 24) {
         const pid = pendingTabDragRef.current.panelId;
         pendingTabDragRef.current = null;
         undockPanelToFloat(pid, e.clientX, e.clientY, true);
@@ -665,7 +711,7 @@ export function App() {
       }
     }
 
-    // 2. If dragging a Floating Window, update its position AND hit-test [data-dock-zone] elements via getBoundingClientRect()
+    // 2. Dragging a Floating Window: moves freely in open space; ONLY triggers hoverDropTarget when over a compact [data-dock-zone] button or tab header!
     if (draggingFloatingId) {
       setFloatingWindows((prev) =>
         prev.map((w) =>
@@ -673,17 +719,15 @@ export function App() {
             ? {
                 ...w,
                 x: Math.max(42, e.clientX - floatDragOffset.x),
-                y: Math.max(38, e.clientY - floatDragOffset.y),
+                y: Math.max(36, e.clientY - floatDragOffset.y),
               }
             : w
         )
       );
 
-      // Hit-test all [data-dock-zone] elements directly by screen coordinates (never blocked by the floating window!)
       const zoneElements = document.querySelectorAll('[data-dock-zone]');
       let matched: {
-        colId: string;
-        cellId: string;
+        leafId: string;
         zone: DropZonePosition;
       } | null = null;
 
@@ -695,81 +739,60 @@ export function App() {
           e.clientY >= rect.top &&
           e.clientY <= rect.bottom
         ) {
-          const colId = el.getAttribute('data-dock-col') || '';
-          const cellId = el.getAttribute('data-dock-cell') || '';
+          const leafId = el.getAttribute('data-dock-leaf') || '';
           const zone = (el.getAttribute('data-dock-zone') ||
             'center') as DropZonePosition;
-          if (colId && cellId) {
-            matched = { colId, cellId, zone };
+          if (leafId) {
+            matched = { leafId, zone };
           }
         }
       });
 
       setHoverDropTarget(matched);
+      return;
     }
 
-    // 3. Column horizontal resize
-    if (resizingColRef.current) {
-      const { colIndex, startX, startLeftRatio, startRightRatio } =
-        resizingColRef.current;
-      const deltaPercent = ((e.clientX - startX) / window.innerWidth) * 100;
-      const newLeft = Math.max(12, Math.min(75, startLeftRatio + deltaPercent));
-      const newRight = Math.max(
-        12,
-        Math.min(75, startRightRatio - deltaPercent)
-      );
-      setColumns((prev) =>
-        prev.map((col, idx) =>
-          idx === colIndex
-            ? { ...col, widthRatio: newLeft }
-            : idx === colIndex + 1
-            ? { ...col, widthRatio: newRight }
-            : col
-        )
-      );
-    }
-
-    // 4. Row vertical resize inside a column
-    if (resizingRowRef.current) {
-      const { colId, cellIndex, startY, startTopRatio, startBottomRatio } =
-        resizingRowRef.current;
-      const deltaPercent =
-        ((e.clientY - startY) / (window.innerHeight - 66)) * 100;
-      const newTop = Math.max(15, Math.min(85, startTopRatio + deltaPercent));
-      const newBottom = Math.max(
-        15,
-        Math.min(85, startBottomRatio - deltaPercent)
-      );
-      setColumns((prev) =>
-        prev.map((col) =>
-          col.id !== colId
-            ? col
-            : {
-                ...col,
-                cells: col.cells.map((cell, idx) =>
-                  idx === cellIndex
-                    ? { ...cell, heightRatio: newTop }
-                    : idx === cellIndex + 1
-                    ? { ...cell, heightRatio: newBottom }
-                    : cell
-                ),
+    // 3. Resizing a Floating Window from bottom-right corner
+    if (resizingFloatRef.current) {
+      const { panelId, startX, startY, startW, startH } =
+        resizingFloatRef.current;
+      const dw = e.clientX - startX;
+      const dh = e.clientY - startY;
+      setFloatingWindows((prev) =>
+        prev.map((w) =>
+          w.id === panelId
+            ? {
+                ...w,
+                width: Math.max(280, startW + dw),
+                height: Math.max(200, startH + dh),
               }
+            : w
         )
       );
+      return;
+    }
+
+    // 4. Resizing a 2D Split Branch Sash
+    if (resizingBranchRef.current) {
+      const { branchId, direction, rect } = resizingBranchRef.current;
+      const ratio =
+        direction === 'horizontal'
+          ? (e.clientX - rect.left) / Math.max(1, rect.width)
+          : (e.clientY - rect.top) / Math.max(1, rect.height);
+      setSplitRoot((prev) => updateBranchRatioInTree(prev, branchId, ratio));
     }
   };
 
   const handleGlobalMouseUp = () => {
     pendingTabDragRef.current = null;
-    resizingColRef.current = null;
-    resizingRowRef.current = null;
+    resizingBranchRef.current = null;
+    resizingFloatRef.current = null;
 
     if (draggingFloatingId) {
       if (hoverDropTarget) {
         dockPanelIntoTarget(
           draggingFloatingId,
-          hoverDropTarget.colId,
-          hoverDropTarget.cellId,
+          hoverDropTarget.leafId,
           hoverDropTarget.zone
         );
       }
@@ -984,26 +1007,331 @@ export function App() {
     }
   };
 
+  // Render an Editor Group Leaf (`EditorGroupLeaf`)
+  const renderEditorGroupLeaf = (leaf: EditorGroupLeaf) => {
+    const activePanel = leaf.tabs.includes(leaf.activeTab)
+      ? leaf.activeTab
+      : leaf.tabs[0] || 'canvas';
+    const isLeafHovered = hoverDropTarget?.leafId === leaf.id;
+
+    return (
+      <div
+        key={leaf.id}
+        className="relative flex flex-col w-full h-full min-w-0 min-h-0 overflow-hidden bg-[#141417] border-r border-b border-[#242429]"
+      >
+        {/* Docked Group Tab Header (also acts as a 'center' merge drop zone!) */}
+        <div
+          data-dock-leaf={leaf.id}
+          data-dock-zone="center"
+          className={`h-7 bg-[#18181c] border-b px-1.5 flex items-center justify-between shrink-0 transition-colors ${
+            isLeafHovered && hoverDropTarget?.zone === 'center'
+              ? 'border-sky-400 bg-sky-500/15'
+              : 'border-[#27272c]'
+          }`}
+        >
+          <div className="flex items-center gap-0.5 overflow-x-auto no-scrollbar min-w-0 flex-1">
+            {leaf.tabs.map((tabId) => {
+              const isActive = tabId === activePanel;
+              return (
+                <div
+                  key={tabId}
+                  onMouseDown={(e) => {
+                    if ((e.target as HTMLElement).closest('button')) return;
+                    setSplitRoot((prev) =>
+                      updateLeafInTree(prev, leaf.id, (l) => ({
+                        ...l,
+                        activeTab: tabId,
+                      }))
+                    );
+                    pendingTabDragRef.current = {
+                      panelId: tabId,
+                      startX: e.clientX,
+                      startY: e.clientY,
+                    };
+                  }}
+                  title="点击切换标签 · 按住向外拖拽(>24px)可直接脱离为漂浮窗口"
+                  className={`group flex items-center gap-1.5 px-2.5 py-1 rounded-t text-[11px] cursor-grab active:cursor-grabbing transition shrink-0 ${
+                    isActive
+                      ? 'bg-[#141417] text-zinc-100 font-medium border-t-2 border-t-sky-400 border-x border-x-[#2b2b33]'
+                      : 'text-zinc-500 hover:text-zinc-300'
+                  }`}
+                >
+                  <span className="truncate max-w-[115px]">
+                    {PANEL_TITLES[tabId]}
+                  </span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const rect = (
+                        e.currentTarget as HTMLElement
+                      ).getBoundingClientRect();
+                      undockPanelToFloat(
+                        tabId,
+                        rect.left,
+                        rect.bottom + 12,
+                        false
+                      );
+                    }}
+                    className="opacity-0 group-hover:opacity-100 hover:text-sky-300 transition"
+                    title="弹出为漂浮窗口"
+                  >
+                    <ExternalLink className="w-2.5 h-2.5" strokeWidth={1.8} />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSplitRoot((prev) =>
+                        removePanelFromSplitTree(prev, tabId)
+                      );
+                    }}
+                    className="opacity-0 group-hover:opacity-100 hover:text-rose-400 transition"
+                    title="关闭此标签页"
+                  >
+                    <X className="w-2.5 h-2.5" strokeWidth={1.8} />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Split Down / Split Right / Undock-to-Float Buttons */}
+          <div className="flex items-center gap-0.5 shrink-0 pl-1">
+            <button
+              onClick={() => {
+                const candidate: PanelId =
+                  leaf.tabs.length > 1
+                    ? activePanel
+                    : activePanel === 'canvas'
+                    ? 'terminal'
+                    : activePanel === 'stage'
+                    ? 'ts_code'
+                    : 'ai_agent';
+                dockPanelIntoTarget(candidate, leaf.id, 'bottom');
+              }}
+              className="icon-btn !w-5 !h-5"
+              title="向下拆分新行 (在此窗格下方分栏)"
+            >
+              <SplitSquareVertical className="w-3 h-3" strokeWidth={1.6} />
+            </button>
+
+            <button
+              onClick={() => {
+                const candidate: PanelId =
+                  leaf.tabs.length > 1
+                    ? activePanel
+                    : activePanel === 'canvas'
+                    ? 'stage'
+                    : 'ai_agent';
+                dockPanelIntoTarget(candidate, leaf.id, 'right');
+              }}
+              className="icon-btn !w-5 !h-5"
+              title="向右拆分新列 (在此窗格右侧分栏)"
+            >
+              <SplitSquareHorizontal className="w-3 h-3" strokeWidth={1.6} />
+            </button>
+
+            <button
+              onClick={(e) => {
+                const rect = (
+                  e.currentTarget as HTMLElement
+                ).getBoundingClientRect();
+                undockPanelToFloat(
+                  activePanel,
+                  rect.left,
+                  rect.bottom + 12,
+                  false
+                );
+              }}
+              className="icon-btn !w-5 !h-5"
+              title="切换当前窗口为自由漂浮窗"
+            >
+              <ExternalLink className="w-3 h-3" strokeWidth={1.6} />
+            </button>
+          </div>
+        </div>
+
+        {/* Active Panel Body */}
+        <div className="flex-1 overflow-hidden relative">
+          {renderPanelContent(activePanel)}
+
+          {/* ====================================================================
+              VS CODE COMPACT 5-WAY DOCK COMPASS OVERLAY
+              Moving a floating window in open space NEVER accidentally docks!
+              Only dropping onto one of the 5 central compass buttons or the Tab Header docks!
+             ==================================================================== */}
+          {draggingFloatingId && (
+            <div className="absolute inset-0 z-50 pointer-events-none flex items-center justify-center">
+              {/* Glowing Blue Snap Preview showing exact 2D split area */}
+              {isLeafHovered && hoverDropTarget && (
+                <div
+                  className={`absolute bg-sky-500/20 border-2 border-sky-400 rounded transition-all duration-75 ${
+                    hoverDropTarget.zone === 'top'
+                      ? 'top-1 left-1 right-1 h-1/2'
+                      : hoverDropTarget.zone === 'bottom'
+                      ? 'bottom-1 left-1 right-1 h-1/2'
+                      : hoverDropTarget.zone === 'left'
+                      ? 'top-1 bottom-1 left-1 w-1/2'
+                      : hoverDropTarget.zone === 'right'
+                      ? 'top-1 bottom-1 right-1 w-1/2'
+                      : 'inset-1'
+                  }`}
+                />
+              )}
+
+              {/* Compact 112x112 Central 5-Way Dock Compass */}
+              <div className="grid grid-cols-3 gap-1.5 p-2 rounded-xl bg-[#111116]/95 border border-zinc-500/80 shadow-2xl backdrop-blur-md">
+                <div />
+                <div
+                  data-dock-leaf={leaf.id}
+                  data-dock-zone="top"
+                  className={`w-8 h-8 rounded-lg border flex items-center justify-center transition ${
+                    isLeafHovered && hoverDropTarget?.zone === 'top'
+                      ? 'bg-sky-500 border-white text-zinc-950 scale-110 shadow-lg'
+                      : 'bg-[#202028] border-zinc-600 text-zinc-200'
+                  }`}
+                  title="停靠到此分栏上方行"
+                >
+                  <ArrowUp className="w-4 h-4" />
+                </div>
+                <div />
+
+                <div
+                  data-dock-leaf={leaf.id}
+                  data-dock-zone="left"
+                  className={`w-8 h-8 rounded-lg border flex items-center justify-center transition ${
+                    isLeafHovered && hoverDropTarget?.zone === 'left'
+                      ? 'bg-sky-500 border-white text-zinc-950 scale-110 shadow-lg'
+                      : 'bg-[#202028] border-zinc-600 text-zinc-200'
+                  }`}
+                  title="停靠到此分栏左侧列"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                </div>
+
+                <div
+                  data-dock-leaf={leaf.id}
+                  data-dock-zone="center"
+                  className={`w-8 h-8 rounded-lg border flex items-center justify-center transition ${
+                    isLeafHovered && hoverDropTarget?.zone === 'center'
+                      ? 'bg-emerald-400 border-white text-zinc-950 scale-110 shadow-lg'
+                      : 'bg-[#202028] border-zinc-600 text-zinc-200'
+                  }`}
+                  title="合并到此分栏标签页"
+                >
+                  <CircleDot className="w-4 h-4" />
+                </div>
+
+                <div
+                  data-dock-leaf={leaf.id}
+                  data-dock-zone="right"
+                  className={`w-8 h-8 rounded-lg border flex items-center justify-center transition ${
+                    isLeafHovered && hoverDropTarget?.zone === 'right'
+                      ? 'bg-sky-500 border-white text-zinc-950 scale-110 shadow-lg'
+                      : 'bg-[#202028] border-zinc-600 text-zinc-200'
+                  }`}
+                  title="停靠到此分栏右侧列"
+                >
+                  <ArrowRight className="w-4 h-4" />
+                </div>
+
+                <div />
+                <div
+                  data-dock-leaf={leaf.id}
+                  data-dock-zone="bottom"
+                  className={`w-8 h-8 rounded-lg border flex items-center justify-center transition ${
+                    isLeafHovered && hoverDropTarget?.zone === 'bottom'
+                      ? 'bg-sky-500 border-white text-zinc-950 scale-110 shadow-lg'
+                      : 'bg-[#202028] border-zinc-600 text-zinc-200'
+                  }`}
+                  title="停靠到此分栏下方行"
+                >
+                  <ArrowDown className="w-4 h-4" />
+                </div>
+                <div />
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  // Recursive 2D Split Tree Renderer
+  const renderSplitTree = (node: EditorSplitNode | null): React.ReactNode => {
+    if (!node) return null;
+    if (node.kind === 'leaf') {
+      return renderEditorGroupLeaf(node);
+    }
+
+    const isHorizontal = node.direction === 'horizontal';
+    const firstPct = `${(node.ratio * 100).toFixed(1)}%`;
+    const secondPct = `${((1 - node.ratio) * 100).toFixed(1)}%`;
+
+    return (
+      <div
+        key={node.id}
+        className={`flex ${
+          isHorizontal ? 'flex-row' : 'flex-col'
+        } w-full h-full min-w-0 min-h-0 overflow-hidden`}
+      >
+        <div
+          style={isHorizontal ? { width: firstPct } : { height: firstPct }}
+          className="min-w-0 min-h-0 overflow-hidden flex"
+        >
+          {renderSplitTree(node.first)}
+        </div>
+
+        {/* Interactive Draggable Sash */}
+        <div
+          onMouseDown={(e) => {
+            e.preventDefault();
+            const parent = e.currentTarget.parentElement;
+            if (!parent) return;
+            resizingBranchRef.current = {
+              branchId: node.id,
+              direction: node.direction,
+              rect: parent.getBoundingClientRect(),
+            };
+          }}
+          className={`${
+            isHorizontal
+              ? 'w-1 cursor-col-resize hover:bg-sky-500/60'
+              : 'h-1 cursor-row-resize hover:bg-sky-500/60'
+          } bg-[#1b1b20] shrink-0 transition z-20`}
+        />
+
+        <div
+          style={isHorizontal ? { width: secondPct } : { height: secondPct }}
+          className="min-w-0 min-h-0 overflow-hidden flex"
+        >
+          {renderSplitTree(node.second)}
+        </div>
+      </div>
+    );
+  };
+
+  const allLeaves = collectLeaves(splitRoot);
+
   const panelDescriptors: WindowPanelDescriptor[] = ALL_WINDOW_IDS.map(
     (id) => ({
       id,
       title: PANEL_TITLES[id],
-      docked: columns.some((col) =>
-        col.cells.some((c) => c.tabs.includes(id))
-      ),
+      docked: allLeaves.some((l) => l.tabs.includes(id)),
       floating: floatingWindows.some((f) => f.id === id),
     })
   );
 
   const isPanelActiveAnywhere = (id: PanelId) =>
-    columns.some((col) => col.cells.some((c) => c.activeTab === id)) ||
+    allLeaves.some((l) => l.activeTab === id) ||
     floatingWindows.some((f) => f.id === id);
 
   return (
     <div
       onMouseMove={handleGlobalMouseMove}
       onMouseUp={handleGlobalMouseUp}
-      className="h-screen w-screen flex flex-col bg-[#111113] text-zinc-200 overflow-hidden select-none"
+      className={`h-screen w-screen flex flex-col bg-[#111113] text-zinc-200 overflow-hidden select-none ${
+        editorTheme === 'light' ? 'theme-light' : ''
+      }`}
     >
       {/* Clean Top Studio MenuBar */}
       <MenuBar
@@ -1016,7 +1344,7 @@ export function App() {
         onToggleDockFloat={handleToggleDockFloat}
         onApplyLayoutPreset={handleApplyLayoutPreset}
         onResetLayout={() => {
-          setColumns(createDefaultColumns());
+          setSplitRoot(createDefaultSplitTree());
           setFloatingWindows([]);
         }}
         onPlayPreview={() => setIsPlayingPreview(true)}
@@ -1024,7 +1352,7 @@ export function App() {
         onOpenProjectLauncher={() => setIsLauncherOpen(true)}
       />
 
-      {/* Main Body: VS Code Left Activity Rail + 2D Multi-Row/Multi-Column Dock Grid */}
+      {/* Main Body: VS Code Left Activity Rail + Recursive 2D Multi-Row/Multi-Column Dock Grid */}
       <div className="flex-1 flex overflow-hidden relative">
         {/* ==================== VS CODE LEFT ACTIVITY RAIL (40px) ==================== */}
         <aside className="w-10 bg-[#141417] border-r border-[#27272c] flex flex-col items-center justify-between py-2 shrink-0 z-40">
@@ -1047,7 +1375,7 @@ export function App() {
                   }`}
                 >
                   {active && (
-                    <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 bg-zinc-100 rounded-r" />
+                    <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 bg-sky-400 rounded-r" />
                   )}
                   {item.icon}
                 </button>
@@ -1056,6 +1384,25 @@ export function App() {
           </div>
 
           <div className="flex flex-col items-center gap-1.5">
+            {/* Dark / Light 2 Themes Toggle (`开发方案 2: 界面风格有黑和白2种风格`) */}
+            <button
+              onClick={() =>
+                setEditorTheme((t) => (t === 'dark' ? 'light' : 'dark'))
+              }
+              title={
+                editorTheme === 'dark'
+                  ? '切换为浅色(白)界面风格'
+                  : '切换为深色(黑)界面风格'
+              }
+              className="w-8 h-8 rounded flex items-center justify-center text-zinc-400 hover:text-zinc-100 hover:bg-[#1d1d23] transition"
+            >
+              {editorTheme === 'dark' ? (
+                <Sun className="w-4 h-4 text-amber-300" strokeWidth={1.7} />
+              ) : (
+                <Moon className="w-4 h-4 text-sky-400" strokeWidth={1.7} />
+              )}
+            </button>
+
             <button
               onClick={() => setIsSettingsOpen(true)}
               title="系统与全局目录设置"
@@ -1066,319 +1413,19 @@ export function App() {
           </div>
         </aside>
 
-        {/* ==================== 2D MULTI-COLUMN & MULTI-ROW DOCK WORKBENCH ==================== */}
+        {/* ==================== 2D RECURSIVE MULTI-ROW & MULTI-COLUMN DOCK WORKBENCH ==================== */}
         <div className="flex-1 flex overflow-hidden relative">
-          {columns.length === 0 && (
+          {!splitRoot || allLeaves.length === 0 ? (
             <div
-              data-dock-col="col-empty"
-              data-dock-cell="cell-empty"
+              data-dock-leaf="leaf-empty"
               data-dock-zone="center"
               className="flex-1 flex items-center justify-center text-zinc-500 text-xs"
             >
               拖入任意漂浮窗口至此区域即可恢复停靠，或点击左侧图标栏打开窗口
             </div>
+          ) : (
+            renderSplitTree(splitRoot)
           )}
-
-          {columns.map((col, colIndex) => {
-            const totalWidth =
-              columns.reduce((s, c) => s + c.widthRatio, 0) || 100;
-            const colWidthPercent = (col.widthRatio / totalWidth) * 100;
-            const totalCellHeight =
-              col.cells.reduce((s, c) => s + c.heightRatio, 0) || 100;
-
-            return (
-              <React.Fragment key={col.id}>
-                <div
-                  style={{ width: `${colWidthPercent}%` }}
-                  className="h-full flex flex-col overflow-hidden"
-                >
-                  {col.cells.map((cell, cellIndex) => {
-                    const cellHeightPercent =
-                      (cell.heightRatio / totalCellHeight) * 100;
-                    const activePanel = cell.activeTab;
-                    const isCellHovered = hoverDropTarget?.cellId === cell.id;
-
-                    return (
-                      <React.Fragment key={cell.id}>
-                        <div
-                          style={{ height: `${cellHeightPercent}%` }}
-                          className="relative flex flex-col overflow-hidden bg-[#141417] border-r border-b border-[#242429]"
-                        >
-                          {/* Docked Cell Tab Header (also acts as a 'center' merge drop zone!) */}
-                          <div
-                            data-dock-col={col.id}
-                            data-dock-cell={cell.id}
-                            data-dock-zone="center"
-                            className="h-7 bg-[#18181c] border-b border-[#27272c] px-1.5 flex items-center justify-between shrink-0"
-                          >
-                            <div className="flex items-center gap-0.5 overflow-x-auto no-scrollbar">
-                              {cell.tabs.map((tabId) => {
-                                const isActive = tabId === activePanel;
-                                return (
-                                  <div
-                                    key={tabId}
-                                    onMouseDown={(e) => {
-                                      setColumns((prev) =>
-                                        prev.map((c) =>
-                                          c.id !== col.id
-                                            ? c
-                                            : {
-                                                ...c,
-                                                cells: c.cells.map((ce) =>
-                                                  ce.id === cell.id
-                                                    ? { ...ce, activeTab: tabId }
-                                                    : ce
-                                                ),
-                                              }
-                                        )
-                                      );
-                                      pendingTabDragRef.current = {
-                                        panelId: tabId,
-                                        startX: e.clientX,
-                                        startY: e.clientY,
-                                      };
-                                    }}
-                                    title="按住向窗外拖拽可直接脱离为漂浮窗口"
-                                    className={`group flex items-center gap-1.5 px-2.5 py-1 rounded-t text-[11px] cursor-grab active:cursor-grabbing transition ${
-                                      isActive
-                                        ? 'bg-[#141417] text-zinc-100 font-medium border-t border-x border-[#2b2b33]'
-                                        : 'text-zinc-500 hover:text-zinc-300'
-                                    }`}
-                                  >
-                                    <span className="truncate max-w-[110px]">
-                                      {PANEL_TITLES[tabId]}
-                                    </span>
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setColumns((prev) =>
-                                          removePanelFromDock(prev, tabId)
-                                        );
-                                      }}
-                                      className="opacity-0 group-hover:opacity-100 hover:text-rose-400 transition"
-                                      title="关闭此标签页"
-                                    >
-                                      <X className="w-2.5 h-2.5" strokeWidth={1.8} />
-                                    </button>
-                                  </div>
-                                );
-                              })}
-                            </div>
-
-                            {/* Split Down / Split Right / Undock-to-Float Buttons */}
-                            <div className="flex items-center gap-0.5 shrink-0">
-                              <button
-                                onClick={() => {
-                                  const candidate: PanelId =
-                                    activePanel === 'canvas'
-                                      ? 'terminal'
-                                      : activePanel === 'stage'
-                                      ? 'ts_code'
-                                      : 'ai_agent';
-                                  dockPanelIntoTarget(
-                                    candidate,
-                                    col.id,
-                                    cell.id,
-                                    'bottom'
-                                  );
-                                }}
-                                className="icon-btn !w-5 !h-5"
-                                title="向下分栏 (在此列下方新增一行窗口)"
-                              >
-                                <SplitSquareVertical
-                                  className="w-3 h-3"
-                                  strokeWidth={1.6}
-                                />
-                              </button>
-
-                              <button
-                                onClick={() => {
-                                  const candidate: PanelId =
-                                    activePanel === 'canvas'
-                                      ? 'stage'
-                                      : 'ai_agent';
-                                  dockPanelIntoTarget(
-                                    candidate,
-                                    col.id,
-                                    cell.id,
-                                    'right'
-                                  );
-                                }}
-                                className="icon-btn !w-5 !h-5"
-                                title="向右分栏 (在右侧新增一列窗口)"
-                              >
-                                <SplitSquareHorizontal
-                                  className="w-3 h-3"
-                                  strokeWidth={1.6}
-                                />
-                              </button>
-
-                              <button
-                                onClick={(e) => {
-                                  const rect = (
-                                    e.currentTarget as HTMLElement
-                                  ).getBoundingClientRect();
-                                  undockPanelToFloat(
-                                    activePanel,
-                                    rect.left,
-                                    rect.bottom + 12,
-                                    false
-                                  );
-                                }}
-                                className="icon-btn !w-5 !h-5"
-                                title="切换为漂浮窗口"
-                              >
-                                <ExternalLink
-                                  className="w-3 h-3"
-                                  strokeWidth={1.6}
-                                />
-                              </button>
-                            </div>
-                          </div>
-
-                          {/* Active Panel Body */}
-                          <div className="flex-1 overflow-hidden relative">
-                            {renderPanelContent(activePanel)}
-
-                            {/* ==================== VS CODE 5-ZONE DOCK TARGET COMPASS & SNAP PREVIEW ==================== */}
-                            {draggingFloatingId && (
-                              <div className="absolute inset-0 z-50 pointer-events-none">
-                                {/* Glowing Blue Snap Preview showing exact area where window will dock */}
-                                {isCellHovered && (
-                                  <div
-                                    className={`absolute bg-sky-500/25 border-2 border-sky-400 rounded transition-all duration-75 ${
-                                      hoverDropTarget?.zone === 'top'
-                                        ? 'top-0 left-0 right-0 h-1/2'
-                                        : hoverDropTarget?.zone === 'bottom'
-                                        ? 'bottom-0 left-0 right-0 h-1/2'
-                                        : hoverDropTarget?.zone === 'left'
-                                        ? 'top-0 bottom-0 left-0 w-1/2'
-                                        : hoverDropTarget?.zone === 'right'
-                                        ? 'top-0 bottom-0 right-0 w-1/2'
-                                        : 'inset-0'
-                                    }`}
-                                  />
-                                )}
-
-                                {/* 5 Hit-Test Dock Zones (evaluated via getBoundingClientRect in handleGlobalMouseMove) */}
-                                <div className="absolute inset-0 grid grid-cols-3 grid-rows-3 p-4 gap-2">
-                                  <div />
-                                  <div
-                                    data-dock-col={col.id}
-                                    data-dock-cell={cell.id}
-                                    data-dock-zone="top"
-                                    className={`rounded-lg border-2 border-dashed flex items-center justify-center text-xs font-semibold transition ${
-                                      isCellHovered &&
-                                      hoverDropTarget?.zone === 'top'
-                                        ? 'bg-sky-500/45 border-sky-200 text-white scale-105 shadow-lg'
-                                        : 'bg-zinc-950/70 border-zinc-500/70 text-zinc-200'
-                                    }`}
-                                  >
-                                    ↑ 停靠到上方行
-                                  </div>
-                                  <div />
-
-                                  <div
-                                    data-dock-col={col.id}
-                                    data-dock-cell={cell.id}
-                                    data-dock-zone="left"
-                                    className={`rounded-lg border-2 border-dashed flex items-center justify-center text-xs font-semibold transition ${
-                                      isCellHovered &&
-                                      hoverDropTarget?.zone === 'left'
-                                        ? 'bg-sky-500/45 border-sky-200 text-white scale-105 shadow-lg'
-                                        : 'bg-zinc-950/70 border-zinc-500/70 text-zinc-200'
-                                    }`}
-                                  >
-                                    ← 停靠为左列
-                                  </div>
-
-                                  <div
-                                    data-dock-col={col.id}
-                                    data-dock-cell={cell.id}
-                                    data-dock-zone="center"
-                                    className={`rounded-lg border-2 border-dashed flex items-center justify-center text-xs font-semibold transition ${
-                                      isCellHovered &&
-                                      hoverDropTarget?.zone === 'center'
-                                        ? 'bg-emerald-500/45 border-emerald-200 text-white scale-105 shadow-lg'
-                                        : 'bg-zinc-950/70 border-zinc-500/70 text-zinc-200'
-                                    }`}
-                                  >
-                                    ● 合并到此标签
-                                  </div>
-
-                                  <div
-                                    data-dock-col={col.id}
-                                    data-dock-cell={cell.id}
-                                    data-dock-zone="right"
-                                    className={`rounded-lg border-2 border-dashed flex items-center justify-center text-xs font-semibold transition ${
-                                      isCellHovered &&
-                                      hoverDropTarget?.zone === 'right'
-                                        ? 'bg-sky-500/45 border-sky-200 text-white scale-105 shadow-lg'
-                                        : 'bg-zinc-950/70 border-zinc-500/70 text-zinc-200'
-                                    }`}
-                                  >
-                                    → 停靠为右列
-                                  </div>
-
-                                  <div />
-                                  <div
-                                    data-dock-col={col.id}
-                                    data-dock-cell={cell.id}
-                                    data-dock-zone="bottom"
-                                    className={`rounded-lg border-2 border-dashed flex items-center justify-center text-xs font-semibold transition ${
-                                      isCellHovered &&
-                                      hoverDropTarget?.zone === 'bottom'
-                                        ? 'bg-sky-500/45 border-sky-200 text-white scale-105 shadow-lg'
-                                        : 'bg-zinc-950/70 border-zinc-500/70 text-zinc-200'
-                                    }`}
-                                  >
-                                    ↓ 停靠到下方行
-                                  </div>
-                                  <div />
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Vertical Row Resizer inside Column */}
-                        {cellIndex < col.cells.length - 1 && (
-                          <div
-                            onMouseDown={(e) => {
-                              resizingRowRef.current = {
-                                colId: col.id,
-                                cellIndex,
-                                startY: e.clientY,
-                                startTopRatio: cell.heightRatio,
-                                startBottomRatio:
-                                  col.cells[cellIndex + 1].heightRatio,
-                              };
-                            }}
-                            className="h-1 bg-[#1b1b20] hover:bg-sky-500/60 cursor-row-resize shrink-0 transition"
-                          />
-                        )}
-                      </React.Fragment>
-                    );
-                  })}
-                </div>
-
-                {/* Horizontal Column Resizer */}
-                {colIndex < columns.length - 1 && (
-                  <div
-                    onMouseDown={(e) => {
-                      resizingColRef.current = {
-                        colIndex,
-                        startX: e.clientX,
-                        startLeftRatio: col.widthRatio,
-                        startRightRatio: columns[colIndex + 1].widthRatio,
-                      };
-                    }}
-                    className="w-1 bg-[#1b1b20] hover:bg-sky-500/60 cursor-col-resize shrink-0 transition"
-                  />
-                )}
-              </React.Fragment>
-            );
-          })}
 
           {/* ==================== FLOATING WINDOWS LAYER ==================== */}
           {floatingWindows.map((fw) => {
@@ -1405,7 +1452,7 @@ export function App() {
                 }}
                 className={`fixed rounded-lg bg-[#16161a] border shadow-[0_24px_60px_rgba(0,0,0,0.85)] flex flex-col overflow-hidden transition-opacity ${
                   isBeingDragged
-                    ? 'opacity-75 border-sky-400 scale-[0.98]'
+                    ? 'opacity-85 border-sky-400 ring-2 ring-sky-400/40'
                     : 'opacity-100 border-zinc-600/80'
                 }`}
               >
@@ -1421,18 +1468,18 @@ export function App() {
                   }}
                   className="h-8 bg-[#202027] border-b border-[#2e2e38] px-3 flex items-center justify-between cursor-move shrink-0"
                 >
-                  <div className="flex items-center gap-2 text-xs font-semibold text-zinc-100">
-                    <GripHorizontal className="w-3.5 h-3.5 text-zinc-400" />
-                    <span>{PANEL_TITLES[fw.id]}</span>
-                    <span className="px-1.5 py-0.2 rounded bg-sky-500/20 text-sky-300 text-[10px] font-normal">
-                      漂浮 · 拖入停靠区松手即可停靠
+                  <div className="flex items-center gap-2 text-xs font-semibold text-zinc-100 min-w-0">
+                    <GripHorizontal className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                    <span className="truncate">{PANEL_TITLES[fw.id]}</span>
+                    <span className="px-1.5 py-0.2 rounded bg-sky-500/20 text-sky-300 text-[10px] font-normal shrink-0">
+                      自由漂浮 · 拖入中央罗盘即停靠
                     </span>
                   </div>
 
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1 shrink-0">
                     <button
                       onClick={() => handleToggleDockFloat(fw.id)}
-                      className="px-1.5 py-0.5 rounded bg-[#2c2c36] hover:bg-[#383844] text-[10px] text-zinc-200 flex items-center gap-1"
+                      className="px-1.5 py-0.5 rounded bg-[#2c2c36] hover:bg-sky-500 hover:text-zinc-950 text-[10px] text-zinc-200 flex items-center gap-1 transition"
                       title="直接停靠回工作区网格"
                     >
                       <Minimize2 className="w-3 h-3" strokeWidth={1.6} />
@@ -1452,8 +1499,32 @@ export function App() {
                   </div>
                 </div>
 
-                <div className="flex-1 overflow-hidden">
+                <div className="flex-1 overflow-hidden relative">
                   {renderPanelContent(fw.id)}
+
+                  {/* Bottom-Right Resize Handle */}
+                  <div
+                    onMouseDown={(e) => {
+                      e.stopPropagation();
+                      resizingFloatRef.current = {
+                        panelId: fw.id,
+                        startX: e.clientX,
+                        startY: e.clientY,
+                        startW: fw.width,
+                        startH: fw.height,
+                      };
+                    }}
+                    className="absolute right-0 bottom-0 w-4 h-4 cursor-nwse-resize z-30 flex items-end justify-end p-0.5 text-zinc-500 hover:text-zinc-200"
+                    title="拖拽调整漂浮窗大小"
+                  >
+                    <svg width="8" height="8" viewBox="0 0 8 8">
+                      <path
+                        d="M7 1L1 7M7 4L4 7"
+                        stroke="currentColor"
+                        strokeWidth="1.4"
+                      />
+                    </svg>
+                  </div>
                 </div>
               </div>
             );
