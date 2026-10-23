@@ -19,7 +19,6 @@ import {
 } from '../types';
 import {
   createBlankVNProject,
-  createPresetTemplateProject,
   deleteSavedProject,
   exportSettingsFileJson,
   getPlatformDefaultPaths,
@@ -29,7 +28,7 @@ import {
   saveProjectToWorkspace,
   saveSystemSettings,
 } from '../lib/workspaceManager';
-import { exportProjectJson } from '../lib/projectUtils';
+import { exportProjectAsMpvn, parseMpvnProject } from '../lib/mpvnFormat';
 
 interface ProjectLauncherProps {
   onOpenProject: (project: VNProject) => void;
@@ -48,8 +47,7 @@ export const ProjectLauncher: React.FC<ProjectLauncherProps> = ({
   const [notice, setNotice] = useState<string | null>(null);
 
   // Create project form
-  const [createMode, setCreateMode] = useState<'blank' | 'template'>('template');
-  const [newTitle, setNewTitle] = useState('新视觉小说工程');
+  const [newTitle, setNewTitle] = useState('新视觉小说项目');
   const [newAuthor, setNewAuthor] = useState('独立制作组');
   const [resolutionStr, setResolutionStr] = useState('1920x1080');
   const [customSaveDir, setCustomSaveDir] = useState(settings.projectsDirectoryPath);
@@ -78,27 +76,24 @@ export const ProjectLauncher: React.FC<ProjectLauncherProps> = ({
         }
         setProjects(loadSavedProjectsList());
       }
-      setNotice(`已挂载设备 MooVN 文件夹：${res.folderName}`);
+      setNotice(`已挂载设备 MooVN Studio 文件夹：${res.folderName}`);
     } else {
-      setNotice('当前环境可通过下方路径框或导入按钮管理本地 MooVN 工程');
+      setNotice('当前环境可通过下方路径框或导入 .mpvn 按钮管理本地 MooVN Studio 项目');
     }
   };
 
   const handleCreateProject = async () => {
     const [w, h] = resolutionStr.split('x').map(Number);
     const safeName = (newTitle || 'NewProject').replace(/[\\/:*?"<>|\s]+/g, '_');
-    const fullPath = `${customSaveDir}/${safeName}.moovn.json`;
+    const fullPath = `${customSaveDir}/${safeName}.mpvn`;
 
-    const proj =
-      createMode === 'template'
-        ? createPresetTemplateProject(newTitle || '汐见学园与第十三声钟鸣', fullPath)
-        : createBlankVNProject({
-            title: newTitle || '新视觉小说工程',
-            author: newAuthor || '独立开发者',
-            width: w || 1920,
-            height: h || 1080,
-            projectPath: fullPath,
-          });
+    const proj = createBlankVNProject({
+      title: newTitle || '新视觉小说项目',
+      author: newAuthor || '独立开发者',
+      width: w || 1920,
+      height: h || 1080,
+      projectPath: fullPath,
+    });
 
     await saveProjectToWorkspace(proj, fullPath);
     setProjects(loadSavedProjectsList());
@@ -110,15 +105,13 @@ export const ProjectLauncher: React.FC<ProjectLauncherProps> = ({
     if (!file) return;
     const reader = new FileReader();
     reader.onload = async () => {
-      try {
-        const parsed = JSON.parse(String(reader.result)) as VNProject;
-        if (parsed && parsed.id && Array.isArray(parsed.nodes)) {
-          await saveProjectToWorkspace(parsed);
-          setProjects(loadSavedProjectsList());
-          onOpenProject(parsed);
-        }
-      } catch {
-        setNotice('项目文件解析失败，请确认格式为 .moovn.json');
+      const res = parseMpvnProject(String(reader.result));
+      if (res.ok && res.project) {
+        await saveProjectToWorkspace(res.project);
+        setProjects(loadSavedProjectsList());
+        onOpenProject(res.project);
+      } else {
+        setNotice(res.error || '项目文件解析失败，请确认格式为 .mpvn (MooVN Studio 项目文件)');
       }
     };
     reader.readAsText(file);
@@ -163,7 +156,7 @@ export const ProjectLauncher: React.FC<ProjectLauncherProps> = ({
       <input
         ref={importProjectInputRef}
         type="file"
-        accept=".json,.moovn.json"
+        accept=".mpvn,.json,.moovn.json"
         className="hidden"
         onChange={handleImportProjectFile}
       />
@@ -179,16 +172,18 @@ export const ProjectLauncher: React.FC<ProjectLauncherProps> = ({
       <div className="h-12 px-6 bg-[#141417] border-b border-[#27272c] flex items-center justify-between shrink-0">
         <div className="flex items-center gap-6">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-semibold tracking-wide text-white">MooVN</span>
+            <span className="text-sm font-semibold tracking-wide text-white">
+              MooVN Studio
+            </span>
             <span className="px-1.5 py-0.5 rounded bg-[#27272c] text-zinc-300 text-[10px] font-mono">
-              项目中心
+              .mpvn 项目中心
             </span>
           </div>
 
           <div className="flex items-center bg-[#1a1a1f] p-0.5 rounded-md border border-[#27272c] text-xs">
             {(
               [
-                ['projects', '本地与模板项目'],
+                ['projects', '本地项目 (.mpvn)'],
                 ['create', '创建新项目'],
                 ['workspace', '专属路径与设置文件'],
               ] as const
@@ -212,18 +207,18 @@ export const ProjectLauncher: React.FC<ProjectLauncherProps> = ({
           <button
             onClick={handleMountDeviceFolder}
             className="px-2.5 py-1.5 rounded bg-[#1c1c20] hover:bg-[#27272c] border border-[#27272c] text-zinc-200 text-xs flex items-center gap-1.5"
-            title="选择设备上已经保存的 MooVN 文件夹"
+            title="选择设备上已经保存的 MooVN Studio 文件夹"
           >
             <FolderOpen className="w-3.5 h-3.5" strokeWidth={1.6} />
-            选择设备 MooVN 文件夹
+            选择设备文件夹
           </button>
 
           <button
             onClick={() => importProjectInputRef.current?.click()}
-            className="px-2.5 py-1.5 rounded bg-[#1c1c20] hover:bg-[#27272c] border border-[#27272c] text-zinc-200 text-xs flex items-center gap-1.5"
+            className="px-2.5 py-1.5 rounded bg-sky-500/20 hover:bg-sky-500/30 border border-sky-500/40 text-sky-200 text-xs font-medium flex items-center gap-1.5"
           >
             <Upload className="w-3.5 h-3.5" strokeWidth={1.6} />
-            导入工程
+            导入 .mpvn 项目
           </button>
 
           {canClose && onClose && (
@@ -261,16 +256,22 @@ export const ProjectLauncher: React.FC<ProjectLauncherProps> = ({
               <div className="text-xs text-zinc-400">
                 当前工作目录：<span className="font-mono text-zinc-200">{settings.projectsDirectoryPath}</span>
               </div>
-              <button
-                onClick={() => {
-                  setCreateMode('blank');
-                  setTab('create');
-                }}
-                className="px-3 py-1.5 rounded bg-zinc-200 hover:bg-white text-zinc-950 text-xs font-medium flex items-center gap-1.5"
-              >
-                <Plus className="w-3.5 h-3.5" strokeWidth={1.8} />
-                新建项目
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => importProjectInputRef.current?.click()}
+                  className="px-3 py-1.5 rounded bg-[#1c1c20] hover:bg-[#27272c] border border-[#2e2e36] text-zinc-200 text-xs font-medium flex items-center gap-1.5"
+                >
+                  <Upload className="w-3.5 h-3.5" strokeWidth={1.6} />
+                  导入 .mpvn 项目文件
+                </button>
+                <button
+                  onClick={() => setTab('create')}
+                  className="px-3 py-1.5 rounded bg-zinc-200 hover:bg-white text-zinc-950 text-xs font-medium flex items-center gap-1.5"
+                >
+                  <Plus className="w-3.5 h-3.5" strokeWidth={1.8} />
+                  新建空白项目
+                </button>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 gap-2.5">
@@ -284,12 +285,9 @@ export const ProjectLauncher: React.FC<ProjectLauncherProps> = ({
                       <span className="text-sm font-semibold text-zinc-100 truncate">
                         {item.title}
                       </span>
-                      {item.isTemplatePreset && (
-                        <span className="px-2 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[10px] font-medium flex items-center gap-1">
-                          <Sparkles className="w-2.5 h-2.5" strokeWidth={1.8} />
-                          内置预设模板项目
-                        </span>
-                      )}
+                      <span className="px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-300 border border-sky-500/30 text-[10px] font-mono">
+                        .mpvn 项目
+                      </span>
                       <span className="px-1.5 py-0.5 rounded bg-[#222227] text-zinc-400 text-[10px] font-mono">
                         v{item.version}
                       </span>
@@ -309,30 +307,28 @@ export const ProjectLauncher: React.FC<ProjectLauncherProps> = ({
 
                   <div className="flex items-center gap-2 shrink-0">
                     <button
-                      onClick={() => exportProjectJson(item.projectData)}
+                      onClick={() => exportProjectAsMpvn(item.projectData)}
                       className="px-2.5 py-1.5 rounded bg-[#1c1c20] hover:bg-[#27272c] border border-[#27272c] text-zinc-300 text-xs flex items-center gap-1"
-                      title="导出项目文件 (.moovn.json)"
+                      title="导出 MooVN Studio 项目文件 (.mpvn)"
                     >
                       <Download className="w-3.5 h-3.5" strokeWidth={1.6} />
-                      备份
+                      导出 .mpvn
                     </button>
 
-                    {!item.isTemplatePreset && (
-                      <button
-                        onClick={() => setProjects(deleteSavedProject(item.id))}
-                        className="icon-btn"
-                        title="移除项目"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" strokeWidth={1.6} />
-                      </button>
-                    )}
+                    <button
+                      onClick={() => setProjects(deleteSavedProject(item.id))}
+                      className="icon-btn"
+                      title="移除项目"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" strokeWidth={1.6} />
+                    </button>
 
                     <button
                       onClick={() => onOpenProject(item.projectData)}
                       className="px-4 py-1.5 rounded bg-zinc-200 hover:bg-white text-zinc-950 font-medium text-xs flex items-center gap-1.5"
                     >
                       <Play className="w-3.5 h-3.5 fill-current" strokeWidth={1.6} />
-                      打开工程
+                      打开项目
                     </button>
                   </div>
                 </div>
@@ -344,46 +340,16 @@ export const ProjectLauncher: React.FC<ProjectLauncherProps> = ({
         {/* TAB 2: Create New Project */}
         {tab === 'create' && (
           <div className="max-w-2xl mx-auto space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                onClick={() => {
-                  setCreateMode('template');
-                  setNewTitle('汐见学园与第十三声钟鸣（副本）');
-                }}
-                className={`p-4 rounded-lg border text-left transition space-y-1.5 ${
-                  createMode === 'template'
-                    ? 'bg-[#1e1e24] border-zinc-200 text-zinc-100'
-                    : 'bg-[#161619] border-[#27272c] text-zinc-400'
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-white">内置预设模板创建</span>
-                  <Sparkles className="w-3.5 h-3.5 text-amber-300" strokeWidth={1.6} />
-                </div>
-                <div className="text-[11px] text-zinc-400 leading-relaxed">
-                  基于内置《汐见学园与第十三声钟鸣》完整 6 章模板创建，含 35 张背景、58 张角色差分立绘与 44 种节点示范。
-                </div>
-              </button>
-
-              <button
-                onClick={() => {
-                  setCreateMode('blank');
-                  setNewTitle('未命名视觉小说工程');
-                }}
-                className={`p-4 rounded-lg border text-left transition space-y-1.5 ${
-                  createMode === 'blank'
-                    ? 'bg-[#1e1e24] border-zinc-200 text-zinc-100'
-                    : 'bg-[#161619] border-[#27272c] text-zinc-400'
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-white">空白工程创建</span>
-                  <FileCode className="w-3.5 h-3.5 text-zinc-300" strokeWidth={1.6} />
-                </div>
-                <div className="text-[11px] text-zinc-400 leading-relaxed">
-                  创建干净的第一章与起始对话节点，从零搭建原创剧本、自定义界面与章节包。
-                </div>
-              </button>
+            <div className="p-4 rounded-lg bg-[#1e1e24] border border-zinc-600 text-left space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-white">
+                  创建全新空白项目 (.mpvn)
+                </span>
+                <FileCode className="w-3.5 h-3.5 text-sky-400" strokeWidth={1.6} />
+              </div>
+              <div className="text-[11px] text-zinc-400 leading-relaxed">
+                创建干净的初始章节与场景节点，从零搭建原创剧本、自定义界面与章节包（或者点击右上角「导入 .mpvn 项目」载入已有项目文件）。
+              </div>
             </div>
 
             <div className="p-4 rounded-lg bg-[#161619] border border-[#27272c] space-y-3 text-xs">

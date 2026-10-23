@@ -6,8 +6,8 @@ import {
 import { DEFAULT_PROJECT } from '../data/defaultProject';
 import { DEFAULT_PERFORMANCE_CONFIG } from './assetCompressionEngine';
 
-const SETTINGS_STORAGE_KEY = 'moovn_system_settings_v2';
-const PROJECTS_STORAGE_KEY = 'moovn_saved_projects_v2';
+const SETTINGS_STORAGE_KEY = 'moovn_studio_settings_v3';
+const PROJECTS_STORAGE_KEY = 'moovn_studio_projects_v3';
 
 export function detectRuntimePlatform(): MooVNSystemSettings['platform'] {
   if (typeof navigator === 'undefined') return 'windows';
@@ -217,10 +217,15 @@ export async function pickDeviceMooVNFolder(): Promise<{
             const file = await entry.getFile();
             const text = await file.text();
             loadedSettings = JSON.parse(text) as MooVNSystemSettings;
-          } else if (name.endsWith('.moovn.json') || name.endsWith('.vnproject.json')) {
+          } else if (
+            name.endsWith('.mpvn') ||
+            name.endsWith('.moovn.json') ||
+            name.endsWith('.vnproject.json')
+          ) {
             const file = await entry.getFile();
             const text = await file.text();
-            const proj = JSON.parse(text) as VNProject;
+            const rawObj = JSON.parse(text);
+            const proj = (rawObj?.project || rawObj) as VNProject;
             if (proj && proj.id && Array.isArray(proj.nodes)) {
               loadedProjects.push(proj);
             }
@@ -374,59 +379,43 @@ export function createBlankVNProject(params: {
 }
 
 /**
- * 构建内置《汐见学园与第十三声钟鸣》模板项目实例（带每章最低角色好感保底配置与性能配置）
+ * 构建 MooVN Studio 空白基础项目实例（内部测试用游戏模板已独立剥离为本地 .mpvn 文件，不内置于公开版）
  */
 export function createPresetTemplateProject(customTitle?: string, projectPath?: string): VNProject {
   const cloned = JSON.parse(JSON.stringify(DEFAULT_PROJECT)) as VNProject;
   if (customTitle) cloned.title = customTitle;
-  cloned.isTemplatePreset = true;
+  cloned.isTemplatePreset = false;
   cloned.projectPath =
     projectPath ||
-    `${loadSystemSettings().projectsDirectoryPath}/Shiomi_Bell13.moovn.json`;
+    `${loadSystemSettings().projectsDirectoryPath}/Untitled_Project.mpvn`;
   cloned.performanceConfig = { ...DEFAULT_PERFORMANCE_CONFIG };
-
-  // 为 6 个章节自动注入保底角色好感度与必装标记（第一章必装，后续章节支持跳过时自动补偿数值）
-  cloned.chapters = cloned.chapters.map((ch, idx) => {
-    const minAffection: Record<string, number> = {};
-    for (const c of cloned.characters) {
-      minAffection[c.id] = Math.min(c.maxAffection, c.initialAffection + idx * 8);
-    }
-    return {
-      ...ch,
-      isBaseRequired: idx === 0,
-      minCharacterAffection: ch.minCharacterAffection || minAffection,
-      msvnSizeEstimateMb: idx === 0 ? 185 : 140 + idx * 25,
-    };
-  });
-
   return cloned;
 }
 
 export function loadSavedProjectsList(): SavedProjectMeta[] {
   const settings = loadSystemSettings();
-  const templateProj = createPresetTemplateProject();
-  const defaultTemplateMeta: SavedProjectMeta = {
-    id: templateProj.id,
-    title: templateProj.title,
-    author: templateProj.author,
-    version: templateProj.version,
-    path: `${settings.projectsDirectoryPath}/Shiomi_Bell13.moovn.json`,
-    updatedAt: '内置预设模板',
-    chaptersCount: templateProj.chapters.length,
-    nodesCount: templateProj.nodes.length,
-    isTemplatePreset: true,
-    projectData: templateProj,
+  const starterProj = createPresetTemplateProject();
+  const defaultStarterMeta: SavedProjectMeta = {
+    id: starterProj.id,
+    title: starterProj.title,
+    author: starterProj.author,
+    version: starterProj.version,
+    path: `${settings.projectsDirectoryPath}/Untitled_Project.mpvn`,
+    updatedAt: '默认空白工程 (.mpvn)',
+    chaptersCount: starterProj.chapters.length,
+    nodesCount: starterProj.nodes.length,
+    isTemplatePreset: false,
+    projectData: starterProj,
   };
 
   try {
     const raw = localStorage.getItem(PROJECTS_STORAGE_KEY);
-    if (!raw) return [defaultTemplateMeta];
+    if (!raw) return [defaultStarterMeta];
     const parsed = JSON.parse(raw) as SavedProjectMeta[];
-    if (!Array.isArray(parsed) || parsed.length === 0) return [defaultTemplateMeta];
-    const hasTemplate = parsed.some((p) => p.id === templateProj.id || p.isTemplatePreset);
-    return hasTemplate ? parsed : [defaultTemplateMeta, ...parsed];
+    if (!Array.isArray(parsed) || parsed.length === 0) return [defaultStarterMeta];
+    return parsed;
   } catch {
-    return [defaultTemplateMeta];
+    return [defaultStarterMeta];
   }
 }
 
@@ -436,10 +425,11 @@ export async function saveProjectToWorkspace(
 ): Promise<SavedProjectMeta> {
   const settings = loadSystemSettings();
   const safeName = (project.title || project.id).replace(/[\\/:*?"<>|\s]+/g, '_');
+  const fileName = safeName.endsWith('.mpvn') ? safeName : `${safeName}.mpvn`;
   const resolvedPath =
     customPath ||
     project.projectPath ||
-    `${settings.projectsDirectoryPath}/${safeName}.moovn.json`;
+    `${settings.projectsDirectoryPath}/${fileName}`;
 
   const updatedProject: VNProject = {
     ...project,
@@ -470,10 +460,19 @@ export async function saveProjectToWorkspace(
     // ignore quota error
   }
 
-  // 同步写入磁盘 MooVN_Workspace/Projects/ 目录及已挂载设备本地文件夹
+  const mpvnPayload = {
+    magic: 'MPVN_STUDIO_PROJECT',
+    format: 'mpvn',
+    schemaVersion: '1.0.0',
+    studioName: 'MooVN Studio',
+    exportedAt: new Date().toISOString(),
+    project: updatedProject,
+  };
+
+  // 同步写入磁盘 MooVN_Workspace/Projects/ 目录及已挂载设备本地文件夹 (.mpvn 格式)
   await writeFileToMountedMooVNFolder(
-    `${safeName}.moovn.json`,
-    JSON.stringify(updatedProject, null, 2),
+    fileName,
+    JSON.stringify(mpvnPayload, null, 2),
     'Projects'
   );
 

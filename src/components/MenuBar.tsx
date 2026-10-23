@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   Play,
   Download,
@@ -9,8 +9,13 @@ import {
   LayoutGrid,
   Columns,
   Grid,
+  Upload,
+  FileArchive,
+  Globe,
 } from 'lucide-react';
-import { PanelId } from '../types';
+import { PanelId, VNProject } from '../types';
+import { exportProjectAsMpvn, parseMpvnProject } from '../lib/mpvnFormat';
+import { saveProjectToWorkspace } from '../lib/workspaceManager';
 
 export interface WindowPanelDescriptor {
   id: PanelId;
@@ -34,6 +39,9 @@ interface MenuBarProps {
   onPlayPreview: () => void;
   onOpenExportModal: () => void;
   onOpenProjectLauncher: () => void;
+  project?: VNProject;
+  onImportProject?: (proj: VNProject) => void;
+  onOpenOfficialPortal?: () => void;
 }
 
 export const MenuBar: React.FC<MenuBarProps> = ({
@@ -49,21 +57,84 @@ export const MenuBar: React.FC<MenuBarProps> = ({
   onPlayPreview,
   onOpenExportModal,
   onOpenProjectLauncher,
+  project,
+  onImportProject,
+  onOpenOfficialPortal,
 }) => {
   const [openWindowMenu, setOpenWindowMenu] = useState(false);
+  const mpvnInputRef = useRef<HTMLInputElement | null>(null);
+
+  const handleImportMpvnFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const res = parseMpvnProject(String(reader.result));
+      if (res.ok && res.project && onImportProject) {
+        await saveProjectToWorkspace(res.project);
+        onImportProject(res.project);
+      } else if (!res.ok) {
+        alert(res.error || '导入 .mpvn 项目文件失败');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
 
   return (
     <header className="h-9 bg-[#141417] border-b border-[#27272c] px-2.5 flex items-center justify-between select-none z-50 shrink-0 text-xs">
-      {/* Left: Project, Undo/Redo, Window & 2D Split Layout Menu */}
+      <input
+        ref={mpvnInputRef}
+        type="file"
+        accept=".mpvn,.json,.moovn.json"
+        className="hidden"
+        onChange={handleImportMpvnFile}
+      />
+
+      {/* Left: Portal Switch, Project (.mpvn), Undo/Redo, Window & 2D Split Layout Menu */}
       <div className="flex items-center gap-1">
+        {onOpenOfficialPortal && (
+          <>
+            <button
+              onClick={onOpenOfficialPortal}
+              className="px-2 py-1 rounded text-sky-400 hover:text-sky-300 hover:bg-[#1f1f25] flex items-center gap-1.5 transition font-medium"
+              title="返回 MooVN Studio 官方网站与 GitHub Release 下载中心"
+            >
+              <Globe className="w-3.5 h-3.5" strokeWidth={1.6} />
+              <span>官网与下载</span>
+            </button>
+            <div className="w-px h-3.5 bg-[#27272c] mx-0.5" />
+          </>
+        )}
+
         <button
           onClick={onOpenProjectLauncher}
           className="px-2 py-1 rounded text-zinc-300 hover:text-white hover:bg-[#1f1f25] flex items-center gap-1.5 transition"
-          title="新建 / 打开 / 保存工程"
+          title="新建 / 打开 / 管理 .mpvn 项目"
         >
           <FolderOpen className="w-3.5 h-3.5" strokeWidth={1.6} />
-          <span>工程</span>
+          <span>项目中心</span>
         </button>
+
+        <button
+          onClick={() => mpvnInputRef.current?.click()}
+          className="px-2 py-1 rounded text-zinc-300 hover:text-white hover:bg-[#1f1f25] flex items-center gap-1 transition"
+          title="导入 MooVN Studio 项目文件 (.mpvn)"
+        >
+          <Upload className="w-3.5 h-3.5" strokeWidth={1.6} />
+          <span>导入 .mpvn</span>
+        </button>
+
+        {project && (
+          <button
+            onClick={() => exportProjectAsMpvn(project)}
+            className="px-2 py-1 rounded text-zinc-300 hover:text-white hover:bg-[#1f1f25] flex items-center gap-1 transition"
+            title="导出当前可编辑项目文件 (.mpvn)"
+          >
+            <FileArchive className="w-3.5 h-3.5" strokeWidth={1.6} />
+            <span>导出 .mpvn</span>
+          </button>
+        )}
 
         <div className="w-px h-3.5 bg-[#27272c] mx-0.5" />
 

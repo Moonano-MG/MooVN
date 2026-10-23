@@ -18,7 +18,7 @@ import { getNodeMeta } from '../data/nodeRegistry';
 export function useEditor() {
   const [project, setProject] = useState<VNProject>(() => {
     try {
-      const saved = localStorage.getItem('moovn_project_v5');
+      const saved = localStorage.getItem('moovn_studio_project_v6');
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed && Array.isArray(parsed.chapters) && Array.isArray(parsed.nodes) && parsed.uiConfig) {
@@ -47,7 +47,7 @@ export function useEditor() {
       setHistory((h) => [...h.slice(-24), prev]);
       setFuture([]);
       try {
-        localStorage.setItem('moovn_project_v5', JSON.stringify(next));
+        localStorage.setItem('moovn_studio_project_v6', JSON.stringify(next));
       } catch {
         // ignore quota error
       }
@@ -612,7 +612,7 @@ export function useEditor() {
   );
 
   const resetToDefault = useCallback(() => {
-    localStorage.removeItem('moovn_project_v5');
+    localStorage.removeItem('moovn_studio_project_v6');
     setProject(DEFAULT_PROJECT);
     setSelectedChapterId(DEFAULT_PROJECT.chapters[0].id);
     setSelectedNodeId(DEFAULT_PROJECT.startNodeId);

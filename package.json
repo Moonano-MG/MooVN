@@ -1,8 +1,8 @@
 {
-  "name": "moovn",
+  "name": "moovn-studio",
   "private": true,
   "version": "0.1.0",
-  "description": "MooVN Visual Novel Editor & Engine (TypeScript + Tauri 2 + Pixi.js + YAML)",
+  "description": "MooVN Studio — Cross-Platform Visual Novel IDE & GitHub Release Portal (TypeScript + Tauri 2 + Pixi.js + YAML)",
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 5173",
