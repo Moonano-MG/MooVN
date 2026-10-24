@@ -225,7 +225,7 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
 
     if (currentNode.customScript) {
       if (
-        /moovn\.save:create|moobn\.sava:create|moovn::save::create/i.test(
+        /moovn(?:\.save:|::save::)create/i.test(
           currentNode.customScript
         )
       ) {
@@ -574,10 +574,10 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
                 ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'
                 : 'bg-[#252529] border-[#383840] text-slate-400 hover:text-white'
             }`}
-            title="开发者调试叠加层（正式导出游戏时自动剔除）"
+            title="运行状态监控"
           >
             <Bug className="w-3 h-3" />
-            开发者调试
+            状态监控
           </button>
 
           <button
@@ -675,7 +675,7 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
               </div>
             </div>
 
-            {/* Blur Bridge */}
+            {/* Blur Bridge (Responsive flex separator so it never covers title or character) */}
             <div
               style={{
                 background:
@@ -683,9 +683,7 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
                     ? `linear-gradient(270deg, ${ui.mainMenu.panelColor} 0%, ${ui.mainMenu.panelColor}cc 45%, transparent 100%)`
                     : `linear-gradient(90deg, ${ui.mainMenu.panelColor} 0%, ${ui.mainMenu.panelColor}cc 45%, transparent 100%)`,
               }}
-              className={`absolute top-0 bottom-0 ${
-                ui.mainMenu.layout === 'right_panel' ? 'right-[31%]' : 'left-[31%]'
-              } w-36 z-10 pointer-events-none backdrop-blur-md`}
+              className="w-12 sm:w-24 shrink-0 -mx-6 sm:-mx-12 z-10 pointer-events-none backdrop-blur-md"
             />
 
             {/* Key Visual */}
@@ -711,9 +709,14 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
           <>
             {/* Background Layer */}
             <div
+              key={`bg-${currentNode.id}-${currentNode.cameraConfig?.shakeIntensity || 'none'}`}
               className={`absolute inset-0 bg-cover bg-center transition-all duration-700 ${
                 currentNode.cameraConfig?.shakeIntensity === 'heavy'
-                  ? 'animate-bounce'
+                  ? 'moovn-shake-heavy'
+                  : currentNode.cameraConfig?.shakeIntensity === 'medium'
+                  ? 'moovn-shake-medium'
+                  : currentNode.cameraConfig?.shakeIntensity === 'light'
+                  ? 'moovn-shake-light'
                   : ''
               }`}
               style={{
@@ -734,10 +737,10 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
               }}
             />
 
-            {/* Developer Debug Overlay */}
+            {/* Runtime State Overlay */}
             {showDevDebug && (
               <div className="absolute top-3 left-3 z-30 p-3 rounded-lg bg-slate-950/90 border border-amber-500/50 text-[11px] font-mono text-amber-200 space-y-1 shadow-xl pointer-events-none">
-                <div className="font-bold text-amber-400">DEVELOPER DEBUG (不打入正式包)</div>
+                <div className="font-bold text-amber-400">RUNTIME STATE</div>
                 <div>Chapter: {currentChapter?.title}</div>
                 <div>
                   Node: {currentNode.id} ({currentNode.type})
@@ -826,16 +829,20 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
                     }`}
                   >
                     <CharacterMediaRenderer
-                      src={mediaSrc}
+                      mediaUrl={mediaSrc}
                       alt={pl.name}
-                      mediaType={mediaType}
+                      mediaType={
+                        mediaType === 'video' || mediaType === 'animated_image'
+                          ? mediaType
+                          : 'static'
+                      }
                       videoLoop={pl.videoLoop ?? charProfile?.videoLoop ?? true}
                       videoPlaybackRate={
                         pl.videoPlaybackRate ?? charProfile?.videoPlaybackRate ?? 1
                       }
                       chromaKeyColor={chromaKeyColor}
-                      idleMotion={idleMotion}
-                      isSpeaking={isSpeaking}
+                      idleMotion={idleMotion === 'breathe' ? 'breathe' : 'none'}
+                      isTalking={isSpeaking && isTyping}
                       className="h-[76vh] w-auto object-contain drop-shadow-[0_20px_40px_rgba(0,0,0,0.72)]"
                     />
                   </div>
@@ -950,7 +957,7 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
                         fontSize: `${ui.choiceBox.fontSize}px`,
                         borderRadius: `${ui.choiceBox.borderRadius}px`,
                       }}
-                      className="group relative pl-6 pr-6 py-2.5 border backdrop-blur-md text-left font-medium transition-all duration-200 shadow-[0_10px_28px_rgba(0,0,0,0.6)] hover:translate-x-1 whitespace-nowrap overflow-x-auto max-w-[92vw]"
+                      className="group relative pl-6 pr-6 py-2.5 border backdrop-blur-md text-left font-medium transition-all duration-200 shadow-[0_10px_28px_rgba(0,0,0,0.6)] hover:translate-x-1 whitespace-normal break-words h-auto max-w-[92vw] leading-relaxed"
                     >
                       <span
                         style={{ backgroundColor: ui.choiceBox.hoverAccentColor }}

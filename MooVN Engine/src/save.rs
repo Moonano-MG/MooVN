@@ -1,4 +1,4 @@
-//! Save System (`moovn.save:create(NAME)` / `moobn.sava:create(NAME)`) for MooVN Engine.
+//! Save System (`moovn.save:create(NAME)`) for MooVN Engine.
 
 use std::collections::HashMap;
 
@@ -37,19 +37,19 @@ impl SaveManager {
         hash
     }
 
-    /// Creates or overwrites a save slot (`moovn.save:create(NAME)` / `moobn.sava:create(NAME)`).
+    /// Creates or overwrites a save slot (`moovn.save:create(NAME)`).
     pub fn create_save(&mut self, record: SaveSlotRecord) -> &SaveSlotRecord {
         let key = record.slot_name.clone();
         self.slots.insert(key.clone(), record);
         self.slots.get(&key).expect("just inserted")
     }
 
-    /// Loads a save slot by name (`moovn.save:load(NAME)` / `moobn.sava:load(NAME)`).
+    /// Loads a save slot by name (`moovn.save:load(NAME)`).
     pub fn load_save(&self, slot_name: &str) -> Option<&SaveSlotRecord> {
         self.slots.get(slot_name)
     }
 
-    /// Deletes a save slot by name (`moovn.save:delete(NAME)` / `moobn.sava:delete(NAME)`).
+    /// Deletes a save slot by name (`moovn.save:delete(NAME)`).
     pub fn delete_save(&mut self, slot_name: &str) -> bool {
         self.slots.remove(slot_name).is_some()
     }

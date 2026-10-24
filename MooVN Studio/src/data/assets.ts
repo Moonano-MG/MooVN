@@ -1,4 +1,4 @@
-import { BackgroundAsset, CharacterSpriteAsset, AudioAsset } from '../types';
+import type { BackgroundAsset, CharacterSpriteAsset, AudioAsset } from '../types';
 
 export const BACKGROUND_ASSETS: BackgroundAsset[] = [
   // ==================== 晴日学园系列 (Daytime School - 9 scenes) ====================

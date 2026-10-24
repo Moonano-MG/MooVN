@@ -55,6 +55,9 @@ function ensureWorkspaceDirs() {
 }
 
 export default defineConfig({
+  define: {
+    'import.meta.env.VITE_EDITION': JSON.stringify('studio'),
+  },
   plugins: [
     react(),
     tailwindcss(),

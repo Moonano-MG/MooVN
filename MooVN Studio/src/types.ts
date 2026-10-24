@@ -106,15 +106,14 @@ export interface CharacterCustomAttribute {
   value: number | string | boolean;
 }
 
-export type CharacterMediaType = 'image' | 'video' | 'animated_image' | 'live_motion';
+export type CharacterMediaType =
+  | 'image'
+  | 'static'
+  | 'video'
+  | 'animated_image'
+  | 'live_motion';
 
-export type CharacterIdleMotion =
-  | 'none'
-  | 'breathe'
-  | 'float'
-  | 'talk_pulse'
-  | 'bounce'
-  | 'sway';
+export type CharacterIdleMotion = 'none' | 'breathe';
 
 export interface CharacterExpressionVariant {
   id: string;
@@ -620,6 +619,20 @@ export interface AiProviderConfig {
   localModelId: string;
   localModelDownloaded: boolean;
   agentAutoApply: boolean;
+}
+
+export interface AiAgentConfig {
+  provider: 'openai_compatible' | 'anthropic' | 'gemini' | 'ollama_local';
+  apiKey: string;
+  baseUrl: string;
+  modelName: string;
+  temperature: number;
+  enableThinking?: boolean;
+  thinkingBudgetTokens?: number;
+  autoExecuteWorkflow?: boolean;
+  allowScriptEdit?: boolean;
+  allowProjectSettingsEdit?: boolean;
+  customSystemPrompt?: string;
 }
 
 export interface AiChatMessage {

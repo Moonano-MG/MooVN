@@ -415,6 +415,7 @@ export function useEditor() {
       }));
       setSelectedNodeId(id);
       setSelectedDialogueIndex(0);
+      return id;
     },
     [project.nodes.length, project.startNodeId, project.characters, selectedNode, selectedChapterId, commitProject]
   );

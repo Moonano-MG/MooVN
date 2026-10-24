@@ -5,8 +5,8 @@
 //!
 //! Supported fast-API dialects include:
 //! - C#:         `moovn.save:create(NAME)` / `MooVN.Save.Create(NAME)`
-//! - JavaScript: `moobn.sava:create(NAME)` / `moovn.save:create(NAME)`
-//! - TypeScript: `moobn.sava:create(NAME)` / `moovn.save:create(NAME)`
+//! - JavaScript: `moovn.save:create(NAME)`
+//! - TypeScript: `moovn.save:create(NAME)`
 //! - C++:        `moovn::save::create(NAME)` / `moovn.save:create(NAME)`
 //! - Rust:       `moovn::save::create(NAME)` / `moovn.save:create(NAME)`
 
@@ -105,10 +105,7 @@ impl PolyglotTranslator {
     fn format_op_for_language(op: &EngineOp, target: SourceLanguage) -> String {
         match op {
             EngineOp::SaveCreate { slot_name } => match target {
-                SourceLanguage::JavaScript | SourceLanguage::TypeScript => {
-                    format!("moobn.sava:create(\"{}\");", slot_name)
-                }
-                SourceLanguage::CSharp => {
+                SourceLanguage::JavaScript | SourceLanguage::TypeScript | SourceLanguage::CSharp => {
                     format!("moovn.save:create(\"{}\");", slot_name)
                 }
                 SourceLanguage::Cpp | SourceLanguage::Rust => {
@@ -116,10 +113,7 @@ impl PolyglotTranslator {
                 }
             },
             EngineOp::SaveLoad { slot_name } => match target {
-                SourceLanguage::JavaScript | SourceLanguage::TypeScript => {
-                    format!("moobn.sava:load(\"{}\");", slot_name)
-                }
-                SourceLanguage::CSharp => {
+                SourceLanguage::JavaScript | SourceLanguage::TypeScript | SourceLanguage::CSharp => {
                     format!("moovn.save:load(\"{}\");", slot_name)
                 }
                 SourceLanguage::Cpp | SourceLanguage::Rust => {
@@ -127,10 +121,7 @@ impl PolyglotTranslator {
                 }
             },
             EngineOp::SaveDelete { slot_name } => match target {
-                SourceLanguage::JavaScript | SourceLanguage::TypeScript => {
-                    format!("moobn.sava:delete(\"{}\");", slot_name)
-                }
-                SourceLanguage::CSharp => {
+                SourceLanguage::JavaScript | SourceLanguage::TypeScript | SourceLanguage::CSharp => {
                     format!("moovn.save:delete(\"{}\");", slot_name)
                 }
                 SourceLanguage::Cpp | SourceLanguage::Rust => {
@@ -138,37 +129,33 @@ impl PolyglotTranslator {
                 }
             },
             EngineOp::SaveQuickSave => match target {
-                SourceLanguage::JavaScript | SourceLanguage::TypeScript => {
-                    "moobn.sava:quick_save();".to_string()
+                SourceLanguage::JavaScript | SourceLanguage::TypeScript | SourceLanguage::CSharp => {
+                    "moovn.save:quick_save();".to_string()
                 }
-                SourceLanguage::CSharp => "moovn.save:quick_save();".to_string(),
                 SourceLanguage::Cpp | SourceLanguage::Rust => {
                     "moovn::save::quick_save();".to_string()
                 }
             },
             EngineOp::SaveQuickLoad => match target {
-                SourceLanguage::JavaScript | SourceLanguage::TypeScript => {
-                    "moobn.sava:quick_load();".to_string()
+                SourceLanguage::JavaScript | SourceLanguage::TypeScript | SourceLanguage::CSharp => {
+                    "moovn.save:quick_load();".to_string()
                 }
-                SourceLanguage::CSharp => "moovn.save:quick_load();".to_string(),
                 SourceLanguage::Cpp | SourceLanguage::Rust => {
                     "moovn::save::quick_load();".to_string()
                 }
             },
             EngineOp::SaveAutoSave => match target {
-                SourceLanguage::JavaScript | SourceLanguage::TypeScript => {
-                    "moobn.sava:auto_save();".to_string()
+                SourceLanguage::JavaScript | SourceLanguage::TypeScript | SourceLanguage::CSharp => {
+                    "moovn.save:auto_save();".to_string()
                 }
-                SourceLanguage::CSharp => "moovn.save:auto_save();".to_string(),
                 SourceLanguage::Cpp | SourceLanguage::Rust => {
                     "moovn::save::auto_save();".to_string()
                 }
             },
             EngineOp::SaveList => match target {
-                SourceLanguage::JavaScript | SourceLanguage::TypeScript => {
-                    "moobn.sava:list();".to_string()
+                SourceLanguage::JavaScript | SourceLanguage::TypeScript | SourceLanguage::CSharp => {
+                    "moovn.save:list();".to_string()
                 }
-                SourceLanguage::CSharp => "moovn.save:list();".to_string(),
                 SourceLanguage::Cpp | SourceLanguage::Rust => "moovn::save::list();".to_string(),
             },
             EngineOp::BgShow { bg_id, transition } => {
@@ -308,11 +295,7 @@ impl PolyglotTranslator {
     fn fmt_call(target: SourceLanguage, module: &str, action: &str, args: &[String]) -> String {
         let joined = args.join(", ");
         match target {
-            SourceLanguage::JavaScript | SourceLanguage::TypeScript => {
-                let root = if module == "save" { "moobn.sava" } else { &format!("moovn.{}", module) };
-                format!("{}:{}({});", root, action, joined)
-            }
-            SourceLanguage::CSharp => {
+            SourceLanguage::JavaScript | SourceLanguage::TypeScript | SourceLanguage::CSharp => {
                 format!("moovn.{}:{}({});", module, action, joined)
             }
             SourceLanguage::Cpp | SourceLanguage::Rust => {
@@ -323,7 +306,6 @@ impl PolyglotTranslator {
 
     /// Parses any fast API call line such as:
     /// - `moovn.save:create("slot1")`
-    /// - `moobn.sava:create("slot1")`
     /// - `moovn::save::create("slot1");`
     /// - `MooVN.Save.Create("slot1");`
     /// - `MooVN.setBg("bg-1", "fade")`

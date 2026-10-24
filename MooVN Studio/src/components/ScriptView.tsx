@@ -199,8 +199,6 @@ const KEYWORDS_DECL = new Set([
 const KEYWORDS_TYPES = new Set([
   'MooVN',
   'moovn',
-  'moobn',
-  'sava',
   'save',
   'SceneNode',
   'VNProject',
@@ -375,29 +373,23 @@ function buildDefaultWorkspaceFiles(
       content: generateFullProjectCode(project, 'typescript'),
     },
     {
-      id: 'file-scene-js',
-      fileName: 'scene_runtime.js',
-      content: generateProjectEnginePolyglotScript(project, 'javascript'),
-    },
-    {
-      id: 'file-save-cs',
-      fileName: 'SaveController.cs',
-      content: generateProjectEnginePolyglotScript(project, 'csharp'),
-    },
-    {
-      id: 'file-render-cpp',
-      fileName: 'RendererPass.cpp',
-      content: generateProjectEnginePolyglotScript(project, 'cpp'),
-    },
-    {
-      id: 'file-engine-rs',
-      fileName: 'engine_mod.rs',
-      content: generateProjectEnginePolyglotScript(project, 'rust'),
-    },
-    {
       id: 'file-chapter-yaml',
       fileName: `${selectedChapterId || 'chapter_1'}.yaml`,
       content: generateChapterYaml(project, selectedChapterId),
+    },
+    {
+      id: 'file-scene-json',
+      fileName: 'scene_graph.json',
+      content: JSON.stringify(
+        {
+          projectId: project.id,
+          startNodeId: project.startNodeId,
+          chaptersCount: project.chapters.length,
+          nodesCount: project.nodes.length,
+        },
+        null,
+        2
+      ),
     },
   ];
 }
@@ -511,17 +503,15 @@ export const ScriptView: React.FC<ScriptViewProps> = ({
     const finalName = clean.includes('.') ? clean : `${clean}.ts`;
     const meta = getFileExtensionMeta(finalName);
 
-    let starter = `// ${finalName}\n`;
-    if (meta.ext === 'cs') {
-      starter = `// ${finalName} (C# Script)\nmoovn.bg:show("bg-classroom-day", "fade");\nmoovn.text:say("星野 雪奈", "C# 脚本文件已就绪。");\nmoovn.save:create("Slot_01");\n`;
-    } else if (meta.ext === 'cpp') {
-      starter = `// ${finalName} (C++20 Script)\n#include "moovn_api.hpp"\nmoovn::bg::show("bg-classroom-day", "fade");\nmoovn::save::create("Slot_01");\n`;
-    } else if (meta.ext === 'rs') {
-      starter = `// ${finalName} (Rust Script)\nuse moovn_engine::*;\nmoovn::bg::show("bg-classroom-day", "fade");\nmoovn::save::create("Slot_01");\n`;
-    } else if (meta.ext === 'js') {
-      starter = `// ${finalName} (JavaScript)\nmoovn.bg:show("bg-classroom-day", "fade");\nmoobn.sava:create("Slot_01");\n`;
-    } else if (meta.ext === 'ts') {
-      starter = `// ${finalName} (TypeScript)\nmoovn.bg:show("bg-classroom-day", "fade");\nmoobn.sava:create("Slot_01");\n`;
+    let starter = '';
+    if (meta.ext === 'yaml' || meta.ext === 'yml') {
+      starter = `chapter: ${selectedChapterId || 'ch-1'}\nnodes:\n  - id: node-1\n    background: bg-classroom-day\n`;
+    } else if (meta.ext === 'json') {
+      starter = `{\n  "scene": "node-1",\n  "background": "bg-classroom-day"\n}\n`;
+    } else if (meta.ext === 'cpp' || meta.ext === 'rs') {
+      starter = `moovn::bg::show("bg-classroom-day", "fade");\nmoovn::text::say("星野雪奈", "新场景已载入。");\nmoovn::save::create("Slot_01");\n`;
+    } else {
+      starter = `moovn.bg:show("bg-classroom-day", "fade");\nmoovn.text:say("星野雪奈", "新场景已载入。");\nmoovn.save:create("Slot_01");\n`;
     }
 
     const created: ProjectScriptFile = {
@@ -1001,27 +991,32 @@ export const ScriptView: React.FC<ScriptViewProps> = ({
 
           {/* VS Code Bottom File Status Bar */}
           <div className="h-6 bg-[#18181d] border-t border-[#27272c] px-3 flex items-center justify-between text-[11px] text-zinc-400 shrink-0">
-            <div className="flex items-center gap-3">
-              <span className="font-mono text-zinc-200">
+            <div className="flex items-center gap-3 min-w-0">
+              <span className="font-mono text-zinc-200 truncate">
                 {activeFile?.fileName}
               </span>
               {activeFile?.linkedNodeId && (
-                <span className="text-zinc-500">
-                  绑定节点: {activeFile.linkedNodeId}
+                <span className="text-zinc-500 hidden sm:inline truncate">
+                  节点: {activeFile.linkedNodeId}
+                </span>
+              )}
+              {(extMeta.ext === 'cs' || extMeta.ext === 'cpp' || extMeta.ext === 'rs') && (
+                <span className="text-amber-400/90 text-[10px] truncate">
+                  原生编译器未接入（仅作语法编辑）
                 </span>
               )}
             </div>
-            <div className="flex items-center gap-4 font-mono">
+            <div className="flex items-center gap-3 font-mono shrink-0">
               <span>
                 Ln {cursorPos.line}, Col {cursorPos.col}
               </span>
-              <span>Spaces: 2</span>
-              <span>UTF-8</span>
+              <span className="hidden md:inline">Spaces: 2</span>
+              <span className="hidden md:inline">UTF-8</span>
               <span
                 style={{ color: extMeta.badgeColor }}
                 className="font-semibold"
               >
-                {extMeta.langLabel} (.{extMeta.ext})
+                {extMeta.langLabel}
               </span>
             </div>
           </div>

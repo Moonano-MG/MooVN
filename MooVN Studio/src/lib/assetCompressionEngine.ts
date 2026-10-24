@@ -1,4 +1,4 @@
-import {
+import type {
   AssetCompressionFormat,
   CharacterProfile,
   GamePerformanceConfig,
@@ -6,7 +6,8 @@ import {
   StoryChapter,
   VNProject,
 } from '../types';
-import { getBackgroundById, getCharacterById } from '../data/assets';
+import { getBackgroundById, getCharacterById } from '../data/assets.ts';
+import { computeFnv1a64Hex } from './vnRuntimeCore.ts';
 
 export interface CompressionAlgorithmSpec {
   id: AssetCompressionFormat;
@@ -101,18 +102,126 @@ export interface CompressedChunkEnvelope {
   payloadBase64: string;
 }
 
+function uint8ToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
+function base64ToUint8(b64: string): Uint8Array {
+  const binary = atob(b64);
+  const out = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    out[i] = binary.charCodeAt(i);
+  }
+  return out;
+}
+
 /**
- * 内置跨平台压缩器与解压器（支持 xz / 7z / brotli 字典与 LZ 游程编码帧封装）
- * 对 .png 等已压缩资源自动跳过二次压缩。
+ * Lossless LZ77 byte stream compressor:
+ * Encodes repeated sequences of length 4..130 within a sliding window of up to 4095 bytes.
+ * Token format:
+ * - Literal run (1..128 bytes): header `0x00..(len - 1)` followed by `len` literal bytes
+ * - Match back-reference (len 4..131, offset 1..4095):
+ *   header `0x80 | ((len - 4) & 0x7f)`, followed by 2 bytes `(offset >> 8) & 0xff`, `offset & 0xff`
+ */
+export function lzCompressBytes(input: Uint8Array, windowSize = 2048): Uint8Array {
+  const n = input.length;
+  if (n === 0) return new Uint8Array(0);
+  const maxWin = Math.min(4095, Math.max(256, windowSize));
+  const out: number[] = [];
+  const literals: number[] = [];
+
+  const flushLiterals = () => {
+    let idx = 0;
+    while (idx < literals.length) {
+      const chunkLen = Math.min(128, literals.length - idx);
+      out.push(chunkLen - 1);
+      for (let j = 0; j < chunkLen; j++) {
+        out.push(literals[idx + j]);
+      }
+      idx += chunkLen;
+    }
+    literals.length = 0;
+  };
+
+  let pos = 0;
+  while (pos < n) {
+    let bestLen = 0;
+    let bestOffset = 0;
+    const startSearch = Math.max(0, pos - maxWin);
+    const maxLen = Math.min(131, n - pos);
+
+    if (maxLen >= 4) {
+      const b0 = input[pos];
+      const b1 = input[pos + 1];
+      for (let cand = pos - 1; cand >= startSearch; cand--) {
+        if (input[cand] === b0 && input[cand + 1] === b1) {
+          let len = 2;
+          while (len < maxLen && input[cand + len] === input[pos + len]) {
+            len++;
+          }
+          if (len >= 4 && len > bestLen) {
+            bestLen = len;
+            bestOffset = pos - cand;
+            if (len >= 64) break;
+          }
+        }
+      }
+    }
+
+    if (bestLen >= 4) {
+      flushLiterals();
+      out.push(0x80 | ((bestLen - 4) & 0x7f));
+      out.push((bestOffset >> 8) & 0xff);
+      out.push(bestOffset & 0xff);
+      pos += bestLen;
+    } else {
+      literals.push(input[pos]);
+      if (literals.length >= 128) flushLiterals();
+      pos++;
+    }
+  }
+  flushLiterals();
+  return new Uint8Array(out);
+}
+
+export function lzDecompressBytes(compressed: Uint8Array): Uint8Array {
+  const out: number[] = [];
+  let pos = 0;
+  const n = compressed.length;
+  while (pos < n) {
+    const tag = compressed[pos++];
+    if ((tag & 0x80) === 0) {
+      const litLen = (tag & 0x7f) + 1;
+      for (let i = 0; i < litLen && pos < n; i++) {
+        out.push(compressed[pos++]);
+      }
+    } else {
+      const matchLen = (tag & 0x7f) + 4;
+      if (pos + 1 >= n) break;
+      const offset = ((compressed[pos] << 8) | compressed[pos + 1]) & 0xfff;
+      pos += 2;
+      const start = out.length - offset;
+      for (let i = 0; i < matchLen; i++) {
+        out.push(start + i >= 0 ? out[start + i] : 0);
+      }
+    }
+  }
+  return new Uint8Array(out);
+}
+
+/**
+ * 内置跨平台真实 LZ77 字节压缩器与校验器
+ * - `compressedBytes` 为真实压缩后字节流长度
+ * - `checksum` 为 64-bit FNV-1a 校验和，解压时校验完整性
  */
 export class MooVNBuiltInCodec {
   static computeChecksum(input: string): string {
-    let hash = 2166136261;
-    for (let i = 0; i < input.length; i++) {
-      hash ^= input.charCodeAt(i);
-      hash = Math.imul(hash, 16777619);
-    }
-    return (hash >>> 0).toString(16).padStart(8, '0');
+    return computeFnv1a64Hex(input);
   }
 
   static compressTextPayload(
@@ -124,53 +233,69 @@ export class MooVNBuiltInCodec {
     const encoder = new TextEncoder();
     const rawBytes = encoder.encode(rawText);
     const originalBytes = rawBytes.byteLength;
+    const checksum = this.computeChecksum(rawText);
 
     if (isAlreadyCompressedAssetPath(assetHintPath) || level === 0) {
-      const b64 = btoa(unescape(encodeURIComponent(rawText)));
       return {
         magic: 'MOOVN_CMP_V1',
         format: 'raw_passthrough',
         level: 0,
         originalBytes,
         compressedBytes: originalBytes,
-        checksum: this.computeChecksum(rawText),
-        payloadBase64: b64,
+        checksum,
+        payloadBase64: uint8ToBase64(rawBytes),
       };
     }
 
-    // 针对文本/JSON/YAML/脚本执行轻量字典+LZ词元压缩并封装流头
-    const spec = COMPRESSION_FORMAT_SPECS[format];
-    const levelRatioBonus = (level / spec.maxLevel) * 0.12;
-    const effectiveRatio = Math.max(0.18, spec.estimatedRatio - levelRatioBonus);
-    const b64 = btoa(unescape(encodeURIComponent(rawText)));
-    const simulatedCompressedBytes = Math.max(
-      64,
-      Math.round(originalBytes * effectiveRatio)
-    );
+    const windowByLevel = Math.min(4095, 512 + Math.max(1, level) * 350);
+    const compressedBuf = lzCompressBytes(rawBytes, windowByLevel);
+
+    // If incompressible tiny input, store raw passthrough honestly
+    if (compressedBuf.byteLength >= originalBytes) {
+      return {
+        magic: 'MOOVN_CMP_V1',
+        format: 'raw_passthrough',
+        level: 0,
+        originalBytes,
+        compressedBytes: originalBytes,
+        checksum,
+        payloadBase64: uint8ToBase64(rawBytes),
+      };
+    }
 
     return {
       magic: 'MOOVN_CMP_V1',
       format,
       level,
       originalBytes,
-      compressedBytes: simulatedCompressedBytes,
-      checksum: this.computeChecksum(rawText),
-      payloadBase64: b64,
+      compressedBytes: compressedBuf.byteLength,
+      checksum,
+      payloadBase64: uint8ToBase64(compressedBuf),
     };
+  }
+
+  static decompressSync(envelope: CompressedChunkEnvelope): string {
+    try {
+      const bytes = base64ToUint8(envelope.payloadBase64);
+      const decodedBytes =
+        envelope.format === 'raw_passthrough' || envelope.level === 0
+          ? bytes
+          : lzDecompressBytes(bytes);
+      const text = new TextDecoder().decode(decodedBytes);
+      if (envelope.checksum && this.computeChecksum(text) !== envelope.checksum) {
+        throw new Error('Checksum mismatch during chunk decompression');
+      }
+      return text;
+    } catch {
+      return '';
+    }
   }
 
   static async decompressChunkAsync(
     envelope: CompressedChunkEnvelope,
-    cpuBudgetPercent = 35
+    _cpuBudgetPercent = 35
   ): Promise<string> {
-    // 分片非阻塞解压：按 CPU 配额让出主线程时间片，确保游玩期间 60fps 零卡顿
-    const sliceDelayMs = Math.max(1, Math.round(((100 - cpuBudgetPercent) / 100) * 6));
-    await new Promise((resolve) => setTimeout(resolve, sliceDelayMs));
-    try {
-      return decodeURIComponent(escape(atob(envelope.payloadBase64)));
-    } catch {
-      return '';
-    }
+    return this.decompressSync(envelope);
   }
 }
 

@@ -1,25 +1,26 @@
-// Vercel Serverless Function: Per-IP Rate Limiter (/api/rate-limit)
-// Prevents a single IP address from repeatedly clearing browser cache and spamming downloads/requests.
+// Serverless Function: Download Request Rate Limiter (/api/rate-limit)
 
-const WINDOW_MS = 10 * 60 * 1000; // 10 minutes window
-const MAX_DOWNLOADS_PER_IP = 6;   // Max 6 download actions per 10 minutes per IP
-const MAX_CHECKS_PER_IP = 60;     // Max 60 status checks per 10 minutes per IP
+const WINDOW_MS = 10 * 60 * 1000;
+const MAX_DOWNLOADS_PER_IP = 6;
+const MAX_CHECKS_PER_IP = 60;
 
-// Global Map persists across warm invocations in Vercel Serverless / Edge Node runtime
 const ipStore = globalThis.__MOOVN_IP_RATE_STORE__ || new Map();
 globalThis.__MOOVN_IP_RATE_STORE__ = ipStore;
 
 function getClientIp(req) {
+  // Prefer edge-verified headers over client-appendable X-Forwarded-For prefix
+  const vercelIp = req.headers['x-vercel-forwarded-for'] || req.headers['x-real-ip'] || req.headers['cf-connecting-ip'];
+  if (typeof vercelIp === 'string' && vercelIp.trim().length > 0) {
+    const parts = vercelIp.split(',');
+    return parts[parts.length - 1].trim();
+  }
   const xff = req.headers['x-forwarded-for'];
   if (typeof xff === 'string' && xff.trim().length > 0) {
-    return xff.split(',')[0].trim();
+    const parts = xff.split(',');
+    return parts[parts.length - 1].trim();
   }
   if (Array.isArray(xff) && xff.length > 0) {
-    return String(xff[0]).trim();
-  }
-  const realIp = req.headers['x-real-ip'] || req.headers['cf-connecting-ip'];
-  if (typeof realIp === 'string' && realIp.trim().length > 0) {
-    return realIp.trim();
+    return String(xff[xff.length - 1]).trim();
   }
   return req.socket?.remoteAddress || '127.0.0.1';
 }
@@ -44,7 +45,6 @@ function maskIp(ip) {
 export default function handler(req, res) {
   const now = Date.now();
 
-  // Clean up expired entries to bound memory
   if (ipStore.size > 2000) {
     for (const [k, v] of ipStore.entries()) {
       if (now - v.windowStart > WINDOW_MS && now > v.blockedUntil) {
@@ -71,7 +71,6 @@ export default function handler(req, res) {
     };
   }
 
-  // Check if currently blocked
   if (now < record.blockedUntil) {
     const retryAfterSec = Math.max(1, Math.ceil((record.blockedUntil - now) / 1000));
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -90,7 +89,7 @@ export default function handler(req, res) {
         downloadRemaining: 0,
         downloadLimit: MAX_DOWNLOADS_PER_IP,
         resetInSeconds: retryAfterSec,
-        error: `当前 IP (${masked}) 下载或请求过于频繁，已触发服务端 IP 限流保护（清除浏览器缓存无效）。请在 ${retryAfterSec} 秒后重试。`,
+        error: `请求较为频繁，请在 ${retryAfterSec} 秒后重试。`,
       })
     );
     return;
@@ -118,7 +117,7 @@ export default function handler(req, res) {
           downloadRemaining: 0,
           downloadLimit: MAX_DOWNLOADS_PER_IP,
           resetInSeconds: retryAfterSec,
-          error: `当前 IP (${masked}) 在 10 分钟内下载次数已超过上限 (${MAX_DOWNLOADS_PER_IP} 次)，已触发 IP 级防刷限流。请稍后再试。`,
+          error: `短时间内下载请求次数较多，请稍后再试。`,
         })
       );
       return;
@@ -139,7 +138,7 @@ export default function handler(req, res) {
           downloadRemaining: 0,
           downloadLimit: MAX_DOWNLOADS_PER_IP,
           resetInSeconds: 300,
-          error: `当前 IP (${masked}) 访问频率过高，请稍后再试。`,
+          error: `请求频率过高，请稍后再试。`,
         })
       );
       return;

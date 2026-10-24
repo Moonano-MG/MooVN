@@ -707,7 +707,7 @@ export const Inspector: React.FC<InspectorProps> = ({
                   {/* 角色媒体形式：静态图 / GIF动图 / MP4·WebM视频动画 & 待机律动 */}
                   <div className="grid grid-cols-2 gap-1.5 pt-1">
                     <select
-                      value={char.idleMotion || 'none'}
+                      value={char.idleMotion === 'breathe' ? 'breathe' : 'none'}
                       onChange={(e) =>
                         onUpdateCharacterProfile(char.id, (prev) => ({
                           ...prev,
@@ -715,14 +715,10 @@ export const Inspector: React.FC<InspectorProps> = ({
                         }))
                       }
                       className="px-2 py-1 text-[11px]"
-                      title="角色动态动画效果"
+                      title="角色分层动态模式"
                     >
-                      <option value="none">静态无动画</option>
-                      <option value="breathe">呼吸起伏动画</option>
-                      <option value="float">轻盈悬浮动画</option>
-                      <option value="talk_pulse">说话律动动画</option>
-                      <option value="bounce">欢快弹跳动画</option>
-                      <option value="sway">微风摇曳动画</option>
+                      <option value="none">默认：差分切图 + 眨眼/口型</option>
+                      <option value="breathe">微呼吸：Body ScaleY ≤ 1.008</option>
                     </select>
 
                     <label className="px-2 py-1 rounded bg-[#141418] hover:bg-[#23232c] border border-[#2c2c36] text-[10px] text-sky-300 flex items-center justify-center cursor-pointer truncate">
@@ -1932,10 +1928,11 @@ export const Inspector: React.FC<InspectorProps> = ({
                             }
                             className="px-1.5 py-0.5 text-[11px]"
                           >
-                            <option value="fade">淡入 (Fade)</option>
-                            <option value="slide-left">左侧滑入</option>
-                            <option value="slide-right">右侧滑入</option>
-                            <option value="bounce">欢快跃入</option>
+                            <option value="none">入场：无过渡</option>
+                            <option value="fade">入场：淡入 (单次 200ms)</option>
+                            <option value="slide-left">入场：自左移入淡入 (单次)</option>
+                            <option value="slide-right">入场：自右移入淡入 (单次)</option>
+                            <option value="jump">入场：自下上移淡入 (单次)</option>
                           </select>
                         </div>
                       </div>

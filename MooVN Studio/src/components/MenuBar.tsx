@@ -7,10 +7,10 @@ import {
   FolderOpen,
   RotateCcw,
   LayoutGrid,
-  Columns,
-  Grid,
-  Globe,
   Settings,
+  Maximize2,
+  Minimize2,
+  SlidersHorizontal,
   ArrowUp,
   ArrowDown,
   ArrowLeft,
@@ -35,15 +35,15 @@ interface MenuBarProps {
   onUndo: () => void;
   onRedo: () => void;
   panels: WindowPanelDescriptor[];
+  isFocusMode?: boolean;
+  onToggleFocusMode?: () => void;
   railPosition?: RailPosition;
   onChangeRailPosition?: (pos: RailPosition) => void;
   onMoveWindowOrder?: (id: PanelId, dir: 'up' | 'down') => void;
   onDockWindowAtDirection?: (id: PanelId, dir: DockDirection) => void;
   onOpenOrFocusWindow: (id: PanelId, mode?: 'dock' | 'float') => void;
   onToggleDockFloat: (id: PanelId) => void;
-  onApplyLayoutPreset: (
-    preset: 'default_ide' | 'quad_2x2' | 'multi_col_4' | 'canvas_stage_terminal'
-  ) => void;
+  onApplyLayoutPreset?: (preset: 'default_ide') => void;
   onResetLayout: () => void;
   onPlayPreview: () => void;
   onOpenExportModal: () => void;
@@ -58,120 +58,146 @@ export const MenuBar: React.FC<MenuBarProps> = ({
   onUndo,
   onRedo,
   panels,
+  isFocusMode = false,
+  onToggleFocusMode,
   railPosition = 'left',
   onChangeRailPosition,
   onMoveWindowOrder,
   onDockWindowAtDirection,
   onOpenOrFocusWindow,
   onToggleDockFloat,
-  onApplyLayoutPreset,
   onResetLayout,
   onPlayPreview,
   onOpenExportModal,
   onOpenProjectLauncher,
   onOpenSettingsModal,
-  onOpenOfficialPortal,
 }) => {
-  const [openWindowMenu, setOpenWindowMenu] = useState(false);
   const { t } = useUILanguage();
+  const [showWindowMenu, setShowWindowMenu] = useState(false);
 
   return (
-    <header className="h-9 bg-[#141417] border-b border-[#27272c] px-2.5 flex items-center justify-between select-none z-50 shrink-0 text-xs">
-      {/* Left: Portal, Project, Undo/Redo, Window & Layout */}
-      <div className="flex items-center gap-1 min-w-0">
-        {onOpenOfficialPortal && (
-          <>
-            <button
-              type="button"
-              onClick={onOpenOfficialPortal}
-              className="px-2 py-1 rounded text-zinc-300 hover:text-white hover:bg-[#1f1f25] flex items-center gap-1.5 transition shrink-0"
-              title={t('menu.portal')}
-            >
-              <Globe className="w-3.5 h-3.5" strokeWidth={1.6} />
-              <span className="hidden sm:inline">{t('menu.portal')}</span>
-            </button>
-            <div className="w-px h-3.5 bg-[#27272c] mx-0.5 shrink-0" />
-          </>
-        )}
+    <header className="min-h-9 py-1 bg-[#141417] border-b border-[#27272c] px-2.5 flex flex-wrap items-center justify-between gap-2 select-none text-xs shrink-0 z-50">
+      {/* Left: Brand, Project, Undo/Redo, Layout & Inspector */}
+      <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+        <span className="font-semibold text-zinc-100 tracking-wide px-1.5">
+          MooVN Studio
+        </span>
+
+        <div className="h-3.5 w-px bg-[#2a2a30] mx-0.5" />
 
         <button
-          type="button"
           onClick={onOpenProjectLauncher}
-          className="px-2 py-1 rounded text-zinc-300 hover:text-white hover:bg-[#1f1f25] flex items-center gap-1.5 transition shrink-0"
-          title={t('menu.project')}
+          className="px-2 py-1 rounded hover:bg-[#232329] text-zinc-300 hover:text-white flex items-center gap-1.5 transition"
+          title={t('menu.projects')}
         >
           <FolderOpen className="w-3.5 h-3.5" strokeWidth={1.6} />
-          <span>{t('menu.project')}</span>
+          <span>{t('menu.projects')}</span>
         </button>
 
-        <div className="w-px h-3.5 bg-[#27272c] mx-0.5 shrink-0" />
-
-        <button
-          type="button"
-          disabled={!canUndo}
-          onClick={onUndo}
-          className="icon-btn !w-6 !h-6 shrink-0"
-          title={t('menu.undo')}
-        >
-          <Undo2 className="w-3.5 h-3.5" strokeWidth={1.6} />
-        </button>
-        <button
-          type="button"
-          disabled={!canRedo}
-          onClick={onRedo}
-          className="icon-btn !w-6 !h-6 shrink-0"
-          title={t('menu.redo')}
-        >
-          <Redo2 className="w-3.5 h-3.5" strokeWidth={1.6} />
-        </button>
-
-        <div className="w-px h-3.5 bg-[#27272c] mx-0.5 hidden sm:block shrink-0" />
-
-        {/* Window & Layout Dropdown */}
-        <div className="relative hidden sm:block shrink-0">
+        <div className="flex items-center gap-0.5">
           <button
-            type="button"
-            onClick={() => setOpenWindowMenu((v) => !v)}
-            className={`px-2 py-1 rounded text-xs flex items-center gap-1.5 transition ${
-              openWindowMenu
-                ? 'bg-[#27272c] text-white'
-                : 'text-zinc-300 hover:text-white hover:bg-[#1f1f25]'
+            onClick={onUndo}
+            disabled={!canUndo}
+            className="icon-btn"
+            title={t('menu.undo')}
+          >
+            <Undo2 className="w-3.5 h-3.5" strokeWidth={1.6} />
+          </button>
+          <button
+            onClick={onRedo}
+            disabled={!canRedo}
+            className="icon-btn"
+            title={t('menu.redo')}
+          >
+            <Redo2 className="w-3.5 h-3.5" strokeWidth={1.6} />
+          </button>
+        </div>
+
+        <div className="h-3.5 w-px bg-[#2a2a30] mx-0.5" />
+
+        {/* 1-Click Focus Editor Toggle ("只留一个编辑区") */}
+        {onToggleFocusMode && (
+          <button
+            onClick={onToggleFocusMode}
+            className={`px-2 py-1 rounded flex items-center gap-1.5 transition ${
+              isFocusMode
+                ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
+                : 'hover:bg-[#232329] text-zinc-300 hover:text-white'
             }`}
+            title="只保留中央画布/脚本编辑区，或恢复三栏工作区"
+          >
+            {isFocusMode ? (
+              <Minimize2 className="w-3.5 h-3.5" strokeWidth={1.6} />
+            ) : (
+              <Maximize2 className="w-3.5 h-3.5" strokeWidth={1.6} />
+            )}
+            <span>{isFocusMode ? '退出专注' : '专注编辑区'}</span>
+          </button>
+        )}
+
+        {/* 1-Click Restore Default 3-Column Layout */}
+        <button
+          onClick={onResetLayout}
+          className="px-2 py-1 rounded hover:bg-[#232329] text-zinc-300 hover:text-white flex items-center gap-1.5 transition"
+          title="恢复默认三栏布局（大纲 | 画布与脚本 | 检查器）"
+        >
+          <RotateCcw className="w-3.5 h-3.5" strokeWidth={1.6} />
+          <span>恢复三栏</span>
+        </button>
+
+        {/* Direct Inspector Toggle */}
+        <button
+          onClick={() => onOpenOrFocusWindow('inspector', 'dock')}
+          className="px-2 py-1 rounded hover:bg-[#232329] text-zinc-300 hover:text-white flex items-center gap-1.5 transition"
+          title="聚焦或打开右侧属性检查器"
+        >
+          <SlidersHorizontal className="w-3.5 h-3.5" strokeWidth={1.6} />
+          <span>检查器</span>
+        </button>
+
+        {/* Window & Dock Manager Popover */}
+        <div className="relative">
+          <button
+            onClick={() => setShowWindowMenu((v) => !v)}
+            className={`px-2 py-1 rounded flex items-center gap-1.5 transition ${
+              showWindowMenu
+                ? 'bg-[#26262d] text-white'
+                : 'hover:bg-[#232329] text-zinc-300 hover:text-white'
+            }`}
+            title={t('menu.windows')}
           >
             <LayoutGrid className="w-3.5 h-3.5" strokeWidth={1.6} />
-            <span>{t('menu.layout')}</span>
+            <span>{t('menu.windows')}</span>
           </button>
 
-          {openWindowMenu && (
+          {showWindowMenu && (
             <>
               <div
                 className="fixed inset-0 z-40"
-                onClick={() => setOpenWindowMenu(false)}
+                onClick={() => setShowWindowMenu(false)}
               />
-              <div className="absolute left-0 top-8 z-50 w-96 bg-[#1c1c21] border border-[#2e2e36] rounded-lg shadow-2xl p-2.5 space-y-2.5">
-                {/* 1. Window Options Bar Position (`窗口选项位置`) */}
+              <div className="absolute left-0 top-8 z-50 w-96 rounded-md bg-[#18181c] border border-[#2c2c33] shadow-2xl p-2.5 space-y-2.5 text-xs">
                 {onChangeRailPosition && (
                   <div className="space-y-1">
-                    <div className="px-1 text-[10px] font-semibold text-zinc-400">
-                      {t('layout.railPos')}
+                    <div className="text-[10px] text-zinc-500 px-1">
+                      {t('menu.railPosition')}
                     </div>
                     <div className="grid grid-cols-4 gap-1">
                       {(
                         [
-                          ['left', t('layout.pos.left')],
-                          ['right', t('layout.pos.right')],
-                          ['top', t('layout.pos.top')],
-                          ['bottom', t('layout.pos.bottom')],
+                          ['left', t('menu.railLeft')],
+                          ['right', t('menu.railRight')],
+                          ['top', t('menu.railTop')],
+                          ['bottom', t('menu.railBottom')],
                         ] as const
                       ).map(([pos, label]) => (
                         <button
                           key={pos}
-                          type="button"
                           onClick={() => onChangeRailPosition(pos)}
-                          className={`py-1 rounded text-[11px] border transition ${
+                          className={`px-2 py-1 rounded border text-[11px] flex items-center justify-center transition ${
                             railPosition === pos
-                              ? 'bg-zinc-200 text-zinc-950 border-zinc-200 font-semibold'
-                              : 'bg-[#23232b] border-[#32323c] text-zinc-300 hover:text-white'
+                              ? 'bg-sky-500/20 border-sky-400 text-sky-200 font-semibold'
+                              : 'bg-[#202026] border-[#2c2c34] text-zinc-300 hover:text-white'
                           }`}
                         >
                           {label}
@@ -181,107 +207,53 @@ export const MenuBar: React.FC<MenuBarProps> = ({
                   </div>
                 )}
 
-                <div className="h-px bg-[#2c2c34]" />
-
-                {/* 2. Layout Presets */}
-                <div className="space-y-1">
-                  <div className="px-1 text-[10px] font-semibold text-zinc-400">
-                    {t('layout.presets')}
-                  </div>
-                  <div className="grid grid-cols-2 gap-1">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onApplyLayoutPreset('quad_2x2');
-                        setOpenWindowMenu(false);
-                      }}
-                      className="px-2 py-1.5 rounded bg-[#23232b] hover:bg-[#2d2d37] border border-[#32323c] text-[11px] text-zinc-200 flex items-center gap-1.5"
-                    >
-                      <Grid className="w-3 h-3" strokeWidth={1.6} />
-                      <span>{t('layout.quad')}</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onApplyLayoutPreset('multi_col_4');
-                        setOpenWindowMenu(false);
-                      }}
-                      className="px-2 py-1.5 rounded bg-[#23232b] hover:bg-[#2d2d37] border border-[#32323c] text-[11px] text-zinc-200 flex items-center gap-1.5"
-                    >
-                      <Columns className="w-3 h-3" strokeWidth={1.6} />
-                      <span>{t('layout.col4')}</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onApplyLayoutPreset('canvas_stage_terminal');
-                        setOpenWindowMenu(false);
-                      }}
-                      className="px-2 py-1.5 rounded bg-[#23232b] hover:bg-[#2d2d37] border border-[#32323c] text-[11px] text-zinc-200 flex items-center gap-1.5"
-                    >
-                      <span>{t('layout.cst')}</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onApplyLayoutPreset('default_ide');
-                        setOpenWindowMenu(false);
-                      }}
-                      className="px-2 py-1.5 rounded bg-[#23232b] hover:bg-[#2d2d37] border border-[#32323c] text-[11px] text-zinc-200 flex items-center gap-1.5"
-                    >
-                      <span>{t('layout.std')}</span>
-                    </button>
-                  </div>
-                </div>
-
-                <div className="h-px bg-[#2c2c34]" />
-
-                {/* 3. Windows List: Reorder Option Position + Free Dock Direction (Left/Right/Top/Bottom) + Float */}
-                <div className="px-1 text-[10px] font-semibold text-zinc-400">
-                  {t('layout.windows')}
-                </div>
-
-                <div className="space-y-1 max-h-64 overflow-y-auto pr-0.5">
+                <div className="border-t border-[#27272e] pt-2 space-y-1 max-h-72 overflow-y-auto">
                   {panels.map((p, idx) => (
                     <div
                       key={p.id}
-                      className="flex items-center justify-between px-2 py-1.5 rounded bg-[#16161b] hover:bg-[#23232b] text-xs gap-2"
+                      className="flex items-center justify-between px-1.5 py-1 rounded hover:bg-[#222228] gap-1"
                     >
-                      <div className="flex items-center gap-1 min-w-0">
+                      <div className="flex items-center gap-1 min-w-0 flex-1">
                         {onMoveWindowOrder && (
-                          <div className="flex items-center gap-0.5 shrink-0">
+                          <div className="flex flex-col">
                             <button
                               type="button"
                               disabled={idx === 0}
                               onClick={() => onMoveWindowOrder(p.id, 'up')}
-                              className="p-0.5 rounded hover:bg-[#32323e] disabled:opacity-25 text-zinc-400 hover:text-white"
-                              title="上移此窗口选项顺序"
+                              className="text-zinc-500 hover:text-zinc-200 disabled:opacity-25"
+                              title="上移"
                             >
-                              <ArrowUp className="w-3 h-3" />
+                              <ArrowUp className="w-2.5 h-2.5" />
                             </button>
                             <button
                               type="button"
                               disabled={idx === panels.length - 1}
                               onClick={() => onMoveWindowOrder(p.id, 'down')}
-                              className="p-0.5 rounded hover:bg-[#32323e] disabled:opacity-25 text-zinc-400 hover:text-white"
-                              title="下移此窗口选项顺序"
+                              className="text-zinc-500 hover:text-zinc-200 disabled:opacity-25"
+                              title="下移"
                             >
-                              <ArrowDown className="w-3 h-3" />
+                              <ArrowDown className="w-2.5 h-2.5" />
                             </button>
                           </div>
                         )}
-                        <span className="text-zinc-200 truncate font-medium">
+                        <button
+                          onClick={() => {
+                            onOpenOrFocusWindow(p.id, 'dock');
+                            setShowWindowMenu(false);
+                          }}
+                          className="text-left text-zinc-200 hover:text-white truncate flex-1 pl-1"
+                        >
                           {p.title}
-                        </span>
+                        </button>
                       </div>
 
-                      <div className="flex items-center gap-1 shrink-0">
+                      <div className="flex items-center gap-0.5 shrink-0">
                         {onDockWindowAtDirection && (
-                          <div className="flex items-center bg-[#121216] rounded border border-[#2c2c36] p-0.5 gap-0.5">
+                          <>
                             <button
                               type="button"
                               onClick={() => onDockWindowAtDirection(p.id, 'left')}
-                              className="p-0.5 rounded hover:bg-sky-500/25 text-zinc-400 hover:text-sky-300"
+                              className="w-5 h-5 rounded bg-[#222229] hover:bg-sky-500/30 text-zinc-400 hover:text-sky-200 flex items-center justify-center"
                               title="停靠到左侧"
                             >
                               <ArrowLeft className="w-3 h-3" />
@@ -289,113 +261,87 @@ export const MenuBar: React.FC<MenuBarProps> = ({
                             <button
                               type="button"
                               onClick={() => onDockWindowAtDirection(p.id, 'top')}
-                              className="p-0.5 rounded hover:bg-sky-500/25 text-zinc-400 hover:text-sky-300"
-                              title="停靠到顶部"
+                              className="w-5 h-5 rounded bg-[#222229] hover:bg-sky-500/30 text-zinc-400 hover:text-sky-200 flex items-center justify-center"
+                              title="停靠到上方"
                             >
                               <ArrowUp className="w-3 h-3" />
                             </button>
                             <button
                               type="button"
                               onClick={() => onDockWindowAtDirection(p.id, 'bottom')}
-                              className="p-0.5 rounded hover:bg-sky-500/25 text-zinc-400 hover:text-sky-300"
-                              title="停靠到底部"
+                              className="w-5 h-5 rounded bg-[#222229] hover:bg-sky-500/30 text-zinc-400 hover:text-sky-200 flex items-center justify-center"
+                              title="停靠到下方"
                             >
                               <ArrowDown className="w-3 h-3" />
                             </button>
                             <button
                               type="button"
                               onClick={() => onDockWindowAtDirection(p.id, 'right')}
-                              className="p-0.5 rounded hover:bg-sky-500/25 text-zinc-400 hover:text-sky-300"
+                              className="w-5 h-5 rounded bg-[#222229] hover:bg-sky-500/30 text-zinc-400 hover:text-sky-200 flex items-center justify-center"
                               title="停靠到右侧"
                             >
                               <ArrowRight className="w-3 h-3" />
                             </button>
-                          </div>
+                          </>
                         )}
 
                         <button
-                          type="button"
-                          onClick={() => onOpenOrFocusWindow(p.id, 'dock')}
-                          className={`px-1.5 py-0.5 rounded text-[10px] transition ${
-                            p.docked
-                              ? 'bg-zinc-200 text-zinc-950 font-semibold'
-                              : 'bg-[#141417] text-zinc-400 hover:text-zinc-200'
-                          }`}
-                        >
-                          {t('layout.dock')}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (p.docked || p.floating) {
-                              onToggleDockFloat(p.id);
-                            } else {
-                              onOpenOrFocusWindow(p.id, 'float');
-                            }
-                          }}
-                          className={`px-1.5 py-0.5 rounded text-[10px] transition ${
+                          onClick={() => onToggleDockFloat(p.id)}
+                          className={`px-1.5 py-0.5 rounded text-[10px] border transition ml-1 ${
                             p.floating
-                              ? 'bg-zinc-200 text-zinc-950 font-semibold'
-                              : 'bg-[#141417] text-zinc-400 hover:text-zinc-200'
+                              ? 'bg-zinc-200 text-zinc-900 border-zinc-300 font-medium'
+                              : p.docked
+                              ? 'bg-[#24242b] text-zinc-300 border-[#34343d]'
+                              : 'bg-transparent text-zinc-500 border-[#2b2b32]'
                           }`}
                         >
-                          {t('layout.float')}
+                          {p.floating
+                            ? t('menu.floating')
+                            : p.docked
+                            ? t('menu.docked')
+                            : t('menu.closed')}
                         </button>
                       </div>
                     </div>
                   ))}
                 </div>
-
-                <div className="h-px bg-[#2c2c34]" />
-                <button
-                  type="button"
-                  onClick={() => {
-                    onResetLayout();
-                    setOpenWindowMenu(false);
-                  }}
-                  className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded text-xs text-zinc-400 hover:text-white hover:bg-[#27272e]"
-                >
-                  <RotateCcw className="w-3 h-3" strokeWidth={1.6} />
-                  <span>{t('layout.reset')}</span>
-                </button>
               </div>
             </>
           )}
         </div>
       </div>
 
-      {/* Right: Settings, Run Preview & Export */}
+      {/* Right: Settings, Preview, Export */}
       <div className="flex items-center gap-1.5 shrink-0">
         {onOpenSettingsModal && (
           <button
-            type="button"
             onClick={onOpenSettingsModal}
-            className="px-2 py-1 rounded text-zinc-300 hover:text-white hover:bg-[#1f1f25] flex items-center gap-1 transition"
+            className="px-2 py-1 rounded hover:bg-[#232329] text-zinc-300 hover:text-white flex items-center gap-1 transition"
             title={t('menu.settings')}
           >
             <Settings className="w-3.5 h-3.5" strokeWidth={1.6} />
-            <span className="hidden sm:inline">{t('menu.settings')}</span>
+            <span>{t('menu.settings')}</span>
           </button>
         )}
 
         <button
-          type="button"
           onClick={onPlayPreview}
-          className="px-2.5 py-1 rounded bg-[#232329] hover:bg-[#2c2c34] text-zinc-100 border border-[#32323a] flex items-center gap-1.5 transition"
+          className="px-2.5 py-1 rounded bg-zinc-200 hover:bg-white text-zinc-950 font-medium flex items-center gap-1.5 transition"
         >
-          <Play className="w-3 h-3 fill-current" strokeWidth={1.6} />
-          <span>{t('menu.run')}</span>
+          <Play className="w-3 h-3 fill-current" />
+          <span>{t('menu.preview')}</span>
         </button>
 
         <button
-          type="button"
           onClick={onOpenExportModal}
-          className="px-2.5 py-1 rounded bg-zinc-100 hover:bg-white text-zinc-950 font-semibold flex items-center gap-1.5 transition"
+          className="px-2.5 py-1 rounded bg-[#232329] hover:bg-[#2d2d35] border border-[#34343e] text-zinc-200 flex items-center gap-1.5 transition"
         >
-          <Download className="w-3 h-3" strokeWidth={1.8} />
+          <Download className="w-3.5 h-3.5" strokeWidth={1.6} />
           <span>{t('menu.export')}</span>
         </button>
       </div>
     </header>
   );
 };
+
+export default MenuBar;

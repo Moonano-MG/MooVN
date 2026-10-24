@@ -239,21 +239,17 @@ export const SceneStageView: React.FC<SceneStageViewProps> = ({
             </select>
 
             <select
-              value={selectedPlacement.idleMotion || 'none'}
+              value={selectedPlacement.idleMotion === 'breathe' ? 'breathe' : 'none'}
               onChange={(e) =>
                 onUpdateCharacter(selectedPlacement.id, {
                   idleMotion: e.target.value as CharacterIdleMotion,
                 })
               }
               className="px-2 py-1"
-              title="角色动态动画模式"
+              title="角色分层呼吸开关（默认仅表情切换+眨眼+口型联动）"
             >
-              <option value="none">静态立绘</option>
-              <option value="breathe">呼吸起伏动画</option>
-              <option value="float">悬浮律动动画</option>
-              <option value="talk_pulse">说话律动动画</option>
-              <option value="bounce">弹跳动画</option>
-              <option value="sway">摇曳动画</option>
+              <option value="none">默认（静态差分 + 眨眼/口型）</option>
+              <option value="breathe">启用微呼吸 (Body ScaleY ≤ 1.008)</option>
             </select>
 
             <input
@@ -433,14 +429,18 @@ export const SceneStageView: React.FC<SceneStageViewProps> = ({
                 }`}
               >
                 <CharacterMediaRenderer
-                  src={mediaSrc}
+                  mediaUrl={mediaSrc}
                   alt={pl.name}
-                  mediaType={mediaType}
+                  mediaType={
+                    mediaType === 'video' || mediaType === 'animated_image'
+                      ? mediaType
+                      : 'static'
+                  }
                   videoLoop={pl.videoLoop ?? charProfile?.videoLoop ?? true}
                   videoPlaybackRate={pl.videoPlaybackRate ?? charProfile?.videoPlaybackRate ?? 1}
                   chromaKeyColor={chromaKeyColor}
-                  idleMotion={idleMotion}
-                  isSpeaking={isSpeaking}
+                  idleMotion={idleMotion === 'breathe' ? 'breathe' : 'none'}
+                  isTalking={isSpeaking}
                   className="h-full w-auto object-contain pointer-events-none select-none drop-shadow-[0_14px_28px_rgba(0,0,0,0.68)]"
                 />
               </div>

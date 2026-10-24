@@ -1,7 +1,7 @@
 /**
  * MooVN Engine — JavaScript / TypeScript Fast API & Polyglot Binding
  *
- * Supports both JS/TS dialect (`moobn.sava:create(NAME)`) and canonical (`moovn.save:create(NAME)`),
+ * Official JavaScript / TypeScript SDK for MooVN Engine (`moovn.save:create(NAME)`).
  * translating all calls into the same underlying Rust Engine IR operations.
  */
 
@@ -40,9 +40,3 @@ export const moovn = {
   },
 };
 
-/**
- * Alias supporting the JavaScript fast API syntax `moobn.sava:create(NAME)` / `moobn.sava.create(NAME)`
- */
-export const moobn = {
-  sava: moovn.save,
-};

@@ -50,6 +50,8 @@ import { OfficialPortal } from './components/OfficialPortal';
 import { PanelId } from './types';
 import { saveProjectToWorkspace } from './lib/workspaceManager';
 import { useUILanguage } from './lib/i18n';
+import { clampSplitRatio } from './lib/vnRuntimeCore';
+import type { WorkflowNodeType } from './types';
 
 const PANEL_TITLES: Record<PanelId, string> = {
   explorer: '工程资源与章节',
@@ -186,7 +188,7 @@ const createDefaultSplitTree = (): EditorSplitNode => ({
   kind: 'branch',
   id: 'root-h-1',
   direction: 'horizontal',
-  ratio: 0.18,
+  ratio: 0.2,
   first: {
     kind: 'leaf',
     id: 'leaf-left',
@@ -197,29 +199,17 @@ const createDefaultSplitTree = (): EditorSplitNode => ({
     kind: 'branch',
     id: 'root-h-2',
     direction: 'horizontal',
-    ratio: 0.67,
+    ratio: 0.65,
     first: {
-      kind: 'branch',
-      id: 'center-v-1',
-      direction: 'vertical',
-      ratio: 0.72,
-      first: {
-        kind: 'leaf',
-        id: 'leaf-center-top',
-        tabs: ['canvas', 'stage', 'ts_code', 'yaml_code', 'ui_customizer', 'asset_studio'],
-        activeTab: 'canvas',
-      },
-      second: {
-        kind: 'leaf',
-        id: 'leaf-center-bottom',
-        tabs: ['terminal'],
-        activeTab: 'terminal',
-      },
+      kind: 'leaf',
+      id: 'leaf-center-top',
+      tabs: ['canvas', 'stage', 'ts_code', 'yaml_code', 'terminal'],
+      activeTab: 'canvas',
     },
     second: {
       kind: 'leaf',
       id: 'leaf-right',
-      tabs: ['inspector', 'ai_agent'],
+      tabs: ['inspector', 'ai_agent', 'ui_customizer'],
       activeTab: 'inspector',
     },
   },
@@ -288,7 +278,7 @@ function updateBranchRatioInTree(
   if (!node) return null;
   if (node.kind === 'leaf') return node;
   if (node.id === branchId) {
-    return { ...node, ratio: Math.max(0.14, Math.min(0.86, ratio)) };
+    return { ...node, ratio: clampSplitRatio(ratio, 0.18, 0.82) };
   }
   return {
     ...node,
@@ -592,10 +582,27 @@ export function App({
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isLauncherOpen, setIsLauncherOpen] = useState(true);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isFocusMode, setIsFocusMode] = useState(false);
+  const savedSplitBeforeFocusRef = useRef<EditorSplitNode | null>(null);
   const [runtimeLogs, setRuntimeLogs] = useState<string[]>([
-    `[${new Date().toLocaleTimeString().slice(0, 8)}] MooVN Engine 初始化完成`,
-    `[${new Date().toLocaleTimeString().slice(0, 8)}] 流加载器就绪：支持静态图像、GIF动图与 MP4/WebM 视频动画立绘`,
+    `[${new Date().toLocaleTimeString().slice(0, 8)}] 工作区已就绪`,
   ]);
+
+  const handleToggleFocusMode = () => {
+    if (!isFocusMode) {
+      savedSplitBeforeFocusRef.current = splitRoot;
+      setIsFocusMode(true);
+      setSplitRoot({
+        kind: 'leaf',
+        id: 'leaf-focus-main',
+        tabs: ['canvas', 'stage', 'ts_code', 'yaml_code'],
+        activeTab: 'canvas',
+      });
+    } else {
+      setIsFocusMode(false);
+      setSplitRoot(savedSplitBeforeFocusRef.current || createDefaultSplitTree());
+    }
+  };
 
   // Convert a docked panel directly into a Floating Window
   const undockPanelToFloat = (
@@ -902,11 +909,10 @@ export function App({
 
   // ==================== UNIFIED MOUSE & TOUCH POINTER MOVE ====================
   const handlePointerMove = (clientX: number, clientY: number) => {
-    // 1. Dragging a docked tab out (> 24px) smoothly detaches it into a Floating Window!
+    // 1. Only detach a docked tab into a Floating Window if dragged > 96px vertically outside the tab bar
     if (pendingTabDragRef.current) {
-      const dx = Math.abs(clientX - pendingTabDragRef.current.startX);
       const dy = Math.abs(clientY - pendingTabDragRef.current.startY);
-      if (dx > 24 || dy > 24) {
+      if (dy > 96) {
         const pid = pendingTabDragRef.current.panelId;
         pendingTabDragRef.current = null;
         undockPanelToFloat(pid, clientX, clientY, true);
@@ -983,7 +989,7 @@ export function App({
       return;
     }
 
-    // 3. Resizing a Floating Window from bottom-right corner
+    // 3. Resizing a Floating Window from bottom-right corner (strict minimum size 360x260)
     if (resizingFloatRef.current) {
       const { panelId, startX, startY, startW, startH } =
         resizingFloatRef.current;
@@ -994,8 +1000,8 @@ export function App({
           w.id === panelId
             ? {
                 ...w,
-                width: Math.max(280, startW + dw),
-                height: Math.max(200, startH + dh),
+                width: Math.max(360, startW + dw),
+                height: Math.max(260, startH + dh),
               }
             : w
         )
@@ -1204,42 +1210,29 @@ export function App({
         return (
           <AiAssistantPanel
             project={project}
-            selectedNodeId={selectedNodeId}
-            onAddNode={(type) => addNode(type)}
-            onUpdateNode={updateNode}
-            onAppendDialogue={(speaker, text) => {
-              if (!selectedNode) return;
-              updateNode(selectedNode.id, (prev) => ({
-                ...prev,
-                dialogues: [
-                  ...prev.dialogues,
-                  {
-                    id: `line-${Date.now()}-${Math.random()
-                      .toString(36)
-                      .slice(2, 6)}`,
-                    speakerId: speaker.includes('雪奈') ? 'yukina' : 'custom',
-                    speakerName: speaker,
-                    speakerColor: '#38bdf8',
-                    text,
-                  },
-                ],
-              }));
+            selectedChapterId={selectedChapterId}
+            selectedNode={selectedNode || undefined}
+            onCreateGeneratedNodes={(nodes, connectFromSelected) => {
+              nodes.forEach((partial) => {
+                const newId = addNode((partial.type as WorkflowNodeType) || 'dialogue');
+                updateNode(newId, (prev) => ({
+                  ...prev,
+                  ...partial,
+                  id: prev.id,
+                }));
+                if (connectFromSelected && selectedNode) {
+                  updateNode(selectedNode.id, (prev) => ({
+                    ...prev,
+                    nextNodeId: newId,
+                  }));
+                }
+              });
             }}
-            onSwitchBackground={(bgId) => {
+            onUpdateCurrentNode={(updater) => {
               if (!selectedNode) return;
-              updateNode(selectedNode.id, (prev) => ({
-                ...prev,
-                backgroundId: bgId,
-              }));
+              updateNode(selectedNode.id, updater);
             }}
-            onAddCharacter={() => {
-              if (!selectedNode) return;
-              addCharacterToNode(
-                selectedNode.id,
-                project.characters[0]?.id || 'yukina'
-              );
-            }}
-            onAddChapter={addChapter}
+            onUpdateProjectMeta={updateProjectMeta}
           />
         );
       case 'terminal':
@@ -1489,101 +1482,22 @@ export function App({
         <div className="flex-1 overflow-hidden relative">
           {renderPanelContent(activePanel)}
 
-          {/* ====================================================================
-              VS CODE COMPACT 5-WAY DOCK COMPASS OVERLAY
-              Moving a floating window in open space NEVER accidentally docks!
-              Only dropping onto one of the 5 central compass buttons or the Tab Header docks!
-             ==================================================================== */}
-          {draggingFloatingId && (
-            <div className="absolute inset-0 z-50 pointer-events-none flex items-center justify-center">
-              {/* Glowing Blue Snap Preview showing exact 2D split area */}
-              {isLeafHovered && hoverDropTarget && (
-                <div
-                  className={`absolute bg-sky-500/20 border-2 border-sky-400 rounded transition-all duration-75 ${
-                    hoverDropTarget.zone === 'top'
-                      ? 'top-1 left-1 right-1 h-1/2'
-                      : hoverDropTarget.zone === 'bottom'
-                      ? 'bottom-1 left-1 right-1 h-1/2'
-                      : hoverDropTarget.zone === 'left'
-                      ? 'top-1 bottom-1 left-1 w-1/2'
-                      : hoverDropTarget.zone === 'right'
-                      ? 'top-1 bottom-1 right-1 w-1/2'
-                      : 'inset-1'
-                  }`}
-                />
-              )}
-
-              {/* Compact 112x112 Central 5-Way Dock Compass */}
-              <div className="grid grid-cols-3 gap-1.5 p-2 rounded-xl bg-[#111116]/95 border border-zinc-500/80 shadow-2xl backdrop-blur-md">
-                <div />
-                <div
-                  data-dock-leaf={leaf.id}
-                  data-dock-zone="top"
-                  className={`w-8 h-8 rounded-lg border flex items-center justify-center transition ${
-                    isLeafHovered && hoverDropTarget?.zone === 'top'
-                      ? 'bg-sky-500 border-white text-zinc-950 scale-110 shadow-lg'
-                      : 'bg-[#202028] border-zinc-600 text-zinc-200'
-                  }`}
-                  title="停靠到此分栏上方行"
-                >
-                  <ArrowUp className="w-4 h-4" />
-                </div>
-                <div />
-
-                <div
-                  data-dock-leaf={leaf.id}
-                  data-dock-zone="left"
-                  className={`w-8 h-8 rounded-lg border flex items-center justify-center transition ${
-                    isLeafHovered && hoverDropTarget?.zone === 'left'
-                      ? 'bg-sky-500 border-white text-zinc-950 scale-110 shadow-lg'
-                      : 'bg-[#202028] border-zinc-600 text-zinc-200'
-                  }`}
-                  title="停靠到此分栏左侧列"
-                >
-                  <ArrowLeft className="w-4 h-4" />
-                </div>
-
-                <div
-                  data-dock-leaf={leaf.id}
-                  data-dock-zone="center"
-                  className={`w-8 h-8 rounded-lg border flex items-center justify-center transition ${
-                    isLeafHovered && hoverDropTarget?.zone === 'center'
-                      ? 'bg-emerald-400 border-white text-zinc-950 scale-110 shadow-lg'
-                      : 'bg-[#202028] border-zinc-600 text-zinc-200'
-                  }`}
-                  title="合并到此分栏标签页"
-                >
-                  <CircleDot className="w-4 h-4" />
-                </div>
-
-                <div
-                  data-dock-leaf={leaf.id}
-                  data-dock-zone="right"
-                  className={`w-8 h-8 rounded-lg border flex items-center justify-center transition ${
-                    isLeafHovered && hoverDropTarget?.zone === 'right'
-                      ? 'bg-sky-500 border-white text-zinc-950 scale-110 shadow-lg'
-                      : 'bg-[#202028] border-zinc-600 text-zinc-200'
-                  }`}
-                  title="停靠到此分栏右侧列"
-                >
-                  <ArrowRight className="w-4 h-4" />
-                </div>
-
-                <div />
-                <div
-                  data-dock-leaf={leaf.id}
-                  data-dock-zone="bottom"
-                  className={`w-8 h-8 rounded-lg border flex items-center justify-center transition ${
-                    isLeafHovered && hoverDropTarget?.zone === 'bottom'
-                      ? 'bg-sky-500 border-white text-zinc-950 scale-110 shadow-lg'
-                      : 'bg-[#202028] border-zinc-600 text-zinc-200'
-                  }`}
-                  title="停靠到此分栏下方行"
-                >
-                  <ArrowDown className="w-4 h-4" />
-                </div>
-                <div />
-              </div>
+          {/* Edge Drop Snap Preview (No central compass blocking content) */}
+          {draggingFloatingId && isLeafHovered && hoverDropTarget && (
+            <div className="absolute inset-0 z-50 pointer-events-none">
+              <div
+                className={`absolute bg-sky-500/20 border-2 border-sky-400 rounded transition-all duration-75 ${
+                  hoverDropTarget.zone === 'top'
+                    ? 'top-1 left-1 right-1 h-1/2'
+                    : hoverDropTarget.zone === 'bottom'
+                    ? 'bottom-1 left-1 right-1 h-1/2'
+                    : hoverDropTarget.zone === 'left'
+                    ? 'top-1 bottom-1 left-1 w-1/2'
+                    : hoverDropTarget.zone === 'right'
+                    ? 'top-1 bottom-1 right-1 w-1/2'
+                    : 'inset-1'
+                }`}
+              />
             </div>
           )}
         </div>
@@ -1616,7 +1530,7 @@ export function App({
           {renderSplitTree(node.first)}
         </div>
 
-        {/* Interactive Draggable Sash */}
+        {/* Interactive Draggable Sash (6px wide hit area) */}
         <div
           onMouseDown={(e) => {
             e.preventDefault();
@@ -1639,9 +1553,9 @@ export function App({
           }}
           className={`${
             isHorizontal
-              ? 'w-1 cursor-col-resize hover:bg-sky-500/60'
-              : 'h-1 cursor-row-resize hover:bg-sky-500/60'
-          } bg-[#1b1b20] shrink-0 transition z-20`}
+              ? 'w-1.5 cursor-col-resize hover:bg-sky-500/60'
+              : 'h-1.5 cursor-row-resize hover:bg-sky-500/60'
+          } bg-[#1e1e24] shrink-0 transition z-20`}
         />
 
         <div
@@ -1694,6 +1608,8 @@ export function App({
         onUndo={undo}
         onRedo={redo}
         panels={panelDescriptors}
+        isFocusMode={isFocusMode}
+        onToggleFocusMode={handleToggleFocusMode}
         railPosition={railPosition}
         onChangeRailPosition={handleChangeRailPosition}
         onMoveWindowOrder={handleMoveWindowOrder}
@@ -1708,8 +1624,8 @@ export function App({
           }
         }}
         onToggleDockFloat={handleToggleDockFloat}
-        onApplyLayoutPreset={handleApplyLayoutPreset}
         onResetLayout={() => {
+          setIsFocusMode(false);
           setSplitRoot(createDefaultSplitTree());
           setFloatingWindows([]);
         }}
