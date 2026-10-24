@@ -1,28 +1,27 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   X,
   FolderOpen,
-  Check,
-  Download,
-  RefreshCw,
-  HardDrive,
   Sliders,
-  Code2,
-  Languages,
-  Cpu,
+  Volume2,
+  Check,
+  RotateCcw,
+  Globe,
 } from 'lucide-react';
-import { VNProject, MooVNSystemSettings, ScriptLanguage } from '../types';
+import { MooVNSystemSettings, VNProject } from '../types';
 import {
   IS_WEB_EDITION,
   loadSystemSettings,
-  saveSystemSettings,
-  exportSettingsFileJson,
-  fetchWorkspaceDiskStatus,
-  getPlatformDefaultPaths,
   pickDeviceMooVNFolder,
+  resetSystemSettings,
+  saveSystemSettings,
+  syncSystemSettingsToDisk,
 } from '../lib/workspaceManager';
-import { SUPPORTED_UI_LANGUAGES, UILanguage, useUILanguage } from '../lib/i18n';
-import { RESERVED_RENDERER_STATUS } from '../lib/moovnEngineBridge';
+import {
+  SUPPORTED_UI_LANGUAGES,
+  UILanguage,
+  useUILanguage,
+} from '../lib/i18n';
 
 interface SettingsModalProps {
   project: VNProject;
@@ -35,415 +34,241 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onUpdateProject,
   onClose,
 }) => {
+  const [settings, setSettings] = useState<MooVNSystemSettings>(loadSystemSettings);
   const { lang, setLang, t } = useUILanguage();
-  const [settings, setSettings] = useState<MooVNSystemSettings>(() =>
-    loadSystemSettings()
-  );
   const [activeTab, setActiveTab] = useState<
-    'language' | 'workspace' | 'script_compiler' | 'game_defaults'
-  >('language');
-  const [diskStatus, setDiskStatus] = useState<Awaited<
-    ReturnType<typeof fetchWorkspaceDiskStatus>
-  > | null>(null);
-  const [savedBanner, setSavedBanner] = useState<string | null>(null);
-
-  const refreshDisk = async () => {
-    if (IS_WEB_EDITION) return;
-    const st = await fetchWorkspaceDiskStatus();
-    setDiskStatus(st);
-  };
-
-  useEffect(() => {
-    refreshDisk();
-  }, []);
+    'general' | 'game_defaults' | 'workspace'
+  >('general');
+  const [savedToast, setSavedToast] = useState<string | null>(null);
 
   const handleSaveAll = async () => {
     saveSystemSettings(settings);
-    onUpdateProject({
-      ...(IS_WEB_EDITION
-        ? {}
-        : { projectPath: `${settings.projectsDirectoryPath}/${project.id}.mpvn` }),
-      performanceConfig: {
-        ...(project.performanceConfig || settings.performanceConfig),
-      },
-    });
     if (!IS_WEB_EDITION) {
-      await refreshDisk();
+      await syncSystemSettingsToDisk(settings);
     }
-    setSavedBanner(
-      IS_WEB_EDITION
-        ? '已应用当前编辑器与引擎设置'
-        : `已保存并同步写入磁盘: ${settings.settingsFilePath}`
-    );
-    setTimeout(() => setSavedBanner(null), 3000);
+    setSavedToast('设置已保存');
+    setTimeout(() => setSavedToast(null), 2000);
   };
 
-  const devScriptMode: ScriptLanguage =
-    project.nodes[0]?.scriptLanguage || project.defaultLanguage || 'typescript';
-
-  const handleSwitchAllNodesLanguage = (targetLang: ScriptLanguage) => {
-    onUpdateProject({
-      defaultLanguage: targetLang,
-      nodes: project.nodes.map((n) => ({
-        ...n,
-        scriptLanguage: targetLang,
-      })),
-    });
-    setSavedBanner(`已将工程节点默认脚本语言切换为 ${targetLang.toUpperCase()} (MooVN Engine 多语言翻译层已同步)`);
-    setTimeout(() => setSavedBanner(null), 3000);
+  const handleBrowseWorkspaceFolder = async () => {
+    const picked = await pickDeviceMooVNFolder();
+    if (picked?.loadedSettings) {
+      setSettings(picked.loadedSettings);
+      setSavedToast(`已切换工作区：${picked.folderName}`);
+      setTimeout(() => setSavedToast(null), 2500);
+    }
   };
+
+  const handleReset = () => {
+    const def = resetSystemSettings();
+    setSettings(def);
+    setSavedToast('已恢复默认设置');
+    setTimeout(() => setSavedToast(null), 2000);
+  };
+
+  const tabs = [
+    {
+      id: 'general' as const,
+      label: t('settings.tab.general'),
+      icon: <Sliders className="w-3.5 h-3.5" strokeWidth={1.6} />,
+    },
+    {
+      id: 'game_defaults' as const,
+      label: t('settings.tab.game'),
+      icon: <Volume2 className="w-3.5 h-3.5" strokeWidth={1.6} />,
+    },
+    ...(!IS_WEB_EDITION
+      ? [
+          {
+            id: 'workspace' as const,
+            label: t('settings.tab.workspace'),
+            icon: <FolderOpen className="w-3.5 h-3.5" strokeWidth={1.6} />,
+          },
+        ]
+      : []),
+  ];
 
   return (
-    <div className="fixed inset-0 z-[120] bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 select-none">
-      <div className="w-full max-w-3xl bg-[#16161a] border border-[#2c2c34] rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[86vh] text-xs text-zinc-200">
+    <div className="fixed inset-0 z-[60] bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 select-none">
+      <div className="w-full max-w-2xl bg-[#161619] border border-[#27272c] rounded-lg shadow-2xl overflow-hidden flex flex-col max-h-[86vh]">
         {/* Header */}
-        <div className="px-4 py-3 bg-[#1b1b20] border-b border-[#2c2c34] flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Sliders className="w-4 h-4 text-zinc-300" strokeWidth={1.7} />
-            <span className="text-sm font-semibold text-white">
-              {t('settings.title')}
-            </span>
-          </div>
-          <button onClick={onClose} className="icon-btn" title="关闭设置">
-            <X className="w-4 h-4" strokeWidth={1.7} />
+        <div className="flex items-center justify-between px-4 py-2.5 bg-[#121215] border-b border-[#27272c] shrink-0">
+          <span className="text-xs font-semibold text-zinc-100">
+            {t('settings.title')}
+          </span>
+          <button onClick={onClose} className="icon-btn">
+            <X className="w-4 h-4" strokeWidth={1.6} />
           </button>
         </div>
 
-        {/* Sub-navigation */}
-        <div className="px-4 py-1.5 bg-[#141418] border-b border-[#27272c] flex flex-wrap items-center gap-2">
-          <button
-            onClick={() => setActiveTab('language')}
-            className={`px-3 py-1 rounded text-xs font-medium flex items-center gap-1.5 transition ${
-              activeTab === 'language'
-                ? 'bg-[#26262f] text-white border border-zinc-600'
-                : 'text-zinc-400 hover:text-zinc-200'
-            }`}
-          >
-            <Languages className="w-3.5 h-3.5" strokeWidth={1.6} />
-            {t('settings.tab.language')}
-          </button>
+        {/* Main Content: Left Sidebar Tabs + Right Panel */}
+        <div className="flex flex-1 min-h-0 overflow-hidden text-xs">
+          <aside className="w-44 bg-[#131317] border-r border-[#27272c] p-2 space-y-1 shrink-0">
+            {tabs.map((item) => {
+              const active = activeTab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setActiveTab(item.id)}
+                  className={`w-full px-3 py-2 rounded-md text-left flex items-center gap-2 transition ${
+                    active
+                      ? 'bg-[#23232b] text-white font-semibold'
+                      : 'text-zinc-400 hover:text-zinc-200 hover:bg-[#1a1a20]'
+                  }`}
+                >
+                  {item.icon}
+                  <span className="truncate">{item.label}</span>
+                </button>
+              );
+            })}
+          </aside>
 
-          <button
-            onClick={() => setActiveTab('script_compiler')}
-            className={`px-3 py-1 rounded text-xs font-medium flex items-center gap-1.5 transition ${
-              activeTab === 'script_compiler'
-                ? 'bg-[#26262f] text-white border border-zinc-600'
-                : 'text-zinc-400 hover:text-zinc-200'
-            }`}
-          >
-            <Code2 className="w-3.5 h-3.5" strokeWidth={1.6} />
-            {t('settings.tab.engine')}
-          </button>
-
-          <button
-            onClick={() => setActiveTab('game_defaults')}
-            className={`px-3 py-1 rounded text-xs font-medium flex items-center gap-1.5 transition ${
-              activeTab === 'game_defaults'
-                ? 'bg-[#26262f] text-white border border-zinc-600'
-                : 'text-zinc-400 hover:text-zinc-200'
-            }`}
-          >
-            <Sliders className="w-3.5 h-3.5" strokeWidth={1.6} />
-            {t('settings.tab.game')}
-          </button>
-
-          {!IS_WEB_EDITION && (
-            <button
-              onClick={() => setActiveTab('workspace')}
-              className={`px-3 py-1 rounded text-xs font-medium flex items-center gap-1.5 transition ${
-                activeTab === 'workspace'
-                  ? 'bg-[#26262f] text-white border border-zinc-600'
-                  : 'text-zinc-400 hover:text-zinc-200'
-              }`}
-            >
-              <HardDrive className="w-3.5 h-3.5" strokeWidth={1.6} />
-              {t('settings.tab.workspace')}
-            </button>
-          )}
-        </div>
-
-        {/* Body */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {savedBanner && (
-            <div className="px-3 py-2 rounded bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 flex items-center gap-2 text-xs">
-              <Check className="w-4 h-4 shrink-0" strokeWidth={1.8} />
-              <span>{savedBanner}</span>
-            </div>
-          )}
-
-          {activeTab === 'language' && (
-            <div className="space-y-4">
-              <div className="p-3.5 rounded-lg bg-[#1b1b21] border border-[#292932] space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="text-zinc-100 font-semibold">
-                      界面与系统语言 (Interface Language)
-                    </div>
-                    <div className="text-[11px] text-zinc-400 mt-0.5">
-                      实时切换 MooVN Studio / MooVN Web 工作台菜单、面板与提示语言
-                    </div>
+          <div className="flex-1 p-4 overflow-y-auto space-y-4">
+            {/* TAB 1: General, Language & Project Meta */}
+            {activeTab === 'general' && (
+              <>
+                {/* Language Switcher integrated directly inside General Settings */}
+                <div className="p-3.5 rounded-md bg-[#1c1c21] border border-[#27272c] space-y-2.5">
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-100">
+                    <Globe className="w-3.5 h-3.5 text-sky-400" strokeWidth={1.6} />
+                    <span>{t('settings.language')}</span>
                   </div>
-                  <span className="px-2 py-0.5 rounded bg-sky-500/15 border border-sky-400/30 text-sky-300 font-mono text-[11px]">
-                    {lang}
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  {SUPPORTED_UI_LANGUAGES.map((item) => {
-                    const active = lang === item.id;
-                    return (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => {
-                          setLang(item.id as UILanguage);
-                          setSavedBanner(`已切换系统语言为: ${item.label}`);
-                          setTimeout(() => setSavedBanner(null), 2500);
-                        }}
-                        className={`p-3 rounded-lg border text-left transition flex items-center justify-between ${
-                          active
-                            ? 'bg-sky-500/15 border-sky-400 text-white'
-                            : 'bg-[#15151a] border-[#27272c] text-zinc-300 hover:border-zinc-500'
-                        }`}
-                      >
-                        <div>
-                          <div className="font-semibold text-xs">{item.nativeName}</div>
-                          <div className="text-[10px] text-zinc-400">{item.label}</div>
-                        </div>
-                        {active && (
-                          <Check className="w-4 h-4 text-sky-400 shrink-0" strokeWidth={2} />
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {!IS_WEB_EDITION && activeTab === 'workspace' && (
-            <div className="space-y-4">
-              {/* Platform Preset Selector */}
-              <div className="p-3 rounded-lg bg-[#1b1b21] border border-[#292932] space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <span className="font-medium text-zinc-200">
-                    目标设备路径预设与 Web 本地目录挂载
-                  </span>
-                  <div className="flex items-center gap-1.5">
-                    {(['web', 'windows', 'android', 'ios', 'macos'] as const).map((plat) => (
-                      <button
-                        key={plat}
-                        onClick={() => {
-                          const def = getPlatformDefaultPaths(plat);
-                          setSettings((s: MooVNSystemSettings) => ({
-                            ...s,
-                            platform: plat,
-                            ...def,
-                          }));
-                        }}
-                        className={`px-2 py-0.5 rounded text-[11px] border ${
-                          settings.platform === plat
-                            ? 'bg-[#2b2b36] border-zinc-400 text-white'
-                            : 'bg-[#15151a] border-[#27272c] text-zinc-400'
-                        }`}
-                      >
-                        {plat.toUpperCase()}
-                      </button>
-                    ))}
+                  <div className="grid grid-cols-2 gap-2">
+                    {SUPPORTED_UI_LANGUAGES.map((item) => {
+                      const active = lang === item.id;
+                      return (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => setLang(item.id as UILanguage)}
+                          className={`px-3 py-2 rounded border text-left flex items-center justify-between transition ${
+                            active
+                              ? 'bg-[#252530] border-sky-400 text-white font-semibold'
+                              : 'bg-[#151519] border-[#2c2c34] text-zinc-400 hover:text-zinc-200'
+                          }`}
+                        >
+                          <span>{item.nativeName}</span>
+                          {active && (
+                            <Check className="w-3.5 h-3.5 text-sky-400" />
+                          )}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-                  <div>
-                    <label className="block text-[11px] text-zinc-400 mb-1">
-                      MooVN 全局工作区根目录
-                    </label>
-                    <input
-                      type="text"
-                      value={settings.workspaceRootPath}
-                      onChange={(e) =>
-                        setSettings({ ...settings, workspaceRootPath: e.target.value })
-                      }
-                      className="w-full px-2.5 py-1.5 rounded font-mono text-[11px]"
-                    />
+                {/* Project Info & Resolution */}
+                <div className="p-3.5 rounded-md bg-[#1c1c21] border border-[#27272c] space-y-3">
+                  <div className="text-xs font-semibold text-zinc-100">
+                    当前工程参数
                   </div>
-                  <div>
-                    <label className="block text-[11px] text-zinc-400 mb-1">
-                      工程默认保存文件夹 (Projects)
-                    </label>
-                    <input
-                      type="text"
-                      value={settings.projectsDirectoryPath}
-                      onChange={(e) =>
-                        setSettings({ ...settings, projectsDirectoryPath: e.target.value })
-                      }
-                      className="w-full px-2.5 py-1.5 rounded font-mono text-[11px]"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] text-zinc-400 mb-1">
-                      游戏打包导出文件夹 (Exports)
-                    </label>
-                    <input
-                      type="text"
-                      value={settings.exportOutputDirectoryPath}
-                      onChange={(e) =>
-                        setSettings({ ...settings, exportOutputDirectoryPath: e.target.value })
-                      }
-                      className="w-full px-2.5 py-1.5 rounded font-mono text-[11px]"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] text-zinc-400 mb-1">
-                      设置文件保存路径 (settings.moovn.json)
-                    </label>
-                    <input
-                      type="text"
-                      value={settings.settingsFilePath}
-                      onChange={(e) =>
-                        setSettings({ ...settings, settingsFilePath: e.target.value })
-                      }
-                      className="w-full px-2.5 py-1.5 rounded font-mono text-[11px]"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2 pt-1">
-                  <button
-                    onClick={async () => {
-                      const picked = await pickDeviceMooVNFolder();
-                      if (picked?.loadedSettings) {
-                        setSettings(picked.loadedSettings);
-                      }
-                    }}
-                    className="px-2.5 py-1.5 rounded bg-[#25252e] hover:bg-[#2f2f3a] border border-zinc-600 text-zinc-100 flex items-center gap-1.5"
-                  >
-                    <FolderOpen className="w-3.5 h-3.5" strokeWidth={1.6} />
-                    选择设备上已有的 MooVN 文件夹
-                  </button>
-                  <button
-                    onClick={() => exportSettingsFileJson(settings)}
-                    className="px-2.5 py-1.5 rounded bg-[#1f1f27] hover:bg-[#282832] border border-[#2d2d37] text-zinc-300 flex items-center gap-1.5"
-                  >
-                    <Download className="w-3.5 h-3.5" strokeWidth={1.6} />
-                    导出 settings.moovn.json
-                  </button>
-                  <button
-                    onClick={refreshDisk}
-                    className="px-2.5 py-1.5 rounded bg-[#1f1f27] hover:bg-[#282832] border border-[#2d2d37] text-zinc-300 flex items-center gap-1.5 ml-auto"
-                  >
-                    <RefreshCw className="w-3.5 h-3.5" strokeWidth={1.6} />
-                    刷新磁盘真实文件列表
-                  </button>
-                </div>
-              </div>
-
-              {/* Real Disk Status Inspection */}
-              <div className="p-3 rounded-lg bg-[#121216] border border-[#27272c] space-y-2 font-mono text-[11px]">
-                <div className="flex items-center justify-between text-zinc-300 font-sans font-medium">
-                  <span>磁盘真实目录状态 (/home/user/MooVN/MooVN_Workspace)</span>
-                  <span className="text-emerald-400 text-[11px]">
-                    {diskStatus?.ok ? '● 磁盘目录已挂载并实时同步' : '○ 读取中'}
-                  </span>
-                </div>
-                {diskStatus && (
-                  <div className="space-y-1.5 text-zinc-400">
-                    <div>根目录: {diskStatus.workspaceRoot}</div>
-                    <div>配置文件: {diskStatus.settingsFile}</div>
+                  <div className="grid grid-cols-2 gap-3">
                     <div>
-                      Projects/ ({diskStatus.projectFiles.length} 个工程文件):{' '}
-                      {diskStatus.projectFiles.map((f) => f.name).join(', ') || '暂无'}
+                      <label className="block text-[11px] text-zinc-400 mb-1">
+                        作品标题
+                      </label>
+                      <input
+                        type="text"
+                        value={project.title}
+                        onChange={(e) =>
+                          onUpdateProject({ title: e.target.value })
+                        }
+                        className="w-full px-2.5 py-1.5 text-xs"
+                      />
                     </div>
                     <div>
-                      Exports/ ({diskStatus.exportFiles.length} 个导出包):{' '}
-                      {diskStatus.exportFiles.map((f) => f.name).join(', ') || '暂无'}
+                      <label className="block text-[11px] text-zinc-400 mb-1">
+                        作者 / 制作组
+                      </label>
+                      <input
+                        type="text"
+                        value={project.author}
+                        onChange={(e) =>
+                          onUpdateProject({ author: e.target.value })
+                        }
+                        className="w-full px-2.5 py-1.5 text-xs"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] text-zinc-400 mb-1">
+                        工程版本
+                      </label>
+                      <input
+                        type="text"
+                        value={project.version}
+                        onChange={(e) =>
+                          onUpdateProject({ version: e.target.value })
+                        }
+                        className="w-full px-2.5 py-1.5 text-xs font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] text-zinc-400 mb-1">
+                        标准画布分辨率
+                      </label>
+                      <select
+                        value={`${project.resolution.width}x${project.resolution.height}`}
+                        onChange={(e) => {
+                          const [w, h] = e.target.value.split('x').map(Number);
+                          onUpdateProject({
+                            resolution: { width: w, height: h },
+                          });
+                        }}
+                        className="w-full px-2.5 py-1.5 text-xs font-mono"
+                      >
+                        <option value="1920x1080">1920 × 1080 (16:9 FHD)</option>
+                        <option value="1280x720">1280 × 720 (16:9 HD)</option>
+                        <option value="2560x1440">2560 × 1440 (16:9 2K)</option>
+                      </select>
                     </div>
                   </div>
-                )}
-              </div>
-            </div>
-          )}
+                </div>
 
-          {activeTab === 'script_compiler' && (
-            <div className="space-y-3">
-              <div className="p-3.5 rounded-lg bg-[#1b1b21] border border-[#292932] space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="text-zinc-100 font-semibold">
-                    MooVN Engine (Rust 内核) · 多语言快速 API 翻译架构
+                {/* Editor Preferences */}
+                <div className="p-3.5 rounded-md bg-[#1c1c21] border border-[#27272c] space-y-2.5">
+                  <div className="text-xs font-semibold text-zinc-100">
+                    工作台偏好
                   </div>
-                  <span className="px-2 py-0.5 rounded bg-sky-500/15 border border-sky-400/30 text-sky-300 font-mono text-[10px]">
-                    JS / TS / C# / C++ / Rust
-                  </span>
+                  <label className="flex items-center justify-between text-[11px] text-zinc-300 cursor-pointer">
+                    <span>启用节点类别彩色边框标识</span>
+                    <input
+                      type="checkbox"
+                      checked={settings.editorConfig.coloredNodeCategories}
+                      onChange={(e) =>
+                        setSettings({
+                          ...settings,
+                          editorConfig: {
+                            ...settings.editorConfig,
+                            coloredNodeCategories: e.target.checked,
+                          },
+                        })
+                      }
+                    />
+                  </label>
                 </div>
-                <p className="text-zinc-400 leading-relaxed">
-                  MooVN Engine 采用 Rust 编写，通过多语言翻译层接入 JavaScript/TypeScript、C++、C#、Rust 的视觉小说快速 API 接口（不同语言指令自动编译为统一的底层 `EngineOp` 指令）：
-                </p>
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                  {(
-                    [
-                      ['javascript', 'JavaScript', 'moobn.sava:create(NAME)'],
-                      ['typescript', 'TypeScript', 'moobn.sava:create(NAME)'],
-                      ['csharp', 'C#', 'moovn.save:create(NAME)'],
-                      ['cpp', 'C++20', 'moovn::save::create(NAME)'],
-                      ['rust', 'Rust', 'moovn::save::create(NAME)'],
-                    ] as const
-                  ).map(([id, title, example]) => (
-                    <div
-                      key={id}
-                      onClick={() => handleSwitchAllNodesLanguage(id)}
-                      className={`p-2.5 rounded-lg border cursor-pointer transition ${
-                        devScriptMode === id
-                          ? 'bg-[#262630] border-sky-400 text-white'
-                          : 'bg-[#15151a] border-[#27272c] text-zinc-400 hover:border-zinc-500'
-                      }`}
-                    >
-                      <div className="font-semibold text-sky-300 text-xs mb-1">
-                        {title}
-                      </div>
-                      <div className="font-mono text-[10px] text-zinc-300 break-all">
-                        {example}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
+              </>
+            )}
 
-              {/* Reserved Rust + C++ Renderer Interface Status */}
-              <div className="p-3.5 rounded-lg bg-[#141824] border border-sky-500/30 space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5 text-sky-300 font-semibold">
-                    <Cpu className="w-4 h-4" strokeWidth={1.7} />
-                    <span>预留混合渲染器接口 (Rust + C++20 Renderer Bridge · 开发中)</span>
-                  </div>
-                  <span className="px-2 py-0.5 rounded bg-emerald-500/15 border border-emerald-400/30 text-emerald-300 text-[10px] font-mono">
-                    ABI Ready
-                  </span>
+            {/* TAB 2: Default Game Parameters */}
+            {activeTab === 'game_defaults' && (
+              <div className="p-3.5 rounded-md bg-[#1c1c21] border border-[#27272c] space-y-4">
+                <div className="text-xs font-semibold text-zinc-100">
+                  游戏运行默认参数
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px] font-mono text-zinc-300">
-                  <div className="p-2 rounded bg-[#10131c] border border-[#22283a]">
-                    Rust Trait: {RESERVED_RENDERER_STATUS.rustTrait}
-                  </div>
-                  <div className="p-2 rounded bg-[#10131c] border border-[#22283a]">
-                    C++ Header: {RESERVED_RENDERER_STATUS.cppHeader}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
 
-          {activeTab === 'game_defaults' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div className="p-3 rounded-lg bg-[#1b1b21] border border-[#292932] space-y-2.5">
-                <div className="font-medium text-zinc-100">游戏运行默认设置</div>
-                <div className="space-y-1">
-                  <div className="flex justify-between">
-                    <span className="text-zinc-400">默认打字速度 (ms/字)</span>
-                    <span>{settings.defaultGameSettings.textSpeedMs}ms</span>
+                <div>
+                  <div className="flex justify-between text-[11px] text-zinc-300 mb-1">
+                    <span>默认文字打字机速度</span>
+                    <span className="font-mono">
+                      {settings.defaultGameSettings.textSpeedMs} ms/字
+                    </span>
                   </div>
                   <input
                     type="range"
                     min={10}
                     max={80}
+                    step={2}
                     value={settings.defaultGameSettings.textSpeedMs}
                     onChange={(e) =>
                       setSettings({
@@ -454,14 +279,40 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         },
                       })
                     }
-                    className="w-full"
                   />
                 </div>
 
-                <div className="space-y-1">
-                  <div className="flex justify-between">
-                    <span className="text-zinc-400">默认背景音乐音量</span>
-                    <span>{settings.defaultGameSettings.bgmVolume}%</span>
+                <div>
+                  <div className="flex justify-between text-[11px] text-zinc-300 mb-1">
+                    <span>自动播放 (Auto) 句间停留</span>
+                    <span className="font-mono">
+                      {settings.defaultGameSettings.autoPlayDelayMs} ms
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={600}
+                    max={4000}
+                    step={100}
+                    value={settings.defaultGameSettings.autoPlayDelayMs}
+                    onChange={(e) =>
+                      setSettings({
+                        ...settings,
+                        defaultGameSettings: {
+                          ...settings.defaultGameSettings,
+                          autoPlayDelayMs: Number(e.target.value),
+                        },
+                      })
+                    }
+                  />
+                </div>
+
+                <div>
+                  <div className="flex justify-between text-[11px] text-zinc-300 mb-1">
+                    <span>默认背景音乐 (BGM) 音量</span>
+                    <span className="font-mono">
+                      {settings.defaultGameSettings.bgmVolume}%
+                    </span>
                   </div>
                   <input
                     type="range"
@@ -477,78 +328,141 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         },
                       })
                     }
-                    className="w-full"
-                  />
-                </div>
-              </div>
-
-              <div className="p-3 rounded-lg bg-[#1b1b21] border border-[#292932] space-y-2.5">
-                <div className="font-medium text-zinc-100">流式预载与自动内存卸载 (1~20 场景)</div>
-                <div className="space-y-1">
-                  <div className="flex justify-between">
-                    <span className="text-zinc-400">提前流式解压场景数</span>
-                    <span>{settings.performanceConfig.preloadSceneDistance} 个场景</span>
-                  </div>
-                  <input
-                    type="range"
-                    min={1}
-                    max={20}
-                    value={settings.performanceConfig.preloadSceneDistance}
-                    onChange={(e) =>
-                      setSettings({
-                        ...settings,
-                        performanceConfig: {
-                          ...settings.performanceConfig,
-                          preloadSceneDistance: Number(e.target.value),
-                        },
-                      })
-                    }
-                    className="w-full"
                   />
                 </div>
 
-                <div className="space-y-1">
-                  <div className="flex justify-between">
-                    <span className="text-zinc-400">经过几个场景后释放旧场景内存</span>
-                    <span>{settings.performanceConfig.unloadSceneDistance} 个场景</span>
+                <div>
+                  <div className="flex justify-between text-[11px] text-zinc-300 mb-1">
+                    <span>默认音效 (SFX) 音量</span>
+                    <span className="font-mono">
+                      {settings.defaultGameSettings.sfxVolume}%
+                    </span>
                   </div>
                   <input
                     type="range"
-                    min={1}
-                    max={20}
-                    value={settings.performanceConfig.unloadSceneDistance}
+                    min={0}
+                    max={100}
+                    value={settings.defaultGameSettings.sfxVolume}
                     onChange={(e) =>
                       setSettings({
                         ...settings,
-                        performanceConfig: {
-                          ...settings.performanceConfig,
-                          unloadSceneDistance: Number(e.target.value),
+                        defaultGameSettings: {
+                          ...settings.defaultGameSettings,
+                          sfxVolume: Number(e.target.value),
                         },
                       })
                     }
-                    className="w-full"
                   />
                 </div>
               </div>
-            </div>
-          )}
+            )}
+
+            {/* TAB 3: Local Workspace Paths (Local Studio Edition Only) */}
+            {!IS_WEB_EDITION && activeTab === 'workspace' && (
+              <div className="p-3.5 rounded-md bg-[#1c1c21] border border-[#27272c] space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-zinc-100">
+                    本地工作区路径
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleBrowseWorkspaceFolder}
+                    className="px-2.5 py-1 rounded bg-[#27272c] hover:bg-zinc-700 text-zinc-200 text-[11px]"
+                  >
+                    浏览目录
+                  </button>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] text-zinc-400 mb-1">
+                    工作区根目录
+                  </label>
+                  <input
+                    type="text"
+                    value={settings.workspaceRootPath}
+                    onChange={(e) =>
+                      setSettings({
+                        ...settings,
+                        workspaceRootPath: e.target.value,
+                      })
+                    }
+                    className="w-full px-2.5 py-1.5 font-mono text-xs"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] text-zinc-400 mb-1">
+                    项目存储目录
+                  </label>
+                  <input
+                    type="text"
+                    value={settings.projectsDirectoryPath}
+                    onChange={(e) =>
+                      setSettings({
+                        ...settings,
+                        projectsDirectoryPath: e.target.value,
+                      })
+                    }
+                    className="w-full px-2.5 py-1.5 font-mono text-xs"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] text-zinc-400 mb-1">
+                    默认导出目录
+                  </label>
+                  <input
+                    type="text"
+                    value={settings.exportOutputDirectoryPath}
+                    onChange={(e) =>
+                      setSettings({
+                        ...settings,
+                        exportOutputDirectoryPath: e.target.value,
+                      })
+                    }
+                    className="w-full px-2.5 py-1.5 font-mono text-xs"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Footer */}
-        <div className="px-4 py-2.5 bg-[#1b1b20] border-t border-[#2c2c34] flex items-center justify-end gap-2">
-          <button
-            onClick={onClose}
-            className="px-3 py-1.5 rounded bg-[#23232b] hover:bg-[#2c2c36] text-zinc-300"
-          >
-            关闭
-          </button>
-          <button
-            onClick={handleSaveAll}
-            className="px-3.5 py-1.5 rounded bg-zinc-100 hover:bg-white text-zinc-950 font-semibold flex items-center gap-1.5"
-          >
-            <Check className="w-3.5 h-3.5" strokeWidth={2} />
-            {IS_WEB_EDITION ? '应用设置' : '保存设置并写入磁盘'}
-          </button>
+        <div className="px-4 py-2.5 bg-[#121215] border-t border-[#27272c] flex items-center justify-between text-xs shrink-0">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleReset}
+              className="px-2.5 py-1 rounded bg-[#232329] hover:bg-[#2c2c34] text-zinc-300 flex items-center gap-1"
+            >
+              <RotateCcw className="w-3 h-3" strokeWidth={1.6} />
+              <span>恢复默认</span>
+            </button>
+            {savedToast && (
+              <span className="text-emerald-400 flex items-center gap-1">
+                <Check className="w-3.5 h-3.5" />
+                {savedToast}
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-3 py-1 rounded bg-[#232329] hover:bg-[#2c2c34] text-zinc-300"
+            >
+              {t('settings.cancel')}
+            </button>
+            <button
+              type="button"
+              onClick={handleSaveAll}
+              className="px-4 py-1 rounded bg-zinc-200 hover:bg-white text-zinc-950 font-semibold"
+            >
+              {t('settings.save')}
+            </button>
+          </div>
         </div>
       </div>
     </div>

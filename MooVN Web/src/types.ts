@@ -106,10 +106,26 @@ export interface CharacterCustomAttribute {
   value: number | string | boolean;
 }
 
+export type CharacterMediaType = 'image' | 'video' | 'animated_image' | 'live_motion';
+
+export type CharacterIdleMotion =
+  | 'none'
+  | 'breathe'
+  | 'float'
+  | 'talk_pulse'
+  | 'bounce'
+  | 'sway';
+
 export interface CharacterExpressionVariant {
   id: string;
   label: string;
   spriteId: string;
+  mediaType?: CharacterMediaType;
+  mediaUrl?: string;
+  videoLoop?: boolean;
+  videoPlaybackRate?: number;
+  chromaKeyColor?: string;
+  idleMotion?: CharacterIdleMotion;
 }
 
 export interface CharacterProfile {
@@ -118,6 +134,12 @@ export interface CharacterProfile {
   titleRole: string;
   color: string;
   spriteId: string;
+  mediaType?: CharacterMediaType;
+  mediaUrl?: string;
+  videoLoop?: boolean;
+  videoPlaybackRate?: number;
+  chromaKeyColor?: string;
+  idleMotion?: CharacterIdleMotion;
   expressions?: CharacterExpressionVariant[];
   initialAffection: number;
   maxAffection: number;
@@ -131,6 +153,12 @@ export interface CharacterPlacement {
   name: string;
   spriteId: string;
   expressionLabel?: string;
+  mediaType?: CharacterMediaType;
+  mediaUrl?: string;
+  videoLoop?: boolean;
+  videoPlaybackRate?: number;
+  chromaKeyColor?: string;
+  idleMotion?: CharacterIdleMotion;
   x: number; // 0-100 stage percentage
   y: number; // 0-100 stage percentage
   scale: number; // 0.5-2.0
@@ -440,6 +468,14 @@ export interface GameUIConfig {
   };
 }
 
+export interface ProjectScriptFile {
+  id: string;
+  fileName: string;
+  content: string;
+  linkedNodeId?: string;
+  updatedAt?: string;
+}
+
 export interface VNProject {
   id: string;
   title: string;
@@ -456,6 +492,7 @@ export interface VNProject {
   variables: GlobalVariable[];
   uiConfig: GameUIConfig;
   performanceConfig?: GamePerformanceConfig;
+  scriptFiles?: ProjectScriptFile[];
 }
 
 export interface BackgroundAsset {
@@ -465,6 +502,7 @@ export interface BackgroundAsset {
   path: string;
   accent: string;
   timeOfDay?: '晴日' | '黄昏' | '夜晚' | '室内';
+  mediaType?: 'image' | 'video';
 }
 
 export interface CharacterSpriteAsset {
@@ -475,6 +513,10 @@ export interface CharacterSpriteAsset {
   role: string;
   path: string;
   themeColor: string;
+  mediaType?: CharacterMediaType;
+  videoLoop?: boolean;
+  chromaKeyColor?: string;
+  idleMotion?: CharacterIdleMotion;
 }
 
 export interface AudioAsset {

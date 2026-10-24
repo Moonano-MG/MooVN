@@ -1,21 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
+  FileCode2,
+  Plus,
+  Trash2,
+  Download,
   Copy,
   Check,
-  Download,
-  Play,
   Save,
-  AlertTriangle,
-  CheckCircle2,
+  FolderTree,
+  Edit3,
+  Play,
 } from 'lucide-react';
-import { SceneNode, VNProject } from '../types';
-import {
-  generateChapterYaml,
-  exportChapterYaml,
-  generateLuaScript,
-  generateTealScript,
-  generatePythonScript,
-} from '../lib/projectUtils';
+import { ProjectScriptFile, SceneNode, VNProject } from '../types';
+import { generateChapterYaml, exportChapterYaml } from '../lib/projectUtils';
 import {
   generateSingleNodeCode,
   generateFullProjectCode,
@@ -24,6 +21,7 @@ import {
 } from '../lib/nodeCodeCompiler';
 import {
   EnginePolyglotLanguage,
+  evalPolyglotScriptInEngine,
   generateNodeEngineFastScript,
   generateProjectEnginePolyglotScript,
 } from '../lib/moovnEngineBridge';
@@ -33,8 +31,375 @@ interface ScriptViewProps {
   project: VNProject;
   selectedChapterId: string;
   selectedNode?: SceneNode;
-  onUpdateNode?: (nodeId: string, updater: (n: SceneNode) => SceneNode) => void;
+  onUpdateNode?: (id: string, updater: (n: SceneNode) => SceneNode) => void;
+  onUpdateProject?: (patch: Partial<VNProject>) => void;
   mode?: 'ts' | 'yaml';
+}
+
+export interface ExtensionMeta {
+  ext: string;
+  badge: string;
+  badgeColor: string;
+  langLabel: string;
+  engineLang: EnginePolyglotLanguage | 'yaml' | 'json';
+}
+
+export function getFileExtensionMeta(fileName: string): ExtensionMeta {
+  const lower = fileName.trim().toLowerCase();
+  const ext = lower.includes('.') ? lower.split('.').pop() || 'ts' : 'ts';
+
+  switch (ext) {
+    case 'js':
+    case 'mjs':
+    case 'cjs':
+      return {
+        ext: 'js',
+        badge: 'JS',
+        badgeColor: '#facc15',
+        langLabel: 'JavaScript',
+        engineLang: 'javascript',
+      };
+    case 'ts':
+    case 'tsx':
+      return {
+        ext: 'ts',
+        badge: 'TS',
+        badgeColor: '#38bdf8',
+        langLabel: 'TypeScript',
+        engineLang: 'typescript',
+      };
+    case 'cs':
+      return {
+        ext: 'cs',
+        badge: 'C#',
+        badgeColor: '#a78bfa',
+        langLabel: 'C#',
+        engineLang: 'csharp',
+      };
+    case 'cpp':
+    case 'cc':
+    case 'cxx':
+    case 'hpp':
+    case 'h':
+      return {
+        ext: 'cpp',
+        badge: 'C++',
+        badgeColor: '#60a5fa',
+        langLabel: 'C++',
+        engineLang: 'cpp',
+      };
+    case 'rs':
+      return {
+        ext: 'rs',
+        badge: 'RS',
+        badgeColor: '#fb923c',
+        langLabel: 'Rust',
+        engineLang: 'rust',
+      };
+    case 'yaml':
+    case 'yml':
+      return {
+        ext: 'yaml',
+        badge: 'YML',
+        badgeColor: '#f472b6',
+        langLabel: 'YAML',
+        engineLang: 'yaml',
+      };
+    case 'json':
+      return {
+        ext: 'json',
+        badge: 'JSON',
+        badgeColor: '#34d399',
+        langLabel: 'JSON',
+        engineLang: 'json',
+      };
+    default:
+      return {
+        ext,
+        badge: ext.toUpperCase().slice(0, 4),
+        badgeColor: '#94a3b8',
+        langLabel: ext.toUpperCase(),
+        engineLang: 'typescript',
+      };
+  }
+}
+
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+const KEYWORDS_CONTROL = new Set([
+  'if',
+  'else',
+  'for',
+  'while',
+  'do',
+  'switch',
+  'case',
+  'default',
+  'break',
+  'continue',
+  'return',
+  'try',
+  'catch',
+  'finally',
+  'throw',
+  'async',
+  'await',
+  'match',
+  'loop',
+  'yield',
+]);
+
+const KEYWORDS_DECL = new Set([
+  'import',
+  'export',
+  'from',
+  'const',
+  'let',
+  'var',
+  'function',
+  'class',
+  'interface',
+  'type',
+  'enum',
+  'struct',
+  'impl',
+  'trait',
+  'fn',
+  'pub',
+  'mod',
+  'use',
+  'using',
+  'namespace',
+  'public',
+  'private',
+  'protected',
+  'internal',
+  'static',
+  'readonly',
+  'void',
+  'new',
+  'true',
+  'false',
+  'null',
+  'undefined',
+  'mut',
+  'ref',
+  'auto',
+  'constexpr',
+  'inline',
+  'virtual',
+  'override',
+]);
+
+const KEYWORDS_TYPES = new Set([
+  'MooVN',
+  'moovn',
+  'moobn',
+  'sava',
+  'save',
+  'SceneNode',
+  'VNProject',
+  'string',
+  'number',
+  'boolean',
+  'any',
+  'int',
+  'float',
+  'double',
+  'bool',
+  'char',
+  'i8',
+  'i16',
+  'i32',
+  'i64',
+  'u8',
+  'u16',
+  'u32',
+  'u64',
+  'usize',
+  'f32',
+  'f64',
+  'str',
+  'String',
+  'Vec',
+  'Option',
+  'Result',
+  'Some',
+  'None',
+  'Ok',
+  'Err',
+  'std',
+]);
+
+/**
+ * VS Code Dark+ style single-pass lexical syntax highlighter.
+ */
+export function highlightCodeToHtml(code: string, ext: string): string {
+  const lines = code.split('\n');
+  const isYaml = ext === 'yaml' || ext === 'yml';
+
+  return lines
+    .map((line) => {
+      if (isYaml) {
+        const trimmed = line.trimStart();
+        if (trimmed.startsWith('#')) {
+          return `<span style="color:#6a9955;font-style:italic;">${escapeHtml(line)}</span>`;
+        }
+        const colonIdx = line.indexOf(':');
+        if (colonIdx > 0) {
+          const keyPart = escapeHtml(line.slice(0, colonIdx));
+          const valPart = escapeHtml(line.slice(colonIdx + 1));
+          return `<span style="color:#9cdcfe;">${keyPart}</span>:<span style="color:#ce9178;">${valPart}</span>`;
+        }
+        return escapeHtml(line);
+      }
+
+      // Check full-line preprocessor directive (#include, #pragma)
+      const trimmed = line.trimStart();
+      if (trimmed.startsWith('#include') || trimmed.startsWith('#pragma') || trimmed.startsWith('#define')) {
+        return `<span style="color:#c586c0;">${escapeHtml(line)}</span>`;
+      }
+
+      let out = '';
+      let i = 0;
+      const n = line.length;
+
+      while (i < n) {
+        const ch = line[i];
+
+        // Single-line comment //
+        if (ch === '/' && line[i + 1] === '/') {
+          out += `<span style="color:#6a9955;font-style:italic;">${escapeHtml(line.slice(i))}</span>`;
+          break;
+        }
+
+        // String literal "...", '...', `...`
+        if (ch === '"' || ch === "'" || ch === '`') {
+          const quote = ch;
+          let j = i + 1;
+          while (j < n) {
+            if (line[j] === '\\') {
+              j += 2;
+              continue;
+            }
+            if (line[j] === quote) {
+              j += 1;
+              break;
+            }
+            j += 1;
+          }
+          out += `<span style="color:#ce9178;">${escapeHtml(line.slice(i, j))}</span>`;
+          i = j;
+          continue;
+        }
+
+        // Number literal
+        if (/[0-9]/.test(ch) && (i === 0 || !/[A-Za-z0-9_]/.test(line[i - 1]))) {
+          let j = i;
+          while (j < n && /[0-9.xXa-fA-F_f]/.test(line[j])) {
+            j += 1;
+          }
+          out += `<span style="color:#b5cea8;">${escapeHtml(line.slice(i, j))}</span>`;
+          i = j;
+          continue;
+        }
+
+        // Identifier or Keyword
+        if (/[A-Za-z_$]/.test(ch)) {
+          let j = i;
+          while (j < n && /[A-Za-z0-9_$]/.test(line[j])) {
+            j += 1;
+          }
+          const word = line.slice(i, j);
+          const nextChar = line[j] || '';
+
+          if (KEYWORDS_CONTROL.has(word)) {
+            out += `<span style="color:#c586c0;font-weight:600;">${escapeHtml(word)}</span>`;
+          } else if (KEYWORDS_DECL.has(word)) {
+            out += `<span style="color:#569cd6;font-weight:600;">${escapeHtml(word)}</span>`;
+          } else if (KEYWORDS_TYPES.has(word)) {
+            out += `<span style="color:#4ec9b0;">${escapeHtml(word)}</span>`;
+          } else if (nextChar === '(' || nextChar === '!') {
+            out += `<span style="color:#dcdcaa;">${escapeHtml(word)}</span>`;
+          } else {
+            out += `<span style="color:#9cdcfe;">${escapeHtml(word)}</span>`;
+          }
+          i = j;
+          continue;
+        }
+
+        // Operators & Punctuation (: :: . -> =>)
+        if (ch === ':' || ch === '.' || ch === '=' || ch === '>' || ch === '<') {
+          out += `<span style="color:#d4d4d4;">${escapeHtml(ch)}</span>`;
+          i += 1;
+          continue;
+        }
+
+        out += escapeHtml(ch);
+        i += 1;
+      }
+
+      return out || ' ';
+    })
+    .join('\n');
+}
+
+function buildDefaultWorkspaceFiles(
+  project: VNProject,
+  selectedChapterId: string,
+  selectedNode?: SceneNode
+): ProjectScriptFile[] {
+  const nodeTarget = selectedNode || project.nodes[0];
+  const nodeFileName = nodeTarget ? `${nodeTarget.id}.ts` : 'node_1.ts';
+  const nodeContent = nodeTarget
+    ? nodeTarget.customScript ||
+      generateNodeEngineFastScript(nodeTarget, 'typescript') ||
+      generateSingleNodeCode(nodeTarget, 'typescript', project)
+    : '// 当前节点脚本\n';
+
+  return [
+    {
+      id: 'file-node-active',
+      fileName: nodeFileName,
+      linkedNodeId: nodeTarget?.id,
+      content: nodeContent,
+    },
+    {
+      id: 'file-main-ts',
+      fileName: 'main.ts',
+      content: generateFullProjectCode(project, 'typescript'),
+    },
+    {
+      id: 'file-scene-js',
+      fileName: 'scene_runtime.js',
+      content: generateProjectEnginePolyglotScript(project, 'javascript'),
+    },
+    {
+      id: 'file-save-cs',
+      fileName: 'SaveController.cs',
+      content: generateProjectEnginePolyglotScript(project, 'csharp'),
+    },
+    {
+      id: 'file-render-cpp',
+      fileName: 'RendererPass.cpp',
+      content: generateProjectEnginePolyglotScript(project, 'cpp'),
+    },
+    {
+      id: 'file-engine-rs',
+      fileName: 'engine_mod.rs',
+      content: generateProjectEnginePolyglotScript(project, 'rust'),
+    },
+    {
+      id: 'file-chapter-yaml',
+      fileName: `${selectedChapterId || 'chapter_1'}.yaml`,
+      content: generateChapterYaml(project, selectedChapterId),
+    },
+  ];
 }
 
 export const ScriptView: React.FC<ScriptViewProps> = ({
@@ -42,360 +407,626 @@ export const ScriptView: React.FC<ScriptViewProps> = ({
   selectedChapterId,
   selectedNode,
   onUpdateNode,
+  onUpdateProject,
   mode: initialMode = 'ts',
 }) => {
-  const [currentMode, setCurrentMode] = useState<
-    | 'node_edit'
-    | 'js'
-    | 'ts'
-    | 'csharp'
-    | 'cpp'
-    | 'rust'
-    | 'lua'
-    | 'teal'
-    | 'python'
-    | 'yaml'
-  >(initialMode === 'yaml' ? 'yaml' : 'ts');
-  const [nodeLang, setNodeLang] = useState<EnginePolyglotLanguage>('javascript');
-  const [editableNodeCode, setEditableNodeCode] = useState<string>('');
-  const [copied, setCopied] = useState(false);
-  const [savedNotice, setSavedNotice] = useState<string | null>(null);
-  const [activeChapterId, setActiveChapterId] = useState(selectedChapterId);
+  const [files, setFiles] = useState<ProjectScriptFile[]>(() =>
+    project.scriptFiles && project.scriptFiles.length > 0
+      ? project.scriptFiles
+      : buildDefaultWorkspaceFiles(project, selectedChapterId, selectedNode)
+  );
+  const [activeFileId, setActiveFileId] = useState<string>(() =>
+    initialMode === 'yaml' ? 'file-chapter-yaml' : 'file-node-active'
+  );
+  const [showExplorer, setShowExplorer] = useState<boolean>(true);
+  const [isCreatingFile, setIsCreatingFile] = useState<boolean>(false);
+  const [newFileName, setNewFileName] = useState<string>('new_script.ts');
+  const [renamingFileId, setRenamingFileId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState<string>('');
+  const [copied, setCopied] = useState<boolean>(false);
+  const [statusNotice, setStatusNotice] = useState<string | null>(null);
   const [compileReport, setCompileReport] = useState<TsCompileReport | null>(null);
+  const [cursorPos, setCursorPos] = useState<{ line: number; col: number }>({
+    line: 1,
+    col: 1,
+  });
 
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const preRef = useRef<HTMLPreElement | null>(null);
+  const gutterRef = useRef<HTMLDivElement | null>(null);
+
+  // Sync active node script tab when selectedNode changes
   useEffect(() => {
-    if (selectedNode) {
-      if (
-        nodeLang === 'csharp' ||
-        nodeLang === 'cpp' ||
-        nodeLang === 'rust'
-      ) {
-        setEditableNodeCode(generateNodeEngineFastScript(selectedNode, nodeLang));
-      } else {
-        setEditableNodeCode(
-          selectedNode.customScript ||
-            generateNodeEngineFastScript(selectedNode, nodeLang) ||
-            generateSingleNodeCode(selectedNode, nodeLang, project)
-        );
-      }
-    }
-  }, [selectedNode?.id, nodeLang]);
-
-  const code =
-    currentMode === 'node_edit'
-      ? editableNodeCode
-      : currentMode === 'js'
-      ? generateFullProjectCode(project, 'javascript')
-      : currentMode === 'ts'
-      ? generateFullProjectCode(project, 'typescript')
-      : currentMode === 'csharp'
-      ? generateProjectEnginePolyglotScript(project, 'csharp')
-      : currentMode === 'cpp'
-      ? generateProjectEnginePolyglotScript(project, 'cpp')
-      : currentMode === 'rust'
-      ? generateProjectEnginePolyglotScript(project, 'rust')
-      : currentMode === 'lua'
-      ? generateLuaScript(project)
-      : currentMode === 'teal'
-      ? generateTealScript(project)
-      : currentMode === 'python'
-      ? generatePythonScript(project)
-      : generateChapterYaml(project, activeChapterId || selectedChapterId);
-
-  const handleCopy = () => {
-    navigator.clipboard.writeText(code);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1600);
-  };
-
-  const handleSaveNodeScript = () => {
-    if (!selectedNode || !onUpdateNode) return;
-    onUpdateNode(selectedNode.id, (prev) => ({
-      ...prev,
-      scriptLanguage: nodeLang,
-      customScript: editableNodeCode,
-    }));
-    const report = compileAndCheckProjectTypeScript(project);
-    setCompileReport(report);
-    setSavedNotice(
-      `已保存节点 [${selectedNode.title}] 的 ${
-        nodeLang === 'javascript' ? 'JavaScript' : 'TypeScript'
-      } 脚本`
+    if (!selectedNode) return;
+    setFiles((prev) =>
+      prev.map((f) => {
+        if (f.id !== 'file-node-active') return f;
+        const currentExt = f.fileName.includes('.')
+          ? f.fileName.split('.').pop() || 'ts'
+          : 'ts';
+        const nextFileName = `${selectedNode.id}.${currentExt}`;
+        const extMeta = getFileExtensionMeta(nextFileName);
+        const lang: EnginePolyglotLanguage =
+          extMeta.engineLang === 'yaml' || extMeta.engineLang === 'json'
+            ? 'typescript'
+            : extMeta.engineLang;
+        return {
+          ...f,
+          fileName: nextFileName,
+          linkedNodeId: selectedNode.id,
+          content:
+            selectedNode.customScript ||
+            generateNodeEngineFastScript(selectedNode, lang),
+        };
+      })
     );
-    setTimeout(() => setSavedNotice(null), 2600);
+  }, [selectedNode?.id]);
+
+  const activeFile =
+    files.find((f) => f.id === activeFileId) || files[0];
+  const extMeta = getFileExtensionMeta(activeFile?.fileName || 'main.ts');
+  const code = activeFile?.content || '';
+  const lineCount = useMemo(() => Math.max(1, code.split('\n').length), [code]);
+  const highlightedHtml = useMemo(
+    () => highlightCodeToHtml(code, extMeta.ext),
+    [code, extMeta.ext]
+  );
+
+  const handleCodeChange = (nextContent: string) => {
+    setFiles((prev) => {
+      const next = prev.map((f) =>
+        f.id === activeFile.id
+          ? { ...f, content: nextContent, updatedAt: new Date().toISOString() }
+          : f
+      );
+      onUpdateProject?.({ scriptFiles: next });
+      return next;
+    });
   };
 
-  const handleRunTsc = () => {
-    const report = compileAndCheckProjectTypeScript(project);
-    setCompileReport(report);
+  const handleSaveCurrentFile = async () => {
+    if (!activeFile) return;
+    if (activeFile.linkedNodeId && onUpdateNode) {
+      const lang =
+        extMeta.engineLang === 'yaml' || extMeta.engineLang === 'json'
+          ? 'typescript'
+          : extMeta.engineLang;
+      onUpdateNode(activeFile.linkedNodeId, (prev) => ({
+        ...prev,
+        scriptLanguage: lang,
+        customScript: activeFile.content,
+      }));
+    }
+    await syncWriteToRealWorkspaceDisk(
+      'Scripts',
+      activeFile.fileName,
+      activeFile.content
+    );
+    setStatusNotice(`已保存 ${activeFile.fileName}`);
+    setTimeout(() => setStatusNotice(null), 2200);
   };
 
-  const handleDownloadCode = async () => {
-    if (currentMode === 'yaml') {
-      exportChapterYaml(project, activeChapterId || selectedChapterId);
+  const handleCreateNewFile = () => {
+    const clean = newFileName.trim() || `script_${files.length + 1}.ts`;
+    const finalName = clean.includes('.') ? clean : `${clean}.ts`;
+    const meta = getFileExtensionMeta(finalName);
+
+    let starter = `// ${finalName}\n`;
+    if (meta.ext === 'cs') {
+      starter = `// ${finalName} (C# Script)\nmoovn.bg:show("bg-classroom-day", "fade");\nmoovn.text:say("星野 雪奈", "C# 脚本文件已就绪。");\nmoovn.save:create("Slot_01");\n`;
+    } else if (meta.ext === 'cpp') {
+      starter = `// ${finalName} (C++20 Script)\n#include "moovn_api.hpp"\nmoovn::bg::show("bg-classroom-day", "fade");\nmoovn::save::create("Slot_01");\n`;
+    } else if (meta.ext === 'rs') {
+      starter = `// ${finalName} (Rust Script)\nuse moovn_engine::*;\nmoovn::bg::show("bg-classroom-day", "fade");\nmoovn::save::create("Slot_01");\n`;
+    } else if (meta.ext === 'js') {
+      starter = `// ${finalName} (JavaScript)\nmoovn.bg:show("bg-classroom-day", "fade");\nmoobn.sava:create("Slot_01");\n`;
+    } else if (meta.ext === 'ts') {
+      starter = `// ${finalName} (TypeScript)\nmoovn.bg:show("bg-classroom-day", "fade");\nmoobn.sava:create("Slot_01");\n`;
+    }
+
+    const created: ProjectScriptFile = {
+      id: `file-${Date.now()}`,
+      fileName: finalName,
+      content: starter,
+      updatedAt: new Date().toISOString(),
+    };
+    setFiles((prev) => {
+      const next = [...prev, created];
+      onUpdateProject?.({ scriptFiles: next });
+      return next;
+    });
+    setActiveFileId(created.id);
+    setIsCreatingFile(false);
+    setNewFileName('new_script.ts');
+  };
+
+  const handleCommitRename = (fileId: string) => {
+    const clean = renameDraft.trim();
+    if (!clean) {
+      setRenamingFileId(null);
       return;
     }
-    const ext = currentMode === 'js' || (currentMode === 'node_edit' && nodeLang === 'javascript') ? 'js' : 'ts';
-    const fileName = `${project.id}-compiled.${ext}`;
-    await syncWriteToRealWorkspaceDisk('Exports', fileName, code);
-    const blob = new Blob([code], { type: 'text/plain;charset=utf-8' });
+    const finalName = clean.includes('.') ? clean : `${clean}.ts`;
+    const newMeta = getFileExtensionMeta(finalName);
+
+    setFiles((prev) =>
+      prev.map((f) => {
+        if (f.id !== fileId) return f;
+        // If this is the active node script and user changed extension (e.g. .ts -> .cs / .js / .cpp / .rs),
+        // regenerate template if untouched or keep user code
+        let nextContent = f.content;
+        if (
+          f.linkedNodeId &&
+          selectedNode &&
+          newMeta.engineLang !== 'yaml' &&
+          newMeta.engineLang !== 'json'
+        ) {
+          nextContent = generateNodeEngineFastScript(
+            selectedNode,
+            newMeta.engineLang
+          );
+        }
+        return {
+          ...f,
+          fileName: finalName,
+          content: nextContent,
+        };
+      })
+    );
+    setRenamingFileId(null);
+  };
+
+  const handleDeleteFile = (fileId: string) => {
+    if (files.length <= 1) return;
+    const remaining = files.filter((f) => f.id !== fileId);
+    setFiles(remaining);
+    if (activeFileId === fileId) {
+      setActiveFileId(remaining[0].id);
+    }
+    onUpdateProject?.({ scriptFiles: remaining });
+  };
+
+  const handleRunScript = async () => {
+    if (!activeFile) return;
+    if (extMeta.ext === 'ts' || extMeta.ext === 'js') {
+      const report = compileAndCheckProjectTypeScript(project);
+      setCompileReport(report);
+    }
+    if (extMeta.engineLang !== 'yaml' && extMeta.engineLang !== 'json') {
+      const res = await evalPolyglotScriptInEngine(
+        activeFile.content,
+        extMeta.engineLang
+      );
+      setStatusNotice(
+        res.logs[0] || `已执行 ${activeFile.fileName} (${res.logs.length} 条指令)`
+      );
+      setTimeout(() => setStatusNotice(null), 3000);
+    }
+  };
+
+  const handleDownloadFile = () => {
+    if (!activeFile) return;
+    if (extMeta.ext === 'yaml') {
+      exportChapterYaml(project, selectedChapterId);
+      return;
+    }
+    const blob = new Blob([activeFile.content], {
+      type: 'text/plain;charset=utf-8',
+    });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = fileName;
+    a.download = activeFile.fileName;
     a.click();
     URL.revokeObjectURL(url);
   };
 
+  const handleSyncScroll = () => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    if (preRef.current) {
+      preRef.current.scrollTop = ta.scrollTop;
+      preRef.current.scrollLeft = ta.scrollLeft;
+    }
+    if (gutterRef.current) {
+      gutterRef.current.scrollTop = ta.scrollTop;
+    }
+  };
+
+  const updateCursorInfo = () => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    const pos = ta.selectionStart || 0;
+    const before = code.slice(0, pos);
+    const lines = before.split('\n');
+    setCursorPos({
+      line: lines.length,
+      col: (lines[lines.length - 1]?.length || 0) + 1,
+    });
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+      e.preventDefault();
+      handleSaveCurrentFile();
+      return;
+    }
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      const ta = e.currentTarget;
+      const start = ta.selectionStart;
+      const end = ta.selectionEnd;
+      const next = code.slice(0, start) + '  ' + code.slice(end);
+      handleCodeChange(next);
+      requestAnimationFrame(() => {
+        ta.selectionStart = ta.selectionEnd = start + 2;
+      });
+    }
+  };
+
   return (
     <div className="flex flex-col h-full bg-[#141417] text-zinc-300 select-none overflow-hidden">
-      {/* Top Toolbar */}
-      <div className="flex items-center justify-between px-3 py-1.5 bg-[#161619] border-b border-[#27272c] shrink-0 text-xs gap-2 flex-wrap">
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <div className="flex items-center bg-[#121215] p-0.5 rounded border border-[#27272c]">
-            <button
-              onClick={() => setCurrentMode('node_edit')}
-              className={`px-2 py-0.5 rounded text-[11px] font-medium transition ${
-                currentMode === 'node_edit'
-                  ? 'bg-zinc-200 text-zinc-950 font-semibold'
-                  : 'text-zinc-400 hover:text-zinc-200'
-              }`}
-            >
-              当前节点脚本 (可编辑)
-            </button>
-            <button
-              onClick={() => setCurrentMode('js')}
-              className={`px-2 py-0.5 rounded text-[11px] font-medium transition ${
-                currentMode === 'js'
-                  ? 'bg-amber-400 text-zinc-950 font-semibold'
-                  : 'text-zinc-400 hover:text-zinc-200'
-              }`}
-            >
-              全工程 JS (快速开发)
-            </button>
-            <button
-              onClick={() => setCurrentMode('ts')}
-              className={`px-2 py-0.5 rounded text-[11px] font-medium transition ${
-                currentMode === 'ts'
-                  ? 'bg-sky-400 text-zinc-950 font-semibold'
-                  : 'text-zinc-400 hover:text-zinc-200'
-              }`}
-            >
-              全工程 TS
-            </button>
-            <button
-              onClick={() => setCurrentMode('csharp')}
-              className={`px-2 py-0.5 rounded text-[11px] font-medium transition ${
-                currentMode === 'csharp'
-                  ? 'bg-violet-400 text-zinc-950 font-semibold'
-                  : 'text-zinc-400 hover:text-zinc-200'
-              }`}
-            >
-              C# (Engine翻译)
-            </button>
-            <button
-              onClick={() => setCurrentMode('cpp')}
-              className={`px-2 py-0.5 rounded text-[11px] font-medium transition ${
-                currentMode === 'cpp'
-                  ? 'bg-blue-400 text-zinc-950 font-semibold'
-                  : 'text-zinc-400 hover:text-zinc-200'
-              }`}
-            >
-              C++ (Engine翻译)
-            </button>
-            <button
-              onClick={() => setCurrentMode('rust')}
-              className={`px-2 py-0.5 rounded text-[11px] font-medium transition ${
-                currentMode === 'rust'
-                  ? 'bg-orange-400 text-zinc-950 font-semibold'
-                  : 'text-zinc-400 hover:text-zinc-200'
-              }`}
-            >
-              Rust (Engine原生)
-            </button>
-            <button
-              onClick={() => setCurrentMode('lua')}
-              className={`px-2 py-0.5 rounded text-[11px] font-medium transition ${
-                currentMode === 'lua'
-                  ? 'bg-indigo-400 text-zinc-950 font-semibold'
-                  : 'text-zinc-400 hover:text-zinc-200'
-              }`}
-            >
-              Lua (TS桥接)
-            </button>
-            <button
-              onClick={() => setCurrentMode('teal')}
-              className={`px-2 py-0.5 rounded text-[11px] font-medium transition ${
-                currentMode === 'teal'
-                  ? 'bg-teal-400 text-zinc-950 font-semibold'
-                  : 'text-zinc-400 hover:text-zinc-200'
-              }`}
-            >
-              Teal (TS桥接)
-            </button>
-            <button
-              onClick={() => setCurrentMode('python')}
-              className={`px-2 py-0.5 rounded text-[11px] font-medium transition ${
-                currentMode === 'python'
-                  ? 'bg-emerald-400 text-zinc-950 font-semibold'
-                  : 'text-zinc-400 hover:text-zinc-200'
-              }`}
-            >
-              Python (TS桥接)
-            </button>
-            <button
-              onClick={() => setCurrentMode('yaml')}
-              className={`px-2 py-0.5 rounded text-[11px] font-medium transition ${
-                currentMode === 'yaml'
-                  ? 'bg-zinc-200 text-zinc-950 font-semibold'
-                  : 'text-zinc-400 hover:text-zinc-200'
-              }`}
-            >
-              YAML
-            </button>
-          </div>
+      {/* Top VS Code File Tab Bar + Actions */}
+      <div className="h-8 bg-[#18181c] border-b border-[#27272c] flex items-center justify-between px-1.5 gap-2 shrink-0">
+        <div className="flex items-center gap-0.5 overflow-x-auto min-w-0 flex-1">
+          <button
+            type="button"
+            onClick={() => setShowExplorer((v) => !v)}
+            className={`icon-btn !w-6 !h-6 shrink-0 ${showExplorer ? 'active' : ''}`}
+            title="显示/隐藏脚本文件资源管理器"
+          >
+            <FolderTree className="w-3.5 h-3.5" strokeWidth={1.6} />
+          </button>
 
-          {currentMode === 'node_edit' && (
-            <div className="flex items-center gap-1">
-              {(
-                [
-                  ['javascript', 'JS'],
-                  ['typescript', 'TS'],
-                  ['csharp', 'C#'],
-                  ['cpp', 'C++'],
-                  ['rust', 'Rust'],
-                ] as const
-              ).map(([id, label]) => (
-                <button
-                  key={id}
-                  onClick={() => setNodeLang(id)}
-                  className={`px-2 py-0.5 rounded text-[10px] font-mono border ${
-                    nodeLang === id
-                      ? 'bg-sky-500/20 border-sky-500/50 text-sky-300'
-                      : 'bg-[#1a1a20] border-[#27272c] text-zinc-400'
-                  }`}
+          {files.map((file) => {
+            const meta = getFileExtensionMeta(file.fileName);
+            const isActive = file.id === activeFile?.id;
+            return (
+              <div
+                key={file.id}
+                onClick={() => setActiveFileId(file.id)}
+                onDoubleClick={() => {
+                  setRenamingFileId(file.id);
+                  setRenameDraft(file.fileName);
+                }}
+                className={`group flex items-center gap-1.5 px-2.5 h-7 rounded-t text-[11px] cursor-pointer transition shrink-0 border-t-2 ${
+                  isActive
+                    ? 'bg-[#141417] text-zinc-100 font-medium border-t-sky-400 border-x border-x-[#27272c]'
+                    : 'bg-transparent text-zinc-500 hover:text-zinc-300 border-t-transparent'
+                }`}
+                title="点击切换文件 · 双击可修改文件名与后缀 (.ts / .js / .cs / .cpp / .rs / .yaml)"
+              >
+                <span
+                  style={{ color: meta.badgeColor }}
+                  className="text-[10px] font-mono font-bold shrink-0"
                 >
-                  {label}
-                </button>
-              ))}
-            </div>
-          )}
+                  {meta.badge}
+                </span>
 
-          {currentMode === 'yaml' && (
-            <select
-              value={activeChapterId || selectedChapterId}
-              onChange={(e) => setActiveChapterId(e.target.value)}
-              className="px-2 py-1 text-xs"
-            >
-              {project.chapters.map((ch) => (
-                <option key={ch.id} value={ch.id}>
-                  {ch.title}
-                </option>
-              ))}
-            </select>
-          )}
+                {renamingFileId === file.id ? (
+                  <input
+                    type="text"
+                    value={renameDraft}
+                    autoFocus
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(e) => setRenameDraft(e.target.value)}
+                    onBlur={() => handleCommitRename(file.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleCommitRename(file.id);
+                      if (e.key === 'Escape') setRenamingFileId(null);
+                    }}
+                    className="w-28 px-1 py-0 text-[11px] font-mono bg-[#0e0e11] border border-sky-400 rounded text-zinc-100"
+                  />
+                ) : (
+                  <span className="font-mono truncate max-w-[140px]">
+                    {file.fileName}
+                  </span>
+                )}
+
+                {files.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteFile(file.id);
+                    }}
+                    className="opacity-0 group-hover:opacity-100 hover:text-rose-400 text-zinc-500 transition"
+                    title="关闭文件"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            );
+          })}
+
+          <button
+            type="button"
+            onClick={() => setIsCreatingFile(true)}
+            className="icon-btn !w-6 !h-6 shrink-0"
+            title="新建脚本文件 (支持 .ts / .js / .cs / .cpp / .rs / .yaml 等任意后缀)"
+          >
+            <Plus className="w-3.5 h-3.5" strokeWidth={1.6} />
+          </button>
         </div>
 
-        <div className="flex items-center gap-1.5">
-          {currentMode === 'node_edit' && selectedNode && (
-            <button
-              onClick={handleSaveNodeScript}
-              className="px-2.5 py-1 rounded bg-emerald-600/25 hover:bg-emerald-600/35 border border-emerald-500/40 text-emerald-200 text-[11px] flex items-center gap-1"
-            >
-              <Save className="w-3 h-3" strokeWidth={1.7} />
-              应用到节点
-            </button>
+        {/* Right Compact Action Buttons */}
+        <div className="flex items-center gap-1 shrink-0">
+          {statusNotice && (
+            <span className="text-[11px] text-emerald-400 px-1.5 truncate max-w-[180px]">
+              {statusNotice}
+            </span>
           )}
 
           <button
-            onClick={handleRunTsc}
-            className="px-2.5 py-1 rounded bg-[#222229] hover:bg-[#2c2c35] border border-[#30303a] text-zinc-200 text-[11px] flex items-center gap-1"
-            title="使用 TypeScript 编译器检查全工程所有节点与脚本"
+            type="button"
+            onClick={handleRunScript}
+            className="px-2 py-1 rounded bg-[#222229] hover:bg-[#2c2c35] text-zinc-200 text-[11px] flex items-center gap-1 border border-[#2f2f38]"
+            title="运行并校验当前脚本文件"
           >
-            <Play className="w-3 h-3" strokeWidth={1.7} />
-            tsc 编译检查
+            <Play className="w-3 h-3 text-emerald-400" strokeWidth={1.8} />
+            <span>运行</span>
           </button>
 
-          <button onClick={handleCopy} className="icon-btn" title="复制代码">
+          <button
+            type="button"
+            onClick={handleSaveCurrentFile}
+            className="px-2 py-1 rounded bg-zinc-200 hover:bg-white text-zinc-950 font-semibold text-[11px] flex items-center gap-1"
+            title="保存当前文件 (Ctrl+S)"
+          >
+            <Save className="w-3 h-3" strokeWidth={1.8} />
+            <span>保存</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              navigator.clipboard.writeText(code);
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1500);
+            }}
+            className="icon-btn !w-6 !h-6"
+            title="复制代码"
+          >
             {copied ? (
-              <Check className="w-3.5 h-3.5 text-zinc-100" strokeWidth={1.6} />
+              <Check className="w-3.5 h-3.5 text-emerald-400" />
             ) : (
-              <Copy className="w-3.5 h-3.5" strokeWidth={1.6} />
+              <Copy className="w-3.5 h-3.5" />
             )}
           </button>
 
           <button
-            onClick={handleDownloadCode}
-            className="icon-btn"
-            title="导出脚本文件至磁盘"
+            type="button"
+            onClick={handleDownloadFile}
+            className="icon-btn !w-6 !h-6"
+            title="下载当前脚本文件"
           >
-            <Download className="w-3.5 h-3.5" strokeWidth={1.6} />
+            <Download className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>
 
-      {/* Compiler Diagnostic Status Strip */}
-      {(compileReport || savedNotice) && (
-        <div className="px-3 py-1.5 bg-[#19191f] border-b border-[#27272c] flex items-center justify-between text-[11px]">
-          {savedNotice ? (
-            <span className="text-emerald-300 flex items-center gap-1.5">
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              {savedNotice}
-            </span>
-          ) : compileReport?.ok ? (
-            <span className="text-emerald-300 flex items-center gap-1.5">
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              [tsc] TypeScript 编译通过 ({compileReport.durationMs}ms)：共校验{' '}
-              {project.nodes.length} 个节点，0 错误，{compileReport.warningCount} 警告。
-            </span>
-          ) : (
-            <span className="text-rose-300 flex items-center gap-1.5">
-              <AlertTriangle className="w-3.5 h-3.5" />
-              [tsc] 检测到 {compileReport?.errorCount} 个类型/语法错误：
-              {compileReport?.diagnostics[0]?.message}
-            </span>
-          )}
+      {/* New File Input Bar */}
+      {isCreatingFile && (
+        <div className="px-3 py-1.5 bg-[#1c1c22] border-b border-[#2c2c35] flex items-center justify-between gap-2 text-xs shrink-0">
+          <div className="flex items-center gap-2 flex-1">
+            <span className="text-zinc-400">新建文件名（带后缀）：</span>
+            <input
+              type="text"
+              value={newFileName}
+              autoFocus
+              onChange={(e) => setNewFileName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleCreateNewFile();
+                if (e.key === 'Escape') setIsCreatingFile(false);
+              }}
+              placeholder="例如: dialogue.ts / save.cs / shader.cpp / mod.rs / script.js"
+              className="px-2 py-0.5 rounded bg-[#121216] border border-[#32323c] text-xs font-mono text-zinc-100 w-64"
+            />
+            <div className="flex items-center gap-1 text-[10px] text-zinc-400">
+              <span>快速后缀：</span>
+              {(['.ts', '.js', '.cs', '.cpp', '.rs', '.yaml'] as const).map((ext) => (
+                <button
+                  key={ext}
+                  type="button"
+                  onClick={() => {
+                    const base = newFileName.split('.')[0] || 'script';
+                    setNewFileName(`${base}${ext}`);
+                  }}
+                  className="px-1.5 py-0.5 rounded bg-[#25252e] hover:bg-[#30303c] font-mono text-zinc-200"
+                >
+                  {ext}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={handleCreateNewFile}
+              className="px-2.5 py-0.5 rounded bg-sky-500 text-zinc-950 font-semibold text-xs"
+            >
+              创建
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsCreatingFile(false)}
+              className="px-2 py-0.5 rounded bg-[#272730] text-zinc-300 text-xs"
+            >
+              取消
+            </button>
+          </div>
         </div>
       )}
 
-      {/* Editor Body */}
-      {currentMode === 'node_edit' ? (
-        <div className="flex-1 flex flex-col overflow-hidden">
-          <div className="px-3 py-1 bg-[#121216] border-b border-[#232329] text-[11px] text-zinc-400 flex items-center justify-between">
-            <span>
-              正在编辑节点：
-              <strong className="text-zinc-200 ml-1">
-                {selectedNode?.title || '未选定节点'} ({selectedNode?.type})
-              </strong>
-            </span>
-            <span className="font-mono text-[10px] text-zinc-500">
-              平时可用 JS 快速编写逻辑，随时点击右上角「tsc 编译检查」进行严格校验
-            </span>
-          </div>
-          <textarea
-            value={editableNodeCode}
-            onChange={(e) => setEditableNodeCode(e.target.value)}
-            spellCheck={false}
-            className="flex-1 w-full p-4 !bg-[#101014] !border-none font-mono text-xs leading-relaxed text-zinc-100 resize-none focus:outline-none select-text"
-          />
-        </div>
-      ) : (
-        <div className="flex-1 overflow-auto p-4 font-mono text-xs leading-relaxed select-text">
-          <pre className="text-zinc-300">
-            {code.split('\n').map((line, i) => (
-              <div
-                key={i}
-                className="flex hover:bg-white/[0.02] px-1 rounded transition"
+      {/* Main Editor Workspace: Left File Explorer + Right Syntax-Highlighted Code Editor */}
+      <div className="flex-1 flex min-h-0 overflow-hidden">
+        {showExplorer && (
+          <aside className="w-44 bg-[#16161a] border-r border-[#27272c] flex flex-col shrink-0 select-none">
+            <div className="px-2.5 py-1.5 border-b border-[#242429] flex items-center justify-between text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">
+              <span>工程脚本文件</span>
+              <button
+                type="button"
+                onClick={() => setIsCreatingFile(true)}
+                className="hover:text-zinc-100"
+                title="新建文件"
               >
-                <span className="w-10 shrink-0 text-right pr-4 text-zinc-600 select-none">
-                  {i + 1}
+                <Plus className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto py-1 space-y-0.5">
+              {files.map((file) => {
+                const meta = getFileExtensionMeta(file.fileName);
+                const isActive = file.id === activeFile?.id;
+                return (
+                  <div
+                    key={file.id}
+                    onClick={() => setActiveFileId(file.id)}
+                    className={`group px-2.5 py-1.5 flex items-center justify-between gap-1.5 text-xs cursor-pointer transition ${
+                      isActive
+                        ? 'bg-[#23232b] text-white font-medium'
+                        : 'text-zinc-400 hover:bg-[#1d1d24] hover:text-zinc-200'
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                      <FileCode2
+                        className="w-3.5 h-3.5 shrink-0"
+                        style={{ color: meta.badgeColor }}
+                      />
+                      <span className="font-mono text-[11px] truncate">
+                        {file.fileName}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition shrink-0">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setRenamingFileId(file.id);
+                          setRenameDraft(file.fileName);
+                        }}
+                        className="text-zinc-400 hover:text-sky-300"
+                        title="重命名文件或修改后缀"
+                      >
+                        <Edit3 className="w-3 h-3" />
+                      </button>
+                      {files.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteFile(file.id);
+                          }}
+                          className="text-zinc-400 hover:text-rose-400"
+                          title="删除文件"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </aside>
+        )}
+
+        {/* Right: Line Numbers + Real-Time Syntax Highlighted Code Surface */}
+        <div className="flex-1 flex flex-col min-w-0 min-h-0 bg-[#121215] relative overflow-hidden">
+          {compileReport && (
+            <div className="px-3 py-1.5 bg-[#19191f] border-b border-[#27272c] flex items-center justify-between text-xs shrink-0">
+              <span className="text-zinc-200">
+                编译检查：{compileReport.ok ? '0 错误' : `${compileReport.diagnostics.length} 项提示`} · 耗时 {compileReport.durationMs}ms
+              </span>
+              <button
+                type="button"
+                onClick={() => setCompileReport(null)}
+                className="text-zinc-400 hover:text-white"
+              >
+                关闭
+              </button>
+            </div>
+          )}
+
+          <div className="flex-1 flex min-h-0 relative overflow-hidden font-mono text-[12.5px] leading-[20px]">
+            {/* Line Number Gutter */}
+            <div
+              ref={gutterRef}
+              className="w-11 py-3 bg-[#141418] border-r border-[#232329] text-right pr-2.5 text-zinc-600 select-none overflow-hidden shrink-0"
+            >
+              {Array.from({ length: lineCount }).map((_, idx) => {
+                const ln = idx + 1;
+                const isCur = ln === cursorPos.line;
+                return (
+                  <div
+                    key={ln}
+                    className={`leading-[20px] ${
+                      isCur ? 'text-zinc-200 font-bold' : ''
+                    }`}
+                  >
+                    {ln}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Layered Syntax Highlight <pre> + Transparent Interactive <textarea> */}
+            <div className="flex-1 relative min-w-0 min-h-0 overflow-hidden">
+              <pre
+                ref={preRef}
+                aria-hidden="true"
+                className="absolute inset-0 m-0 py-3 px-3.5 font-mono text-[12.5px] leading-[20px] whitespace-pre overflow-hidden pointer-events-none select-none"
+                dangerouslySetInnerHTML={{ __html: highlightedHtml + '\n' }}
+              />
+              <textarea
+                ref={textareaRef}
+                value={code}
+                spellCheck={false}
+                autoCapitalize="off"
+                autoComplete="off"
+                autoCorrect="off"
+                onChange={(e) => handleCodeChange(e.target.value)}
+                onScroll={handleSyncScroll}
+                onKeyUp={updateCursorInfo}
+                onClick={updateCursorInfo}
+                onKeyDown={handleKeyDown}
+                style={{
+                  color: 'transparent',
+                  caretColor: '#f4f4f5',
+                }}
+                className="absolute inset-0 w-full h-full m-0 py-3 px-3.5 font-mono text-[12.5px] leading-[20px] whitespace-pre bg-transparent border-0 resize-none focus:outline-none overflow-auto selection:bg-sky-500/30"
+              />
+            </div>
+          </div>
+
+          {/* VS Code Bottom File Status Bar */}
+          <div className="h-6 bg-[#18181d] border-t border-[#27272c] px-3 flex items-center justify-between text-[11px] text-zinc-400 shrink-0">
+            <div className="flex items-center gap-3">
+              <span className="font-mono text-zinc-200">
+                {activeFile?.fileName}
+              </span>
+              {activeFile?.linkedNodeId && (
+                <span className="text-zinc-500">
+                  绑定节点: {activeFile.linkedNodeId}
                 </span>
-                <span className="whitespace-pre-wrap break-all">{line || ' '}</span>
-              </div>
-            ))}
-          </pre>
+              )}
+            </div>
+            <div className="flex items-center gap-4 font-mono">
+              <span>
+                Ln {cursorPos.line}, Col {cursorPos.col}
+              </span>
+              <span>Spaces: 2</span>
+              <span>UTF-8</span>
+              <span
+                style={{ color: extMeta.badgeColor }}
+                className="font-semibold"
+              >
+                {extMeta.langLabel} (.{extMeta.ext})
+              </span>
+            </div>
+          </div>
         </div>
-      )}
+      </div>
     </div>
   );
 };

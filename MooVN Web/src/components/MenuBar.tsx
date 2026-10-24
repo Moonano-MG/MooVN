@@ -10,10 +10,17 @@ import {
   Columns,
   Grid,
   Globe,
-  Languages,
+  Settings,
+  ArrowUp,
+  ArrowDown,
+  ArrowLeft,
+  ArrowRight,
 } from 'lucide-react';
 import { PanelId } from '../types';
-import { SUPPORTED_UI_LANGUAGES, UILanguage, useUILanguage } from '../lib/i18n';
+import { useUILanguage } from '../lib/i18n';
+
+export type RailPosition = 'left' | 'right' | 'top' | 'bottom';
+export type DockDirection = 'left' | 'right' | 'top' | 'bottom' | 'center';
 
 export interface WindowPanelDescriptor {
   id: PanelId;
@@ -28,6 +35,10 @@ interface MenuBarProps {
   onUndo: () => void;
   onRedo: () => void;
   panels: WindowPanelDescriptor[];
+  railPosition?: RailPosition;
+  onChangeRailPosition?: (pos: RailPosition) => void;
+  onMoveWindowOrder?: (id: PanelId, dir: 'up' | 'down') => void;
+  onDockWindowAtDirection?: (id: PanelId, dir: DockDirection) => void;
   onOpenOrFocusWindow: (id: PanelId, mode?: 'dock' | 'float') => void;
   onToggleDockFloat: (id: PanelId) => void;
   onApplyLayoutPreset: (
@@ -37,6 +48,7 @@ interface MenuBarProps {
   onPlayPreview: () => void;
   onOpenExportModal: () => void;
   onOpenProjectLauncher: () => void;
+  onOpenSettingsModal?: () => void;
   onOpenOfficialPortal?: () => void;
 }
 
@@ -46,6 +58,10 @@ export const MenuBar: React.FC<MenuBarProps> = ({
   onUndo,
   onRedo,
   panels,
+  railPosition = 'left',
+  onChangeRailPosition,
+  onMoveWindowOrder,
+  onDockWindowAtDirection,
   onOpenOrFocusWindow,
   onToggleDockFloat,
   onApplyLayoutPreset,
@@ -53,62 +69,68 @@ export const MenuBar: React.FC<MenuBarProps> = ({
   onPlayPreview,
   onOpenExportModal,
   onOpenProjectLauncher,
+  onOpenSettingsModal,
   onOpenOfficialPortal,
 }) => {
   const [openWindowMenu, setOpenWindowMenu] = useState(false);
-  const { lang, setLang, t } = useUILanguage();
+  const { t } = useUILanguage();
 
   return (
     <header className="h-9 bg-[#141417] border-b border-[#27272c] px-2.5 flex items-center justify-between select-none z-50 shrink-0 text-xs">
-      {/* Left: Portal, Project, Undo/Redo, Window Layout */}
-      <div className="flex items-center gap-1">
+      {/* Left: Portal, Project, Undo/Redo, Window & Layout */}
+      <div className="flex items-center gap-1 min-w-0">
         {onOpenOfficialPortal && (
           <>
             <button
+              type="button"
               onClick={onOpenOfficialPortal}
-              className="px-2 py-1 rounded text-zinc-300 hover:text-white hover:bg-[#1f1f25] flex items-center gap-1.5 transition"
+              className="px-2 py-1 rounded text-zinc-300 hover:text-white hover:bg-[#1f1f25] flex items-center gap-1.5 transition shrink-0"
               title={t('menu.portal')}
             >
               <Globe className="w-3.5 h-3.5" strokeWidth={1.6} />
               <span className="hidden sm:inline">{t('menu.portal')}</span>
             </button>
-            <div className="w-px h-3.5 bg-[#27272c] mx-0.5" />
+            <div className="w-px h-3.5 bg-[#27272c] mx-0.5 shrink-0" />
           </>
         )}
 
         <button
+          type="button"
           onClick={onOpenProjectLauncher}
-          className="px-2 py-1 rounded text-zinc-300 hover:text-white hover:bg-[#1f1f25] flex items-center gap-1.5 transition"
+          className="px-2 py-1 rounded text-zinc-300 hover:text-white hover:bg-[#1f1f25] flex items-center gap-1.5 transition shrink-0"
           title={t('menu.project')}
         >
           <FolderOpen className="w-3.5 h-3.5" strokeWidth={1.6} />
           <span>{t('menu.project')}</span>
         </button>
 
-        <div className="w-px h-3.5 bg-[#27272c] mx-0.5" />
+        <div className="w-px h-3.5 bg-[#27272c] mx-0.5 shrink-0" />
 
         <button
+          type="button"
           disabled={!canUndo}
           onClick={onUndo}
-          className="icon-btn !w-6 !h-6"
+          className="icon-btn !w-6 !h-6 shrink-0"
           title={t('menu.undo')}
         >
           <Undo2 className="w-3.5 h-3.5" strokeWidth={1.6} />
         </button>
         <button
+          type="button"
           disabled={!canRedo}
           onClick={onRedo}
-          className="icon-btn !w-6 !h-6"
+          className="icon-btn !w-6 !h-6 shrink-0"
           title={t('menu.redo')}
         >
           <Redo2 className="w-3.5 h-3.5" strokeWidth={1.6} />
         </button>
 
-        <div className="w-px h-3.5 bg-[#27272c] mx-0.5 hidden sm:block" />
+        <div className="w-px h-3.5 bg-[#27272c] mx-0.5 hidden sm:block shrink-0" />
 
-        {/* Window & 2D Layout Dropdown (Desktop) */}
-        <div className="relative hidden sm:block">
+        {/* Window & Layout Dropdown */}
+        <div className="relative hidden sm:block shrink-0">
           <button
+            type="button"
             onClick={() => setOpenWindowMenu((v) => !v)}
             className={`px-2 py-1 rounded text-xs flex items-center gap-1.5 transition ${
               openWindowMenu
@@ -126,66 +148,173 @@ export const MenuBar: React.FC<MenuBarProps> = ({
                 className="fixed inset-0 z-40"
                 onClick={() => setOpenWindowMenu(false)}
               />
-              <div className="absolute left-0 top-8 z-50 w-72 bg-[#1c1c21] border border-[#2e2e36] rounded-lg shadow-2xl p-2 space-y-2">
-                <div className="px-2 py-0.5 text-[10px] font-semibold text-zinc-400">
-                  预设分栏布局
-                </div>
-                <div className="grid grid-cols-2 gap-1 px-1">
-                  <button
-                    onClick={() => {
-                      onApplyLayoutPreset('quad_2x2');
-                      setOpenWindowMenu(false);
-                    }}
-                    className="px-2 py-1.5 rounded bg-[#23232b] hover:bg-[#2d2d37] border border-[#32323c] text-[11px] text-zinc-200 flex items-center gap-1.5"
-                  >
-                    <Grid className="w-3 h-3" strokeWidth={1.6} />
-                    四象限分栏
-                  </button>
-                  <button
-                    onClick={() => {
-                      onApplyLayoutPreset('multi_col_4');
-                      setOpenWindowMenu(false);
-                    }}
-                    className="px-2 py-1.5 rounded bg-[#23232b] hover:bg-[#2d2d37] border border-[#32323c] text-[11px] text-zinc-200 flex items-center gap-1.5"
-                  >
-                    <Columns className="w-3 h-3" strokeWidth={1.6} />
-                    四列并排
-                  </button>
-                  <button
-                    onClick={() => {
-                      onApplyLayoutPreset('canvas_stage_terminal');
-                      setOpenWindowMenu(false);
-                    }}
-                    className="px-2 py-1.5 rounded bg-[#23232b] hover:bg-[#2d2d37] border border-[#32323c] text-[11px] text-zinc-200 flex items-center gap-1.5"
-                  >
-                    画布+舞台+终端
-                  </button>
-                  <button
-                    onClick={() => {
-                      onApplyLayoutPreset('default_ide');
-                      setOpenWindowMenu(false);
-                    }}
-                    className="px-2 py-1.5 rounded bg-[#23232b] hover:bg-[#2d2d37] border border-[#32323c] text-[11px] text-zinc-200 flex items-center gap-1.5"
-                  >
-                    标准三栏
-                  </button>
+              <div className="absolute left-0 top-8 z-50 w-96 bg-[#1c1c21] border border-[#2e2e36] rounded-lg shadow-2xl p-2.5 space-y-2.5">
+                {/* 1. Window Options Bar Position (`窗口选项位置`) */}
+                {onChangeRailPosition && (
+                  <div className="space-y-1">
+                    <div className="px-1 text-[10px] font-semibold text-zinc-400">
+                      {t('layout.railPos')}
+                    </div>
+                    <div className="grid grid-cols-4 gap-1">
+                      {(
+                        [
+                          ['left', t('layout.pos.left')],
+                          ['right', t('layout.pos.right')],
+                          ['top', t('layout.pos.top')],
+                          ['bottom', t('layout.pos.bottom')],
+                        ] as const
+                      ).map(([pos, label]) => (
+                        <button
+                          key={pos}
+                          type="button"
+                          onClick={() => onChangeRailPosition(pos)}
+                          className={`py-1 rounded text-[11px] border transition ${
+                            railPosition === pos
+                              ? 'bg-zinc-200 text-zinc-950 border-zinc-200 font-semibold'
+                              : 'bg-[#23232b] border-[#32323c] text-zinc-300 hover:text-white'
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="h-px bg-[#2c2c34]" />
+
+                {/* 2. Layout Presets */}
+                <div className="space-y-1">
+                  <div className="px-1 text-[10px] font-semibold text-zinc-400">
+                    {t('layout.presets')}
+                  </div>
+                  <div className="grid grid-cols-2 gap-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onApplyLayoutPreset('quad_2x2');
+                        setOpenWindowMenu(false);
+                      }}
+                      className="px-2 py-1.5 rounded bg-[#23232b] hover:bg-[#2d2d37] border border-[#32323c] text-[11px] text-zinc-200 flex items-center gap-1.5"
+                    >
+                      <Grid className="w-3 h-3" strokeWidth={1.6} />
+                      <span>{t('layout.quad')}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onApplyLayoutPreset('multi_col_4');
+                        setOpenWindowMenu(false);
+                      }}
+                      className="px-2 py-1.5 rounded bg-[#23232b] hover:bg-[#2d2d37] border border-[#32323c] text-[11px] text-zinc-200 flex items-center gap-1.5"
+                    >
+                      <Columns className="w-3 h-3" strokeWidth={1.6} />
+                      <span>{t('layout.col4')}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onApplyLayoutPreset('canvas_stage_terminal');
+                        setOpenWindowMenu(false);
+                      }}
+                      className="px-2 py-1.5 rounded bg-[#23232b] hover:bg-[#2d2d37] border border-[#32323c] text-[11px] text-zinc-200 flex items-center gap-1.5"
+                    >
+                      <span>{t('layout.cst')}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onApplyLayoutPreset('default_ide');
+                        setOpenWindowMenu(false);
+                      }}
+                      className="px-2 py-1.5 rounded bg-[#23232b] hover:bg-[#2d2d37] border border-[#32323c] text-[11px] text-zinc-200 flex items-center gap-1.5"
+                    >
+                      <span>{t('layout.std')}</span>
+                    </button>
+                  </div>
                 </div>
 
                 <div className="h-px bg-[#2c2c34]" />
 
-                <div className="px-2 py-0.5 text-[10px] font-semibold text-zinc-400">
-                  窗口状态
+                {/* 3. Windows List: Reorder Option Position + Free Dock Direction (Left/Right/Top/Bottom) + Float */}
+                <div className="px-1 text-[10px] font-semibold text-zinc-400">
+                  {t('layout.windows')}
                 </div>
 
-                <div className="space-y-0.5 max-h-64 overflow-y-auto">
-                  {panels.map((p) => (
+                <div className="space-y-1 max-h-64 overflow-y-auto pr-0.5">
+                  {panels.map((p, idx) => (
                     <div
                       key={p.id}
-                      className="flex items-center justify-between px-2 py-1.5 rounded hover:bg-[#27272e] text-xs"
+                      className="flex items-center justify-between px-2 py-1.5 rounded bg-[#16161b] hover:bg-[#23232b] text-xs gap-2"
                     >
-                      <span className="text-zinc-200">{p.title}</span>
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-1 min-w-0">
+                        {onMoveWindowOrder && (
+                          <div className="flex items-center gap-0.5 shrink-0">
+                            <button
+                              type="button"
+                              disabled={idx === 0}
+                              onClick={() => onMoveWindowOrder(p.id, 'up')}
+                              className="p-0.5 rounded hover:bg-[#32323e] disabled:opacity-25 text-zinc-400 hover:text-white"
+                              title="上移此窗口选项顺序"
+                            >
+                              <ArrowUp className="w-3 h-3" />
+                            </button>
+                            <button
+                              type="button"
+                              disabled={idx === panels.length - 1}
+                              onClick={() => onMoveWindowOrder(p.id, 'down')}
+                              className="p-0.5 rounded hover:bg-[#32323e] disabled:opacity-25 text-zinc-400 hover:text-white"
+                              title="下移此窗口选项顺序"
+                            >
+                              <ArrowDown className="w-3 h-3" />
+                            </button>
+                          </div>
+                        )}
+                        <span className="text-zinc-200 truncate font-medium">
+                          {p.title}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-1 shrink-0">
+                        {onDockWindowAtDirection && (
+                          <div className="flex items-center bg-[#121216] rounded border border-[#2c2c36] p-0.5 gap-0.5">
+                            <button
+                              type="button"
+                              onClick={() => onDockWindowAtDirection(p.id, 'left')}
+                              className="p-0.5 rounded hover:bg-sky-500/25 text-zinc-400 hover:text-sky-300"
+                              title="停靠到左侧"
+                            >
+                              <ArrowLeft className="w-3 h-3" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => onDockWindowAtDirection(p.id, 'top')}
+                              className="p-0.5 rounded hover:bg-sky-500/25 text-zinc-400 hover:text-sky-300"
+                              title="停靠到顶部"
+                            >
+                              <ArrowUp className="w-3 h-3" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => onDockWindowAtDirection(p.id, 'bottom')}
+                              className="p-0.5 rounded hover:bg-sky-500/25 text-zinc-400 hover:text-sky-300"
+                              title="停靠到底部"
+                            >
+                              <ArrowDown className="w-3 h-3" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => onDockWindowAtDirection(p.id, 'right')}
+                              className="p-0.5 rounded hover:bg-sky-500/25 text-zinc-400 hover:text-sky-300"
+                              title="停靠到右侧"
+                            >
+                              <ArrowRight className="w-3 h-3" />
+                            </button>
+                          </div>
+                        )}
+
                         <button
+                          type="button"
                           onClick={() => onOpenOrFocusWindow(p.id, 'dock')}
                           className={`px-1.5 py-0.5 rounded text-[10px] transition ${
                             p.docked
@@ -193,9 +322,10 @@ export const MenuBar: React.FC<MenuBarProps> = ({
                               : 'bg-[#141417] text-zinc-400 hover:text-zinc-200'
                           }`}
                         >
-                          停靠
+                          {t('layout.dock')}
                         </button>
                         <button
+                          type="button"
                           onClick={() => {
                             if (p.docked || p.floating) {
                               onToggleDockFloat(p.id);
@@ -209,7 +339,7 @@ export const MenuBar: React.FC<MenuBarProps> = ({
                               : 'bg-[#141417] text-zinc-400 hover:text-zinc-200'
                           }`}
                         >
-                          漂浮
+                          {t('layout.float')}
                         </button>
                       </div>
                     </div>
@@ -218,6 +348,7 @@ export const MenuBar: React.FC<MenuBarProps> = ({
 
                 <div className="h-px bg-[#2c2c34]" />
                 <button
+                  type="button"
                   onClick={() => {
                     onResetLayout();
                     setOpenWindowMenu(false);
@@ -225,7 +356,7 @@ export const MenuBar: React.FC<MenuBarProps> = ({
                   className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded text-xs text-zinc-400 hover:text-white hover:bg-[#27272e]"
                 >
                   <RotateCcw className="w-3 h-3" strokeWidth={1.6} />
-                  重置默认布局
+                  <span>{t('layout.reset')}</span>
                 </button>
               </div>
             </>
@@ -233,25 +364,22 @@ export const MenuBar: React.FC<MenuBarProps> = ({
         </div>
       </div>
 
-      {/* Right: Language Switcher, Run Preview & Unified Export */}
-      <div className="flex items-center gap-1.5">
-        <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#1c1c21] border border-[#2c2c34]">
-          <Languages className="w-3 h-3 text-zinc-400 shrink-0" strokeWidth={1.6} />
-          <select
-            value={lang}
-            onChange={(e) => setLang(e.target.value as UILanguage)}
-            className="bg-transparent border-0 text-[11px] text-zinc-200 focus:outline-none cursor-pointer pr-1"
-            title={t('menu.language')}
+      {/* Right: Settings, Run Preview & Export */}
+      <div className="flex items-center gap-1.5 shrink-0">
+        {onOpenSettingsModal && (
+          <button
+            type="button"
+            onClick={onOpenSettingsModal}
+            className="px-2 py-1 rounded text-zinc-300 hover:text-white hover:bg-[#1f1f25] flex items-center gap-1 transition"
+            title={t('menu.settings')}
           >
-            {SUPPORTED_UI_LANGUAGES.map((item) => (
-              <option key={item.id} value={item.id} className="bg-[#18181c] text-zinc-200">
-                {item.shortLabel}
-              </option>
-            ))}
-          </select>
-        </div>
+            <Settings className="w-3.5 h-3.5" strokeWidth={1.6} />
+            <span className="hidden sm:inline">{t('menu.settings')}</span>
+          </button>
+        )}
 
         <button
+          type="button"
           onClick={onPlayPreview}
           className="px-2.5 py-1 rounded bg-[#232329] hover:bg-[#2c2c34] text-zinc-100 border border-[#32323a] flex items-center gap-1.5 transition"
         >
@@ -260,6 +388,7 @@ export const MenuBar: React.FC<MenuBarProps> = ({
         </button>
 
         <button
+          type="button"
           onClick={onOpenExportModal}
           className="px-2.5 py-1 rounded bg-zinc-100 hover:bg-white text-zinc-950 font-semibold flex items-center gap-1.5 transition"
         >

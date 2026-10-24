@@ -189,6 +189,36 @@ impl PolyglotTranslator {
             EngineOp::CharExpression { char_id, sprite_id } => {
                 Self::fmt_call(target, "char", "expr", &[format!("\"{}\"", char_id), format!("\"{}\"", sprite_id)])
             }
+            EngineOp::CharVideo {
+                char_id,
+                video_url,
+                loop_video,
+                chroma_key,
+            } => {
+                let mut args = vec![
+                    format!("\"{}\"", char_id),
+                    format!("\"{}\"", video_url),
+                    loop_video.to_string(),
+                ];
+                if let Some(ck) = chroma_key {
+                    args.push(format!("\"{}\"", ck));
+                }
+                Self::fmt_call(target, "char", "video", &args)
+            }
+            EngineOp::BranchIf {
+                condition_expr,
+                true_target,
+                false_target,
+            } => {
+                let mut args = vec![
+                    format!("\"{}\"", condition_expr),
+                    format!("\"{}\"", true_target),
+                ];
+                if let Some(ft) = false_target {
+                    args.push(format!("\"{}\"", ft));
+                }
+                Self::fmt_call(target, "scene", "branch_if", &args)
+            }
             EngineOp::CharMove { char_id, x, y, duration_ms } => {
                 Self::fmt_call(
                     target,
@@ -444,6 +474,11 @@ impl PolyglotTranslator {
 
             ("scene", "load") => Some(EngineOp::SceneLoad { chapter_id: a0 }),
             ("scene", "jump") => Some(EngineOp::SceneJump { node_id: a0 }),
+            ("scene", "branch_if") => Some(EngineOp::BranchIf {
+                condition_expr: a0,
+                true_target: a1,
+                false_target: if a2.is_empty() { None } else { Some(a2) },
+            }),
 
             ("bg", "show") => Some(EngineOp::BgShow {
                 bg_id: a0,
@@ -466,6 +501,12 @@ impl PolyglotTranslator {
             ("char", "expr") | ("char", "expression") => Some(EngineOp::CharExpression {
                 char_id: a0,
                 sprite_id: a1,
+            }),
+            ("char", "video") => Some(EngineOp::CharVideo {
+                char_id: a0,
+                video_url: a1,
+                loop_video: a2.parse().unwrap_or(true),
+                chroma_key: if a3.is_empty() { None } else { Some(a3) },
             }),
             ("char", "move") => Some(EngineOp::CharMove {
                 char_id: a0,

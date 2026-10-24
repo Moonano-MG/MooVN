@@ -1,238 +1,282 @@
 import { useState, useEffect } from 'react';
+import { PanelId } from '../types';
 
 export type UILanguage = 'zh-CN' | 'zh-TW' | 'en-US' | 'ja-JP';
 
 export interface LanguageOption {
   id: UILanguage;
   label: string;
-  shortLabel: string;
   nativeName: string;
 }
 
 export const SUPPORTED_UI_LANGUAGES: LanguageOption[] = [
-  { id: 'zh-CN', label: '简体中文 (Simplified Chinese)', shortLabel: '简中', nativeName: '简体中文' },
-  { id: 'zh-TW', label: '繁體中文 (Traditional Chinese)', shortLabel: '繁中', nativeName: '繁體中文' },
-  { id: 'en-US', label: 'English (US)', shortLabel: 'EN', nativeName: 'English' },
-  { id: 'ja-JP', label: '日本語 (Japanese)', shortLabel: '日本語', nativeName: '日本語' },
+  { id: 'zh-CN', label: '简体中文', nativeName: '简体中文' },
+  { id: 'zh-TW', label: '繁體中文', nativeName: '繁體中文' },
+  { id: 'en-US', label: 'English', nativeName: 'English' },
+  { id: 'ja-JP', label: '日本語', nativeName: '日本語' },
 ];
 
-const UI_LANG_STORAGE_KEY = 'moovn_studio_ui_lang_v1';
+const UI_LANGUAGE_STORAGE_KEY = 'moovn_ui_language_v1';
 
-const DICT: Record<UILanguage, Record<string, string>> = {
+const DICTIONARY: Record<UILanguage, Record<string, string>> = {
   'zh-CN': {
+    // MenuBar
     'menu.portal': '官网',
     'menu.project': '项目',
-    'menu.undo': '撤销 (Ctrl+Z)',
-    'menu.redo': '重做 (Ctrl+Y)',
-    'menu.layout': '布局',
-    'menu.language': '语言',
-    'menu.run': '运行',
-    'menu.export': '导出',
+    'menu.undo': '撤销',
+    'menu.redo': '重做',
+    'menu.layout': '窗口与布局',
     'menu.settings': '设置',
-    'menu.resetLayout': '重置默认分栏布局',
-    'menu.presetLayouts': '预设分栏布局',
-    'menu.windowStatus': '窗口状态',
-    'menu.dock': '停靠',
-    'menu.float': '漂浮',
-    'panel.explorer': '章节与素材库',
-    'panel.node_library': '节点库 (56类)',
-    'panel.canvas': '2D 流程图画布',
-    'panel.stage': '16:9 场景舞台',
-    'panel.ts_code': '多语言引擎脚本',
-    'panel.yaml_code': 'YAML 章节脚本',
-    'panel.inspector': '节点属性检查器',
-    'panel.asset_studio': 'AI 素材工坊',
-    'panel.ui_customizer': '游戏 UI 定制器',
+    'menu.run': '运行预览',
+    'menu.export': '导出',
+    'layout.presets': '分栏布局预设',
+    'layout.quad': '四象限分栏',
+    'layout.col4': '四列并排',
+    'layout.cst': '画布+舞台+终端',
+    'layout.std': '标准三栏',
+    'layout.railPos': '窗口选项栏位置',
+    'layout.pos.left': '左侧栏',
+    'layout.pos.right': '右侧栏',
+    'layout.pos.top': '顶部栏',
+    'layout.pos.bottom': '底部栏',
+    'layout.windows': '窗口列表与位置调整 (可上下移动顺序或自由停靠)',
+    'layout.dock': '停靠',
+    'layout.float': '悬浮',
+    'layout.reset': '重置默认布局',
+    // Panels
+    'panel.explorer': '章节与大纲',
+    'panel.node_library': '节点库',
+    'panel.canvas': '节点画布',
+    'panel.stage': '舞台预览',
+    'panel.ui_customizer': '游戏 UI 定制',
+    'panel.ts_code': '脚本编辑器',
+    'panel.yaml_code': 'YAML 剧本',
+    'panel.inspector': '属性检查器',
+    'panel.characters': '角色管理',
     'panel.ai_agent': 'AI 助手',
-    'panel.terminal': '引擎终端与编译',
-    'launcher.webBadge': 'Web 工作台 (无本地路径模式)',
-    'launcher.localBadge': '.mpvn 本地项目中心',
-    'launcher.webSubtitle': '像 Web 版 VS Code 一样工作：直接导入本地 .mpvn 文件，或重新创建一个新视觉小说项目',
-    'launcher.importTitle': '导入本地项目文件 (.mpvn)',
-    'launcher.importDesc': '从您的设备选择已有的 .mpvn 工程文件直接载入工作台编辑',
-    'launcher.importBtn': '选择本地 .mpvn 文件导入',
-    'launcher.createTitle': '重新创建一个新项目',
-    'launcher.createDesc': '在内存中初始化全新视觉小说工程，随时可导出为 .mpvn 文件',
-    'launcher.createBtn': '立即创建并进入工作台',
-    'launcher.backToEditor': '返回当前工作台',
-    'settings.title': 'MooVN Studio 系统与引擎设置',
-    'settings.tab.language': '语言设置 (Language)',
-    'settings.tab.engine': 'MooVN Engine 多语言与渲染器',
-    'settings.tab.game': '游戏运行与流式解压',
-    'settings.tab.workspace': '本地文件夹与路径',
-    'portal.openWebEditor': '在线启动 MooVN Web 编辑器',
-    'portal.downloadClient': '客户端与源码下载',
+    'panel.terminal': '终端控制台',
+    'panel.asset_studio': '素材工坊',
+    'panel.settings': '系统设置',
+    // Launcher
+    'launcher.openLocal': '打开本地 .mpvn 项目',
+    'launcher.openLocalDesc': '从设备选择已有的 .mpvn 工程文件载入编辑',
+    'launcher.selectFile': '选择 .mpvn 文件',
+    'launcher.createNew': '新建空白项目',
+    'launcher.createNewDesc': '设置项目名称与作者，从零开始搭建视觉小说',
+    'launcher.projectName': '项目名称',
+    'launcher.author': '作者 / 团队',
+    'launcher.createBtn': '创建并进入编辑器',
+    'launcher.enterCurrent': '继续当前项目',
+    // Settings
+    'settings.title': '设置',
+    'settings.tab.general': '通用与界面',
+    'settings.tab.game': '游戏默认参数',
+    'settings.tab.workspace': '本地工作区路径',
+    'settings.language': '界面语言 (Language)',
+    'settings.save': '保存设置',
+    'settings.cancel': '取消',
   },
   'zh-TW': {
     'menu.portal': '官網',
     'menu.project': '專案',
-    'menu.undo': '復原 (Ctrl+Z)',
-    'menu.redo': '重做 (Ctrl+Y)',
-    'menu.layout': '佈局',
-    'menu.language': '語言',
-    'menu.run': '執行',
-    'menu.export': '匯出',
+    'menu.undo': '復原',
+    'menu.redo': '重做',
+    'menu.layout': '視窗與佈局',
     'menu.settings': '設定',
-    'menu.resetLayout': '重置預設分欄佈局',
-    'menu.presetLayouts': '預設分欄佈局',
-    'menu.windowStatus': '視窗狀態',
-    'menu.dock': '停靠',
-    'menu.float': '懸浮',
-    'panel.explorer': '章節與素材庫',
-    'panel.node_library': '節點庫 (56類)',
-    'panel.canvas': '2D 流程圖畫布',
-    'panel.stage': '16:9 場景舞台',
-    'panel.ts_code': '多語言引擎腳本',
-    'panel.yaml_code': 'YAML 章節腳本',
-    'panel.inspector': '節點屬性檢查器',
-    'panel.asset_studio': 'AI 素材工坊',
-    'panel.ui_customizer': '遊戲 UI 定制器',
+    'menu.run': '執行預覽',
+    'menu.export': '匯出',
+    'layout.presets': '分欄佈局預設',
+    'layout.quad': '四象限分欄',
+    'layout.col4': '四列並排',
+    'layout.cst': '畫布+舞台+終端',
+    'layout.std': '標準三欄',
+    'layout.railPos': '視窗選項欄位置',
+    'layout.pos.left': '左側欄',
+    'layout.pos.right': '右側欄',
+    'layout.pos.top': '頂部欄',
+    'layout.pos.bottom': '底部欄',
+    'layout.windows': '視窗列表與位置調整',
+    'layout.dock': '停靠',
+    'layout.float': '懸浮',
+    'layout.reset': '重設預設佈局',
+    'panel.explorer': '章節與大綱',
+    'panel.node_library': '節點庫',
+    'panel.canvas': '節點畫布',
+    'panel.stage': '舞台預覽',
+    'panel.ui_customizer': '遊戲 UI 定制',
+    'panel.ts_code': '腳本編輯器',
+    'panel.yaml_code': 'YAML 劇本',
+    'panel.inspector': '屬性檢查器',
+    'panel.characters': '角色管理',
     'panel.ai_agent': 'AI 助手',
-    'panel.terminal': '引擎終端與編譯',
-    'launcher.webBadge': 'Web 工作台 (無本機路徑模式)',
-    'launcher.localBadge': '.mpvn 本機專案中心',
-    'launcher.webSubtitle': '如同 Web 版 VS Code：直接匯入本機 .mpvn 檔案，或重新建立一個新視覺小說專案',
-    'launcher.importTitle': '匯入本機專案檔案 (.mpvn)',
-    'launcher.importDesc': '從您的裝置選擇已有的 .mpvn 工程檔案直接載入工作台編輯',
-    'launcher.importBtn': '選擇本機 .mpvn 檔案匯入',
-    'launcher.createTitle': '重新建立一個新專案',
-    'launcher.createDesc': '在記憶體中初始化全新視覺小說工程，隨時可匯出為 .mpvn 檔案',
-    'launcher.createBtn': '立即建立並進入工作台',
-    'launcher.backToEditor': '返回目前工作台',
-    'settings.title': 'MooVN Studio 系統與引擎設定',
-    'settings.tab.language': '語言設定 (Language)',
-    'settings.tab.engine': 'MooVN Engine 多語言與渲染器',
-    'settings.tab.game': '遊戲執行與串流解壓',
-    'settings.tab.workspace': '本機資料夾與路徑',
-    'portal.openWebEditor': '線上啟動 MooVN Web 編輯器',
-    'portal.downloadClient': '用戶端與原始碼下載',
+    'panel.terminal': '終端控制台',
+    'panel.asset_studio': '素材工坊',
+    'panel.settings': '系統設定',
+    'launcher.openLocal': '開啟本機 .mpvn 專案',
+    'launcher.openLocalDesc': '從裝置選擇現有的 .mpvn 專案檔案載入編輯',
+    'launcher.selectFile': '選擇 .mpvn 檔案',
+    'launcher.createNew': '新建空白專案',
+    'launcher.createNewDesc': '設定專案名稱與作者，從零開始建立視覺小說',
+    'launcher.projectName': '專案名稱',
+    'launcher.author': '作者 / 團隊',
+    'launcher.createBtn': '建立並進入編輯器',
+    'launcher.enterCurrent': '繼續目前專案',
+    'settings.title': '設定',
+    'settings.tab.general': '一般與介面',
+    'settings.tab.game': '遊戲預設參數',
+    'settings.tab.workspace': '本機工作區路徑',
+    'settings.language': '介面語言 (Language)',
+    'settings.save': '儲存設定',
+    'settings.cancel': '取消',
   },
   'en-US': {
-    'menu.portal': 'Portal',
+    'menu.portal': 'Website',
     'menu.project': 'Project',
-    'menu.undo': 'Undo (Ctrl+Z)',
-    'menu.redo': 'Redo (Ctrl+Y)',
-    'menu.layout': 'Layout',
-    'menu.language': 'Language',
-    'menu.run': 'Run',
-    'menu.export': 'Export',
+    'menu.undo': 'Undo',
+    'menu.redo': 'Redo',
+    'menu.layout': 'Window & Layout',
     'menu.settings': 'Settings',
-    'menu.resetLayout': 'Reset Default Layout',
-    'menu.presetLayouts': 'Layout Presets',
-    'menu.windowStatus': 'Panels',
-    'menu.dock': 'Dock',
-    'menu.float': 'Float',
-    'panel.explorer': 'Chapters & Assets',
-    'panel.node_library': 'Node Library (56)',
-    'panel.canvas': '2D Flow Canvas',
-    'panel.stage': '16:9 Scene Stage',
-    'panel.ts_code': 'Polyglot Engine Script',
-    'panel.yaml_code': 'YAML Chapter Script',
-    'panel.inspector': 'Node Inspector',
-    'panel.asset_studio': 'AI Asset Studio',
-    'panel.ui_customizer': 'Game UI Customizer',
-    'panel.ai_agent': 'AI Copilot',
-    'panel.terminal': 'Engine Terminal',
-    'launcher.webBadge': 'Web Workbench (Pathless VS Code Web Mode)',
-    'launcher.localBadge': '.mpvn Project Hub',
-    'launcher.webSubtitle': 'Works like VS Code for the Web: import a local .mpvn file from your device, or create a brand-new project in memory',
-    'launcher.importTitle': 'Import Local Project (.mpvn)',
-    'launcher.importDesc': 'Pick an existing .mpvn project file from your device to open immediately',
-    'launcher.importBtn': 'Import Local .mpvn File',
-    'launcher.createTitle': 'Create a New Project',
-    'launcher.createDesc': 'Initialize a fresh visual novel project in memory and export as .mpvn anytime',
-    'launcher.createBtn': 'Create & Enter Workbench',
-    'launcher.backToEditor': 'Return to Workbench',
-    'settings.title': 'MooVN Studio System & Engine Settings',
-    'settings.tab.language': 'Language Settings',
-    'settings.tab.engine': 'MooVN Engine & Renderer',
-    'settings.tab.game': 'Game & Stream Defaults',
-    'settings.tab.workspace': 'Local Workspace Paths',
-    'portal.openWebEditor': 'Launch MooVN Web Editor',
-    'portal.downloadClient': 'Client & Source Downloads',
+    'menu.run': 'Run Game',
+    'menu.export': 'Export',
+    'layout.presets': 'Layout Presets',
+    'layout.quad': '2x2 Grid',
+    'layout.col4': '4 Columns',
+    'layout.cst': 'Canvas + Stage + Terminal',
+    'layout.std': 'Standard IDE',
+    'layout.railPos': 'Window Bar Position',
+    'layout.pos.left': 'Left',
+    'layout.pos.right': 'Right',
+    'layout.pos.top': 'Top',
+    'layout.pos.bottom': 'Bottom',
+    'layout.windows': 'Windows & Dock Order',
+    'layout.dock': 'Dock',
+    'layout.float': 'Float',
+    'layout.reset': 'Reset Layout',
+    'panel.explorer': 'Chapters',
+    'panel.node_library': 'Node Library',
+    'panel.canvas': 'Node Canvas',
+    'panel.stage': 'Stage Preview',
+    'panel.ui_customizer': 'Game UI',
+    'panel.ts_code': 'Script Editor',
+    'panel.yaml_code': 'YAML Data',
+    'panel.inspector': 'Inspector',
+    'panel.characters': 'Characters',
+    'panel.ai_agent': 'AI Chat',
+    'panel.terminal': 'Terminal',
+    'panel.asset_studio': 'Asset Studio',
+    'panel.settings': 'Settings',
+    'launcher.openLocal': 'Open Local .mpvn Project',
+    'launcher.openLocalDesc': 'Load an existing .mpvn project file from your device',
+    'launcher.selectFile': 'Select .mpvn File',
+    'launcher.createNew': 'New Blank Project',
+    'launcher.createNewDesc': 'Set project title and author to start from scratch',
+    'launcher.projectName': 'Project Name',
+    'launcher.author': 'Author / Team',
+    'launcher.createBtn': 'Create & Open Editor',
+    'launcher.enterCurrent': 'Continue Current Project',
+    'settings.title': 'Settings',
+    'settings.tab.general': 'General & UI',
+    'settings.tab.game': 'Game Defaults',
+    'settings.tab.workspace': 'Workspace Path',
+    'settings.language': 'Interface Language',
+    'settings.save': 'Save Settings',
+    'settings.cancel': 'Cancel',
   },
   'ja-JP': {
     'menu.portal': '公式サイト',
     'menu.project': 'プロジェクト',
-    'menu.undo': '元に戻す (Ctrl+Z)',
-    'menu.redo': 'やり直し (Ctrl+Y)',
-    'menu.layout': 'レイアウト',
-    'menu.language': '言語',
-    'menu.run': '実行',
-    'menu.export': 'エクスポート',
+    'menu.undo': '元に戻す',
+    'menu.redo': 'やり直し',
+    'menu.layout': 'ウィンドウと配置',
     'menu.settings': '設定',
-    'menu.resetLayout': 'デフォルト配置に戻す',
-    'menu.presetLayouts': 'プリセット配置',
-    'menu.windowStatus': 'パネル状態',
-    'menu.dock': 'ドック',
-    'menu.float': 'フロート',
-    'panel.explorer': '章・アセット管理',
-    'panel.node_library': 'ノードライブラリ (56種)',
-    'panel.canvas': '2D フローキャンバス',
-    'panel.stage': '16:9 シーンステージ',
-    'panel.ts_code': '多言語エンジンスクリプト',
-    'panel.yaml_code': 'YAML 章スクリプト',
-    'panel.inspector': 'プロパティ検査',
-    'panel.asset_studio': 'AI アセット工房',
-    'panel.ui_customizer': 'ゲーム UI カスタマイズ',
-    'panel.ai_agent': 'AI アシスタント',
-    'panel.terminal': 'エンジンの端末',
-    'launcher.webBadge': 'Web ワークベンチ (Web版 VS Code モード)',
-    'launcher.localBadge': '.mpvn ローカル管理',
-    'launcher.webSubtitle': 'Web版 VS Code のようにローカルの .mpvn ファイルをインポートするか、新規プロジェクトを作成します',
-    'launcher.importTitle': 'ローカル .mpvn ファイルをインポート',
-    'launcher.importDesc': '端末内の .mpvn プロジェクトファイルを選択して直接編集を開始します',
-    'launcher.importBtn': '.mpvn ファイルを選択して開く',
-    'launcher.createTitle': '新規プロジェクトを作成',
-    'launcher.createDesc': 'メモリ上に新しいノベルプロジェクトを作成し、いつでも .mpvn として保存可能',
-    'launcher.createBtn': '新規作成してエディタへ',
-    'launcher.backToEditor': 'エディタに戻る',
-    'settings.title': 'MooVN Studio システム・エンジン設定',
-    'settings.tab.language': '言語設定 (Language)',
-    'settings.tab.engine': 'MooVN Engine 多言語・レンダラー',
-    'settings.tab.game': 'ゲーム実行・ストリーム展開',
-    'settings.tab.workspace': 'ローカル保存パス設定',
-    'portal.openWebEditor': 'MooVN Web エディタを起動',
-    'portal.downloadClient': 'クライアント・ソースコード',
+    'menu.run': 'ゲーム実行',
+    'menu.export': '書き出し',
+    'layout.presets': 'レイアウトプリセット',
+    'layout.quad': '4分割グリッド',
+    'layout.col4': '4列並列',
+    'layout.cst': 'キャンバス+ステージ+端末',
+    'layout.std': '標準3ペイン',
+    'layout.railPos': 'ウィンドウバーの位置',
+    'layout.pos.left': '左端',
+    'layout.pos.right': '右端',
+    'layout.pos.top': '上端',
+    'layout.pos.bottom': '下端',
+    'layout.windows': 'ウィンドウ一覧とドック位置調整',
+    'layout.dock': 'ドック',
+    'layout.float': 'フロート',
+    'layout.reset': 'レイアウト初期化',
+    'panel.explorer': 'チャプター構成',
+    'panel.node_library': 'ノード一覧',
+    'panel.canvas': 'ノードキャンバス',
+    'panel.stage': 'ステージプレビュー',
+    'panel.ui_customizer': 'ゲームUI設定',
+    'panel.ts_code': 'スクリプトエディタ',
+    'panel.yaml_code': 'YAMLデータ',
+    'panel.inspector': 'インスペクタ',
+    'panel.characters': 'キャラクター管理',
+    'panel.ai_agent': 'AIアシスタント',
+    'panel.terminal': 'ターミナル',
+    'panel.asset_studio': 'アセット工房',
+    'panel.settings': '設定',
+    'launcher.openLocal': 'ローカル .mpvn を開く',
+    'launcher.openLocalDesc': '端末内の .mpvn プロジェクトファイルを読み込みます',
+    'launcher.selectFile': '.mpvn ファイルを選択',
+    'launcher.createNew': '新規プロジェクト作成',
+    'launcher.createNewDesc': 'タイトルと制作者を設定して新規作成します',
+    'launcher.projectName': 'プロジェクト名',
+    'launcher.author': '制作者',
+    'launcher.createBtn': '作成してエディタを開く',
+    'launcher.enterCurrent': '現在のプロジェクトを続ける',
+    'settings.title': '設定',
+    'settings.tab.general': '一般・言語・表示',
+    'settings.tab.game': 'ゲーム既定値',
+    'settings.tab.workspace': 'ワークスペースパス',
+    'settings.language': '表示言語 (Language)',
+    'settings.save': '保存する',
+    'settings.cancel': 'キャンセル',
   },
 };
 
-let currentLang: UILanguage = (() => {
-  if (typeof window !== 'undefined') {
-    const saved = localStorage.getItem(UI_LANG_STORAGE_KEY) as UILanguage | null;
-    if (saved && saved in DICT) return saved;
-  }
-  return 'zh-CN';
-})();
-
-const listeners = new Set<(lang: UILanguage) => void>();
+type Listener = (lang: UILanguage) => void;
+const listeners = new Set<Listener>();
 
 export function getUILanguage(): UILanguage {
-  return currentLang;
+  if (typeof window === 'undefined') return 'zh-CN';
+  try {
+    const saved = localStorage.getItem(UI_LANGUAGE_STORAGE_KEY) as UILanguage | null;
+    if (saved && DICTIONARY[saved]) return saved;
+  } catch {
+    // ignore
+  }
+  return 'zh-CN';
 }
 
 export function setUILanguage(lang: UILanguage): void {
-  if (!(lang in DICT)) return;
-  currentLang = lang;
-  if (typeof window !== 'undefined') {
-    try {
-      localStorage.setItem(UI_LANG_STORAGE_KEY, lang);
-    } catch {
-      // ignore
-    }
+  if (!DICTIONARY[lang]) return;
+  try {
+    localStorage.setItem(UI_LANGUAGE_STORAGE_KEY, lang);
+  } catch {
+    // ignore
   }
   listeners.forEach((fn) => fn(lang));
 }
 
-export function tUI(key: string, fallback?: string): string {
-  return DICT[currentLang]?.[key] || DICT['zh-CN']?.[key] || fallback || key;
+export function translateUI(key: string, lang: UILanguage = getUILanguage()): string {
+  return DICTIONARY[lang]?.[key] ?? DICTIONARY['zh-CN']?.[key] ?? key;
+}
+
+export function getLocalizedPanelTitle(
+  panelId: PanelId,
+  lang: UILanguage = getUILanguage()
+): string {
+  return translateUI(`panel.${panelId}`, lang);
 }
 
 export function useUILanguage() {
-  const [lang, setLangState] = useState<UILanguage>(currentLang);
+  const [lang, setLangState] = useState<UILanguage>(getUILanguage);
 
   useEffect(() => {
-    const handler = (next: UILanguage) => setLangState(next);
+    const handler: Listener = (next) => setLangState(next);
     listeners.add(handler);
     return () => {
       listeners.delete(handler);
@@ -242,7 +286,7 @@ export function useUILanguage() {
   return {
     lang,
     setLang: setUILanguage,
-    t: (key: string, fallback?: string) =>
-      DICT[lang]?.[key] || DICT['zh-CN']?.[key] || fallback || key,
+    t: (key: string) => translateUI(key, lang),
+    tPanel: (panelId: PanelId) => getLocalizedPanelTitle(panelId, lang),
   };
 }

@@ -1,9 +1,7 @@
 //! Unified Intermediate Representation (IR) for MooVN Engine.
 //!
-//! Regardless of whether a developer writes C# (`moovn.save:create("slot1")`),
-//! JavaScript/TypeScript (`moobn.sava:create("slot1")`), C++ (`moovn::save::create("slot1")`),
-//! or Rust (`moovn.save:create("slot1")`), the Polyglot Translator compiles all calls
-//! into the same canonical `EngineOp` sequence.
+//! Compiles scripts across JavaScript/TypeScript, C#, C++, and Rust into
+//! a deterministic visual novel instruction set.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SourceLanguage {
@@ -25,16 +23,40 @@ impl SourceLanguage {
         }
     }
 
+    pub fn extension(&self) -> &'static str {
+        match self {
+            SourceLanguage::JavaScript => "js",
+            SourceLanguage::TypeScript => "ts",
+            SourceLanguage::Cpp => "cpp",
+            SourceLanguage::CSharp => "cs",
+            SourceLanguage::Rust => "rs",
+        }
+    }
+
     pub fn from_tag(tag: &str) -> Self {
-        match tag.trim().to_ascii_lowercase().as_str() {
+        let lower = tag.trim().to_ascii_lowercase();
+        let ext = lower.rsplit('.').next().unwrap_or(lower.as_str());
+        match ext {
             "js" | "javascript" => SourceLanguage::JavaScript,
             "ts" | "typescript" => SourceLanguage::TypeScript,
-            "cpp" | "c++" | "cxx" => SourceLanguage::Cpp,
+            "cpp" | "cxx" | "cc" | "hpp" | "h" | "c++" => SourceLanguage::Cpp,
             "cs" | "c#" | "csharp" => SourceLanguage::CSharp,
             "rs" | "rust" => SourceLanguage::Rust,
             _ => SourceLanguage::TypeScript,
         }
     }
+}
+
+/// Media type for a character actor on stage (static image, animated GIF/WebP, or MP4/WebM video).
+#[derive(Debug, Clone, PartialEq)]
+pub enum ActorMediaKind {
+    StaticImage,
+    AnimatedSprite,
+    VideoClip {
+        loop_video: bool,
+        chroma_key_hex: Option<String>,
+        playback_rate: f32,
+    },
 }
 
 /// Canonical Visual Novel Engine Operation IR.
@@ -52,19 +74,30 @@ pub enum EngineOp {
     SaveAutoSave,
     SaveList,
 
-    // ==================== Scene & Flow ====================
+    // ==================== Scene & Flow & Branching ====================
     SceneLoad { chapter_id: String },
     SceneJump { node_id: String },
+    BranchIf {
+        condition_expr: String,
+        true_target: String,
+        false_target: Option<String>,
+    },
 
     // ==================== Background & Environment ====================
     BgShow { bg_id: String, transition: String },
     BgWeather { effect: String, intensity: u8 },
     BgFilter { filter_name: String, intensity: u8 },
 
-    // ==================== Character & Stage ====================
+    // ==================== Character & Stage (Static + Video + Animation) ====================
     CharEnter { char_id: String, position: String },
     CharExit { char_id: String },
     CharExpression { char_id: String, sprite_id: String },
+    CharVideo {
+        char_id: String,
+        video_url: String,
+        loop_video: bool,
+        chroma_key: Option<String>,
+    },
     CharMove { char_id: String, x: f32, y: f32, duration_ms: u32 },
     CharAction { char_id: String, action: String },
     CharAffection { char_id: String, delta: i32 },

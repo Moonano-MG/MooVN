@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import {
   Trash2,
   ChevronLeft,
@@ -6,14 +6,22 @@ import {
   FlipHorizontal,
   UserPlus,
   Plus,
+  Film,
 } from 'lucide-react';
-import { SceneNode, CharacterPlacement, CharacterProfile, GameUIConfig } from '../types';
+import {
+  SceneNode,
+  CharacterPlacement,
+  CharacterProfile,
+  GameUIConfig,
+  CharacterIdleMotion,
+} from '../types';
 import {
   getBackgroundById,
   getCharacterById,
   CHARACTER_ASSETS,
   BACKGROUND_ASSETS,
 } from '../data/assets';
+import { CharacterMediaRenderer, isVideoMediaSource } from './CharacterMediaRenderer';
 
 interface SceneStageViewProps {
   node: SceneNode;
@@ -45,6 +53,7 @@ export const SceneStageView: React.FC<SceneStageViewProps> = ({
   compactMobile = false,
 }) => {
   const stageRef = useRef<HTMLDivElement>(null);
+  const mediaInputRef = useRef<HTMLInputElement>(null);
   const [draggingCharId, setDraggingCharId] = useState<string | null>(null);
   const [draggingScreenText, setDraggingScreenText] = useState(false);
 
@@ -71,6 +80,26 @@ export const SceneStageView: React.FC<SceneStageViewProps> = ({
       }));
     }
   };
+
+  useEffect(() => {
+    if (!draggingCharId && !draggingScreenText) return;
+    const onWinTouchMove = (e: TouchEvent) => {
+      if (e.touches.length > 0) {
+        e.preventDefault();
+        updateDragFromClientXY(e.touches[0].clientX, e.touches[0].clientY);
+      }
+    };
+    const onWinTouchEnd = () => {
+      setDraggingCharId(null);
+      setDraggingScreenText(false);
+    };
+    window.addEventListener('touchmove', onWinTouchMove, { passive: false });
+    window.addEventListener('touchend', onWinTouchEnd);
+    return () => {
+      window.removeEventListener('touchmove', onWinTouchMove);
+      window.removeEventListener('touchend', onWinTouchEnd);
+    };
+  }, [draggingCharId, draggingScreenText]);
 
   const handleStageMouseMove = (e: React.MouseEvent) => {
     updateDragFromClientXY(e.clientX, e.clientY);
@@ -186,7 +215,7 @@ export const SceneStageView: React.FC<SceneStageViewProps> = ({
 
         {/* Selected Character Inline Controls */}
         {selectedPlacement && (
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-1.5">
             <span className="text-sky-300 font-semibold">{selectedPlacement.name}</span>
             <select
               value={selectedPlacement.spriteId}
@@ -195,10 +224,12 @@ export const SceneStageView: React.FC<SceneStageViewProps> = ({
                 onUpdateCharacter(selectedPlacement.id, {
                   spriteId: e.target.value,
                   expressionLabel: sp?.expressionLabel,
+                  mediaUrl: undefined,
+                  mediaType: 'image',
                 });
               }}
               className="px-2 py-1"
-              title="切换表情差分"
+              title="切换角色差分立绘"
             >
               {selectedCharGroupSprites.map((sp) => (
                 <option key={sp.id} value={sp.id}>
@@ -206,6 +237,86 @@ export const SceneStageView: React.FC<SceneStageViewProps> = ({
                 </option>
               ))}
             </select>
+
+            <select
+              value={selectedPlacement.idleMotion || 'none'}
+              onChange={(e) =>
+                onUpdateCharacter(selectedPlacement.id, {
+                  idleMotion: e.target.value as CharacterIdleMotion,
+                })
+              }
+              className="px-2 py-1"
+              title="角色动态动画模式"
+            >
+              <option value="none">静态立绘</option>
+              <option value="breathe">呼吸起伏动画</option>
+              <option value="float">悬浮律动动画</option>
+              <option value="talk_pulse">说话律动动画</option>
+              <option value="bounce">弹跳动画</option>
+              <option value="sway">摇曳动画</option>
+            </select>
+
+            <input
+              ref={mediaInputRef}
+              type="file"
+              accept="image/*,video/mp4,video/webm,video/quicktime,.gif,.apng,.webp,.mp4,.webm,.mov"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (!file || !selectedPlacement) return;
+                const isVid =
+                  file.type.startsWith('video/') ||
+                  /\.(mp4|webm|mov|ogv)$/i.test(file.name);
+                const isAnimImg = /\.(gif|apng|webp)$/i.test(file.name);
+                const reader = new FileReader();
+                reader.onload = () => {
+                  const dataUrl = String(reader.result || '');
+                  onUpdateCharacter(selectedPlacement.id, {
+                    mediaUrl: dataUrl,
+                    mediaType: isVid
+                      ? 'video'
+                      : isAnimImg
+                      ? 'animated_image'
+                      : 'image',
+                    videoLoop: true,
+                    expressionLabel: file.name,
+                  });
+                };
+                reader.readAsDataURL(file);
+                e.target.value = '';
+              }}
+            />
+
+            <button
+              type="button"
+              onClick={() => mediaInputRef.current?.click()}
+              className="px-2 py-1 rounded bg-[#22222a] hover:bg-[#2c2c36] border border-[#32323e] text-zinc-200 flex items-center gap-1"
+              title="导入角色图片、GIF动图或 MP4/WebM 视频动画"
+            >
+              <Film className="w-3.5 h-3.5 text-sky-400" strokeWidth={1.6} />
+              <span>导入图片/视频动画</span>
+            </button>
+
+            {isVideoMediaSource(
+              selectedPlacement.mediaUrl,
+              selectedPlacement.mediaType
+            ) && (
+              <select
+                value={selectedPlacement.chromaKeyColor || 'none'}
+                onChange={(e) =>
+                  onUpdateCharacter(selectedPlacement.id, {
+                    chromaKeyColor: e.target.value,
+                  })
+                }
+                className="px-2 py-1"
+                title="视频动画背景抠像透明"
+              >
+                <option value="none">原生透明视频 (WebM)</option>
+                <option value="#00ff00">绿幕抠像透明</option>
+                <option value="#000000">黑底抠像透明</option>
+                <option value="#0000ff">蓝幕抠像透明</option>
+              </select>
+            )}
 
             <div className="w-20">
               <input
@@ -278,14 +389,20 @@ export const SceneStageView: React.FC<SceneStageViewProps> = ({
             }}
           />
 
-          {/* Characters (Responsive percentage height so sprites fit both mobile and desktop 16:9 stages!) */}
+          {/* Characters (Supports Static Images, GIF/WebP Animations, and MP4/WebM Video Sprites!) */}
           {node.characters.map((pl) => {
+            const charProfile = characters.find((c) => c.id === pl.characterId);
             const activeSpriteId =
               currentDialogue?.speakerId === pl.characterId &&
               currentDialogue?.expressionSpriteId
                 ? currentDialogue.expressionSpriteId
                 : pl.spriteId;
             const sprite = getCharacterById(activeSpriteId);
+            const mediaSrc = pl.mediaUrl || charProfile?.mediaUrl || sprite.path;
+            const mediaType = pl.mediaType || charProfile?.mediaType || sprite.mediaType || 'image';
+            const idleMotion = pl.idleMotion || charProfile?.idleMotion || 'none';
+            const chromaKeyColor = pl.chromaKeyColor || charProfile?.chromaKeyColor;
+            const isSpeaking = currentDialogue?.speakerId === pl.characterId;
             const isSelected = pl.id === selectedCharacterPlacementId;
 
             return (
@@ -315,10 +432,15 @@ export const SceneStageView: React.FC<SceneStageViewProps> = ({
                   isSelected ? 'z-20 ring-2 ring-sky-400 rounded' : 'z-10'
                 }`}
               >
-                <img
-                  src={sprite.path}
+                <CharacterMediaRenderer
+                  src={mediaSrc}
                   alt={pl.name}
-                  draggable={false}
+                  mediaType={mediaType}
+                  videoLoop={pl.videoLoop ?? charProfile?.videoLoop ?? true}
+                  videoPlaybackRate={pl.videoPlaybackRate ?? charProfile?.videoPlaybackRate ?? 1}
+                  chromaKeyColor={chromaKeyColor}
+                  idleMotion={idleMotion}
+                  isSpeaking={isSpeaking}
                   className="h-full w-auto object-contain pointer-events-none select-none drop-shadow-[0_14px_28px_rgba(0,0,0,0.68)]"
                 />
               </div>

@@ -688,6 +688,8 @@ export const Inspector: React.FC<InspectorProps> = ({
                         onUpdateCharacterProfile(char.id, (prev) => ({
                           ...prev,
                           spriteId: e.target.value,
+                          mediaUrl: undefined,
+                          mediaType: 'image',
                         }))
                       }
                       className="px-2 py-1 text-[11px]"
@@ -701,6 +703,88 @@ export const Inspector: React.FC<InspectorProps> = ({
                       ))}
                     </select>
                   </div>
+
+                  {/* 角色媒体形式：静态图 / GIF动图 / MP4·WebM视频动画 & 待机律动 */}
+                  <div className="grid grid-cols-2 gap-1.5 pt-1">
+                    <select
+                      value={char.idleMotion || 'none'}
+                      onChange={(e) =>
+                        onUpdateCharacterProfile(char.id, (prev) => ({
+                          ...prev,
+                          idleMotion: e.target.value as any,
+                        }))
+                      }
+                      className="px-2 py-1 text-[11px]"
+                      title="角色动态动画效果"
+                    >
+                      <option value="none">静态无动画</option>
+                      <option value="breathe">呼吸起伏动画</option>
+                      <option value="float">轻盈悬浮动画</option>
+                      <option value="talk_pulse">说话律动动画</option>
+                      <option value="bounce">欢快弹跳动画</option>
+                      <option value="sway">微风摇曳动画</option>
+                    </select>
+
+                    <label className="px-2 py-1 rounded bg-[#141418] hover:bg-[#23232c] border border-[#2c2c36] text-[10px] text-sky-300 flex items-center justify-center cursor-pointer truncate">
+                      <span>
+                        {char.mediaType === 'video'
+                          ? '已设为视频动画 (点击更换)'
+                          : char.mediaUrl
+                          ? '已自定义媒体 (点击更换)'
+                          : '+ 导入图片/GIF/视频动画'}
+                      </span>
+                      <input
+                        type="file"
+                        accept="image/*,video/mp4,video/webm,video/quicktime,.gif,.apng,.webp,.mp4,.webm,.mov"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          const isVid =
+                            file.type.startsWith('video/') ||
+                            /\.(mp4|webm|mov|ogv)$/i.test(file.name);
+                          const isAnim = /\.(gif|apng|webp)$/i.test(file.name);
+                          const reader = new FileReader();
+                          reader.onload = () => {
+                            const url = String(reader.result || '');
+                            onUpdateCharacterProfile(char.id, (prev) => ({
+                              ...prev,
+                              mediaUrl: url,
+                              mediaType: isVid
+                                ? 'video'
+                                : isAnim
+                                ? 'animated_image'
+                                : 'image',
+                              videoLoop: true,
+                            }));
+                          };
+                          reader.readAsDataURL(file);
+                          e.target.value = '';
+                        }}
+                      />
+                    </label>
+                  </div>
+
+                  {char.mediaType === 'video' && (
+                    <div className="flex items-center justify-between gap-2 pt-1 text-[10px]">
+                      <span className="text-zinc-400">视频抠像透明：</span>
+                      <select
+                        value={char.chromaKeyColor || 'none'}
+                        onChange={(e) =>
+                          onUpdateCharacterProfile(char.id, (prev) => ({
+                            ...prev,
+                            chromaKeyColor: e.target.value,
+                          }))
+                        }
+                        className="px-2 py-0.5 text-[10px] flex-1"
+                      >
+                        <option value="none">原生透明通道 (WebM Alpha)</option>
+                        <option value="#00ff00">绿幕抠像透明 (#00FF00)</option>
+                        <option value="#000000">黑底抠像透明 (#000000)</option>
+                        <option value="#0000ff">蓝幕抠像透明 (#0000FF)</option>
+                      </select>
+                    </div>
+                  )}
 
                   {/* Custom Attributes (customAttributes) */}
                   <div className="pt-1 border-t border-[#272730] space-y-1">

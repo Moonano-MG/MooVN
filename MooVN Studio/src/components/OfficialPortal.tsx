@@ -18,9 +18,7 @@ import {
   Cpu,
   Workflow,
   AlertTriangle,
-  Languages,
 } from 'lucide-react';
-import { SUPPORTED_UI_LANGUAGES, UILanguage, useUILanguage } from '../lib/i18n';
 
 interface OfficialPortalProps {
   onEnterStudio?: () => void;
@@ -63,7 +61,6 @@ const EDITOR_SCREENSHOTS = [
 ];
 
 export const OfficialPortal: React.FC<OfficialPortalProps> = () => {
-  const { lang, setLang } = useUILanguage();
   const repoUrl = 'https://github.com/Moonano-MG/MooVN';
   const branchTreeUrl = 'https://github.com/Moonano-MG/MooVN/tree/v0.1.0-dev';
   const studioFolderUrl = 'https://github.com/Moonano-MG/MooVN/tree/v0.1.0-dev/MooVN%20Studio';
@@ -212,7 +209,7 @@ export const OfficialPortal: React.FC<OfficialPortalProps> = () => {
             </div>
           </a>
 
-          <nav className="flex items-center gap-1 sm:gap-2 text-sm">
+          <nav className="flex items-center gap-2 sm:gap-3 text-sm">
             <a
               href="#intro"
               className="px-3 py-1.5 rounded-lg text-slate-200 hover:text-white hover:bg-blue-500/15 transition-colors"
@@ -229,45 +226,11 @@ export const OfficialPortal: React.FC<OfficialPortalProps> = () => {
               href="/studio.html"
               target="_blank"
               rel="noopener noreferrer"
-              className="px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white font-semibold transition-all shadow-md shadow-blue-600/30 flex items-center gap-1.5 cursor-pointer"
+              className="px-4 py-1.5 rounded-lg bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white font-semibold transition-all shadow-md shadow-blue-600/30 flex items-center gap-1.5 cursor-pointer"
             >
               <Globe className="w-3.5 h-3.5" />
               <span>MooVN网页体验</span>
-              <ExternalLink className="w-3 h-3 opacity-85" />
             </a>
-            <a
-              href={`${repoUrl}/issues`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-3 py-1.5 rounded-lg text-slate-200 hover:text-white hover:bg-blue-500/15 transition-colors flex items-center gap-1"
-            >
-              <HelpCircle className="w-3.5 h-3.5 text-sky-400" />
-              <span>问题</span>
-            </a>
-            <a
-              href={repoUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-3 py-1.5 rounded-lg text-slate-200 hover:text-white hover:bg-blue-500/15 transition-colors flex items-center gap-1"
-            >
-              <span>GitHub</span>
-              <ExternalLink className="w-3.5 h-3.5 text-sky-400" />
-            </a>
-            <div className="flex items-center gap-1 px-2 py-1 rounded-lg bg-[#0d1f3d] border border-sky-400/25">
-              <Languages className="w-3.5 h-3.5 text-sky-400 shrink-0" />
-              <select
-                value={lang}
-                onChange={(e) => setLang(e.target.value as UILanguage)}
-                className="bg-transparent border-0 text-xs text-slate-200 focus:outline-none cursor-pointer"
-                title="Language / 语言切换"
-              >
-                {SUPPORTED_UI_LANGUAGES.map((item) => (
-                  <option key={item.id} value={item.id} className="bg-[#09162c] text-white">
-                    {item.nativeName}
-                  </option>
-                ))}
-              </select>
-            </div>
           </nav>
         </div>
       </header>

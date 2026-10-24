@@ -26,7 +26,12 @@ import {
   CircleDot,
 } from 'lucide-react';
 import { useEditor } from './hooks/useEditor';
-import { MenuBar, WindowPanelDescriptor } from './components/MenuBar';
+import {
+  DockDirection,
+  MenuBar,
+  RailPosition,
+  WindowPanelDescriptor,
+} from './components/MenuBar';
 import { LeftPanel } from './components/LeftPanel';
 import { NodeCanvas } from './components/NodeCanvas';
 import { SceneStageView } from './components/SceneStageView';
@@ -44,6 +49,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { OfficialPortal } from './components/OfficialPortal';
 import { PanelId } from './types';
 import { saveProjectToWorkspace } from './lib/workspaceManager';
+import { useUILanguage } from './lib/i18n';
 
 const PANEL_TITLES: Record<PanelId, string> = {
   explorer: '工程资源与章节',
@@ -418,7 +424,7 @@ export function App({
         return 'studio';
       }
     }
-    return 'studio';
+    return 'portal';
   });
 
   // 严格仅针对真实手机窄屏开启移动端工作台（绝不影响任何桌面电脑、触屏笔记本或桌面小窗口）
@@ -429,9 +435,86 @@ export function App({
     return window.innerWidth < 640 || (isPhoneUA && window.innerWidth < 768);
   };
 
+  const { tPanel } = useUILanguage();
   const [isMobile, setIsMobile] = useState<boolean>(checkIsPhone);
   const [mobileActivePanel, setMobileActivePanel] = useState<PanelId>('canvas');
-  const [mobilePinStage, setMobilePinStage] = useState<boolean>(true);
+  const [mobilePinStage, setMobilePinStage] = useState<boolean>(false);
+
+  // Customizable Window Options Bar Position ('left' | 'right' | 'top' | 'bottom') & Order
+  const [railPosition, setRailPosition] = useState<RailPosition>(() => {
+    try {
+      const saved = localStorage.getItem('moovn_rail_pos_v1') as RailPosition | null;
+      if (saved === 'left' || saved === 'right' || saved === 'top' || saved === 'bottom') {
+        return saved;
+      }
+    } catch {
+      // ignore
+    }
+    return 'left';
+  });
+
+  const [windowOrder, setWindowOrder] = useState<PanelId[]>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('moovn_window_order_v1') || 'null');
+      if (Array.isArray(saved) && saved.length > 0) {
+        const merged = [...saved.filter((x) => ALL_WINDOW_IDS.includes(x))];
+        ALL_WINDOW_IDS.forEach((id) => {
+          if (!merged.includes(id)) merged.push(id);
+        });
+        return merged;
+      }
+    } catch {
+      // ignore
+    }
+    return ALL_WINDOW_IDS;
+  });
+
+  const [draggingRailItemId, setDraggingRailItemId] = useState<PanelId | null>(null);
+
+  const handleChangeRailPosition = (pos: RailPosition) => {
+    setRailPosition(pos);
+    try {
+      localStorage.setItem('moovn_rail_pos_v1', pos);
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleMoveWindowOrder = (id: PanelId, dir: 'up' | 'down') => {
+    setWindowOrder((prev) => {
+      const idx = prev.indexOf(id);
+      if (idx < 0) return prev;
+      const targetIdx = dir === 'up' ? idx - 1 : idx + 1;
+      if (targetIdx < 0 || targetIdx >= prev.length) return prev;
+      const next = [...prev];
+      const [item] = next.splice(idx, 1);
+      next.splice(targetIdx, 0, item);
+      try {
+        localStorage.setItem('moovn_window_order_v1', JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  };
+
+  const handleReorderRailItems = (fromId: PanelId, toId: PanelId) => {
+    if (fromId === toId) return;
+    setWindowOrder((prev) => {
+      const fromIdx = prev.indexOf(fromId);
+      const toIdx = prev.indexOf(toId);
+      if (fromIdx < 0 || toIdx < 0) return prev;
+      const next = [...prev];
+      const [item] = next.splice(fromIdx, 1);
+      next.splice(toIdx, 0, item);
+      try {
+        localStorage.setItem('moovn_window_order_v1', JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  };
 
   useEffect(() => {
     const onResize = () => {
@@ -504,14 +587,14 @@ export function App({
     startH: number;
   } | null>(null);
 
-  // Modals & Logs
+  // Modals & Logs — First time entering MooVN starts on Project Selection (`isLauncherOpen = true`)
   const [isPlayingPreview, setIsPlayingPreview] = useState(false);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
-  const [isLauncherOpen, setIsLauncherOpen] = useState(false);
+  const [isLauncherOpen, setIsLauncherOpen] = useState(true);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [runtimeLogs, setRuntimeLogs] = useState<string[]>([
-    `[${new Date().toLocaleTimeString().slice(0, 8)}] MooVN Engine 初始化完成：已挂载 /home/user/MooVN/MooVN_Workspace 全局磁盘目录`,
-    `[${new Date().toLocaleTimeString().slice(0, 8)}] 流加载器就绪：提前解压 3 场景，经过 5 场景后自动释放旧场景内存，PNG 免二次重压缩已开启`,
+    `[${new Date().toLocaleTimeString().slice(0, 8)}] MooVN Engine 初始化完成`,
+    `[${new Date().toLocaleTimeString().slice(0, 8)}] 流加载器就绪：支持静态图像、GIF动图与 MP4/WebM 视频动画立绘`,
   ]);
 
   // Convert a docked panel directly into a Floating Window
@@ -565,6 +648,58 @@ export function App({
   ) => {
     setFloatingWindows((prev) => prev.filter((w) => w.id !== panelId));
     setSplitRoot((prev) => dockPanelIntoTree(prev, panelId, targetLeafId, zone));
+  };
+
+  // Freely move any docked or floating panel to Left / Right / Top / Bottom / Center
+  const handleDockWindowAtDirection = (
+    panelId: PanelId,
+    dir: DockDirection,
+    fromLeafId?: string
+  ) => {
+    setFloatingWindows((prev) => prev.filter((w) => w.id !== panelId));
+    setSplitRoot((prev) => {
+      const leaves = collectLeaves(prev);
+      // Prefer a leaf that doesn't only contain panelId, or fallback to first/last leaf
+      const otherLeaves = leaves.filter(
+        (l) => !(l.tabs.length === 1 && l.tabs[0] === panelId)
+      );
+      let targetLeaf = otherLeaves[0] || leaves[0];
+      if (fromLeafId) {
+        const currentIdx = leaves.findIndex((l) => l.id === fromLeafId);
+        if (dir === 'left' || dir === 'top') {
+          targetLeaf =
+            otherLeaves[Math.max(0, currentIdx - 1)] ||
+            otherLeaves[0] ||
+            leaves[0];
+        } else if (dir === 'right' || dir === 'bottom') {
+          targetLeaf =
+            otherLeaves[Math.min(otherLeaves.length - 1, currentIdx)] ||
+            otherLeaves[otherLeaves.length - 1] ||
+            leaves[0];
+        }
+      }
+      const targetId = targetLeaf?.id || 'leaf-init';
+      return dockPanelIntoTree(prev, panelId, targetId, dir);
+    });
+  };
+
+  const handleReorderTabInLeaf = (
+    leafId: string,
+    fromTab: PanelId,
+    toTab: PanelId
+  ) => {
+    if (fromTab === toTab) return;
+    setSplitRoot((prev) =>
+      updateLeafInTree(prev, leafId, (l) => {
+        const fromIdx = l.tabs.indexOf(fromTab);
+        const toIdx = l.tabs.indexOf(toTab);
+        if (fromIdx < 0 || toIdx < 0) return l;
+        const nextTabs = [...l.tabs];
+        const [moved] = nextTabs.splice(fromIdx, 1);
+        nextTabs.splice(toIdx, 0, moved);
+        return { ...l, tabs: nextTabs };
+      })
+    );
   };
 
   const handleOpenOrFocusWindow = (
@@ -765,29 +900,29 @@ export function App({
     }
   };
 
-  // ==================== CONFLICT-FREE DRAG-TO-FLOAT & DRAG-TO-DOCK ====================
-  const handleGlobalMouseMove = (e: React.MouseEvent) => {
+  // ==================== UNIFIED MOUSE & TOUCH POINTER MOVE ====================
+  const handlePointerMove = (clientX: number, clientY: number) => {
     // 1. Dragging a docked tab out (> 24px) smoothly detaches it into a Floating Window!
     if (pendingTabDragRef.current) {
-      const dx = Math.abs(e.clientX - pendingTabDragRef.current.startX);
-      const dy = Math.abs(e.clientY - pendingTabDragRef.current.startY);
+      const dx = Math.abs(clientX - pendingTabDragRef.current.startX);
+      const dy = Math.abs(clientY - pendingTabDragRef.current.startY);
       if (dx > 24 || dy > 24) {
         const pid = pendingTabDragRef.current.panelId;
         pendingTabDragRef.current = null;
-        undockPanelToFloat(pid, e.clientX, e.clientY, true);
+        undockPanelToFloat(pid, clientX, clientY, true);
         return;
       }
     }
 
-    // 2. Dragging a Floating Window: moves freely in open space; ONLY triggers hoverDropTarget when over a compact [data-dock-zone] button or tab header!
+    // 2. Dragging a Floating Window: supports both 5-way compass AND full-pane edge docking (Left/Right/Top/Bottom/Center)!
     if (draggingFloatingId) {
       setFloatingWindows((prev) =>
         prev.map((w) =>
           w.id === draggingFloatingId
             ? {
                 ...w,
-                x: Math.max(42, e.clientX - floatDragOffset.x),
-                y: Math.max(36, e.clientY - floatDragOffset.y),
+                x: Math.max(24, clientX - floatDragOffset.x),
+                y: Math.max(36, clientY - floatDragOffset.y),
               }
             : w
         )
@@ -802,10 +937,10 @@ export function App({
       zoneElements.forEach((el) => {
         const rect = el.getBoundingClientRect();
         if (
-          e.clientX >= rect.left &&
-          e.clientX <= rect.right &&
-          e.clientY >= rect.top &&
-          e.clientY <= rect.bottom
+          clientX >= rect.left &&
+          clientX <= rect.right &&
+          clientY >= rect.top &&
+          clientY <= rect.bottom
         ) {
           const leafId = el.getAttribute('data-dock-leaf') || '';
           const zone = (el.getAttribute('data-dock-zone') ||
@@ -816,6 +951,34 @@ export function App({
         }
       });
 
+      // Also check pane edge zones so user can drag directly to Left / Right / Top / Bottom edge of any pane!
+      if (!matched) {
+        const leafContainers = document.querySelectorAll('[data-leaf-container]');
+        leafContainers.forEach((el) => {
+          const rect = el.getBoundingClientRect();
+          if (
+            clientX >= rect.left &&
+            clientX <= rect.right &&
+            clientY >= rect.top &&
+            clientY <= rect.bottom
+          ) {
+            const leafId = el.getAttribute('data-leaf-container') || '';
+            if (!leafId) return;
+            const relX = (clientX - rect.left) / Math.max(1, rect.width);
+            const relY = (clientY - rect.top) / Math.max(1, rect.height);
+            if (relX < 0.18) {
+              matched = { leafId, zone: 'left' };
+            } else if (relX > 0.82) {
+              matched = { leafId, zone: 'right' };
+            } else if (relY < 0.18) {
+              matched = { leafId, zone: 'top' };
+            } else if (relY > 0.82) {
+              matched = { leafId, zone: 'bottom' };
+            }
+          }
+        });
+      }
+
       setHoverDropTarget(matched);
       return;
     }
@@ -824,8 +987,8 @@ export function App({
     if (resizingFloatRef.current) {
       const { panelId, startX, startY, startW, startH } =
         resizingFloatRef.current;
-      const dw = e.clientX - startX;
-      const dh = e.clientY - startY;
+      const dw = clientX - startX;
+      const dh = clientY - startY;
       setFloatingWindows((prev) =>
         prev.map((w) =>
           w.id === panelId
@@ -845,10 +1008,20 @@ export function App({
       const { branchId, direction, rect } = resizingBranchRef.current;
       const ratio =
         direction === 'horizontal'
-          ? (e.clientX - rect.left) / Math.max(1, rect.width)
-          : (e.clientY - rect.top) / Math.max(1, rect.height);
+          ? (clientX - rect.left) / Math.max(1, rect.width)
+          : (clientY - rect.top) / Math.max(1, rect.height);
       setSplitRoot((prev) => updateBranchRatioInTree(prev, branchId, ratio));
     }
+  };
+
+  const handleGlobalMouseMove = (e: React.MouseEvent) => {
+    handlePointerMove(e.clientX, e.clientY);
+  };
+
+  const handleGlobalTouchMove = (e: React.TouchEvent) => {
+    const t = e.touches[0];
+    if (!t) return;
+    handlePointerMove(t.clientX, t.clientY);
   };
 
   const handleGlobalMouseUp = () => {
@@ -981,6 +1154,7 @@ export function App({
             selectedChapterId={selectedChapterId}
             selectedNode={selectedNode}
             onUpdateNode={updateNode}
+            onUpdateProject={updateProjectMeta}
             mode="ts"
           />
         );
@@ -991,6 +1165,7 @@ export function App({
             selectedChapterId={selectedChapterId}
             selectedNode={selectedNode}
             onUpdateNode={updateNode}
+            onUpdateProject={updateProjectMeta}
             mode="yaml"
           />
         );
@@ -1103,6 +1278,7 @@ export function App({
     return (
       <div
         key={leaf.id}
+        data-leaf-container={leaf.id}
         className="relative flex flex-col w-full h-full min-w-0 min-h-0 overflow-hidden bg-[#141417] border-r border-b border-[#242429]"
       >
         {/* Docked Group Tab Header (also acts as a 'center' merge drop zone!) */}
@@ -1121,6 +1297,23 @@ export function App({
               return (
                 <div
                   key={tabId}
+                  draggable
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData('text/moovn-tab', tabId);
+                  }}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    const draggedTab = e.dataTransfer.getData('text/moovn-tab') as PanelId;
+                    if (!draggedTab) return;
+                    if (leaf.tabs.includes(draggedTab)) {
+                      handleReorderTabInLeaf(leaf.id, draggedTab, tabId);
+                    } else {
+                      dockPanelIntoTarget(draggedTab, leaf.id, 'center');
+                    }
+                  }}
                   onMouseDown={(e) => {
                     if ((e.target as HTMLElement).closest('button')) return;
                     setSplitRoot((prev) =>
@@ -1135,7 +1328,24 @@ export function App({
                       startY: e.clientY,
                     };
                   }}
-                  title="点击切换标签 · 按住向外拖拽(>24px)可直接脱离为漂浮窗口"
+                  onTouchStart={(e) => {
+                    if ((e.target as HTMLElement).closest('button')) return;
+                    const t = e.touches[0];
+                    setSplitRoot((prev) =>
+                      updateLeafInTree(prev, leaf.id, (l) => ({
+                        ...l,
+                        activeTab: tabId,
+                      }))
+                    );
+                    if (t) {
+                      pendingTabDragRef.current = {
+                        panelId: tabId,
+                        startX: t.clientX,
+                        startY: t.clientY,
+                      };
+                    }
+                  }}
+                  title="点击切换标签 · 拖拽可调整标签顺序 · 向外拖拽(>24px)脱离为悬浮窗并自由停靠到任意位置"
                   className={`group flex items-center gap-1.5 px-2.5 py-1 rounded-t text-[11px] cursor-grab active:cursor-grabbing transition shrink-0 ${
                     isActive
                       ? 'bg-[#141417] text-zinc-100 font-medium border-t-2 border-t-sky-400 border-x border-x-[#2b2b33]'
@@ -1143,7 +1353,7 @@ export function App({
                   }`}
                 >
                   <span className="truncate max-w-[115px]">
-                    {PANEL_TITLES[tabId]}
+                    {tPanel(tabId)}
                   </span>
                   <button
                     onClick={(e) => {
@@ -1180,8 +1390,47 @@ export function App({
             })}
           </div>
 
-          {/* Split Down / Split Right / Undock-to-Float Buttons */}
+          {/* Free Dock Position Buttons (Left / Top / Bottom / Right) + Split / Float */}
           <div className="flex items-center gap-0.5 shrink-0 pl-1">
+            <button
+              onClick={() =>
+                handleDockWindowAtDirection(activePanel, 'left', leaf.id)
+              }
+              className="icon-btn !w-5 !h-5"
+              title="将当前窗口移至左侧停靠栏"
+            >
+              <ArrowLeft className="w-3 h-3" strokeWidth={1.7} />
+            </button>
+            <button
+              onClick={() =>
+                handleDockWindowAtDirection(activePanel, 'top', leaf.id)
+              }
+              className="icon-btn !w-5 !h-5"
+              title="将当前窗口移至上方停靠栏"
+            >
+              <ArrowUp className="w-3 h-3" strokeWidth={1.7} />
+            </button>
+            <button
+              onClick={() =>
+                handleDockWindowAtDirection(activePanel, 'bottom', leaf.id)
+              }
+              className="icon-btn !w-5 !h-5"
+              title="将当前窗口移至下方停靠栏"
+            >
+              <ArrowDown className="w-3 h-3" strokeWidth={1.7} />
+            </button>
+            <button
+              onClick={() =>
+                handleDockWindowAtDirection(activePanel, 'right', leaf.id)
+              }
+              className="icon-btn !w-5 !h-5"
+              title="将当前窗口移至右侧停靠栏"
+            >
+              <ArrowRight className="w-3 h-3" strokeWidth={1.7} />
+            </button>
+
+            <div className="w-px h-3 bg-[#2c2c34] mx-0.5" />
+
             <button
               onClick={() => {
                 const candidate: PanelId =
@@ -1379,6 +1628,15 @@ export function App({
               rect: parent.getBoundingClientRect(),
             };
           }}
+          onTouchStart={(e) => {
+            const parent = e.currentTarget.parentElement;
+            if (!parent) return;
+            resizingBranchRef.current = {
+              branchId: node.id,
+              direction: node.direction,
+              rect: parent.getBoundingClientRect(),
+            };
+          }}
           className={`${
             isHorizontal
               ? 'w-1 cursor-col-resize hover:bg-sky-500/60'
@@ -1398,14 +1656,16 @@ export function App({
 
   const allLeaves = collectLeaves(splitRoot);
 
-  const panelDescriptors: WindowPanelDescriptor[] = ALL_WINDOW_IDS.map(
-    (id) => ({
-      id,
-      title: PANEL_TITLES[id],
-      docked: allLeaves.some((l) => l.tabs.includes(id)),
-      floating: floatingWindows.some((f) => f.id === id),
-    })
-  );
+  const panelDescriptors: WindowPanelDescriptor[] = windowOrder.map((id) => ({
+    id,
+    title: tPanel(id),
+    docked: allLeaves.some((l) => l.tabs.includes(id)),
+    floating: floatingWindows.some((f) => f.id === id),
+  }));
+
+  const orderedRailItems = windowOrder
+    .map((id) => ACTIVITY_RAIL_ITEMS.find((item) => item.id === id))
+    .filter((item): item is (typeof ACTIVITY_RAIL_ITEMS)[number] => Boolean(item));
 
   const isPanelActiveAnywhere = (id: PanelId) =>
     allLeaves.some((l) => l.activeTab === id) ||
@@ -1415,10 +1675,14 @@ export function App({
     return <OfficialPortal onEnterStudio={() => setSiteSection('studio')} />;
   }
 
+  const isHorizontalRail = railPosition === 'top' || railPosition === 'bottom';
+
   return (
     <div
       onMouseMove={handleGlobalMouseMove}
       onMouseUp={handleGlobalMouseUp}
+      onTouchMove={handleGlobalTouchMove}
+      onTouchEnd={handleGlobalMouseUp}
       className={`h-screen w-screen flex flex-col bg-[#111113] text-zinc-200 overflow-hidden select-none ${
         editorTheme === 'light' ? 'theme-light' : ''
       }`}
@@ -1430,6 +1694,12 @@ export function App({
         onUndo={undo}
         onRedo={redo}
         panels={panelDescriptors}
+        railPosition={railPosition}
+        onChangeRailPosition={handleChangeRailPosition}
+        onMoveWindowOrder={handleMoveWindowOrder}
+        onDockWindowAtDirection={(id, dir) =>
+          handleDockWindowAtDirection(id, dir)
+        }
         onOpenOrFocusWindow={(id, mode) => {
           if (isMobile) {
             setMobileActivePanel(id);
@@ -1446,6 +1716,7 @@ export function App({
         onPlayPreview={() => setIsPlayingPreview(true)}
         onOpenExportModal={() => setIsExportModalOpen(true)}
         onOpenProjectLauncher={() => setIsLauncherOpen(true)}
+        onOpenSettingsModal={() => setIsSettingsOpen(true)}
         onOpenOfficialPortal={() => {
           if (
             typeof window !== 'undefined' &&
@@ -1568,7 +1839,7 @@ export function App({
 
           {/* Mobile Bottom Touch Navigation Bar */}
           <nav className="h-14 bg-[#12141c] border-t border-[#262b3b] flex items-center overflow-x-auto px-1.5 gap-1 shrink-0">
-            {ACTIVITY_RAIL_ITEMS.map((item) => {
+            {orderedRailItems.map((item) => {
               const active = mobileActivePanel === item.id;
               return (
                 <button
@@ -1590,30 +1861,68 @@ export function App({
           </nav>
         </div>
       ) : (
-        /* Main Body: VS Code Left Activity Rail + Recursive 2D Multi-Row/Multi-Column Dock Grid */
-        <div className="flex-1 flex overflow-hidden relative">
-          {/* ==================== VS CODE LEFT ACTIVITY RAIL (40px) ==================== */}
-          <aside className="w-10 bg-[#141417] border-r border-[#27272c] flex flex-col items-center justify-between py-2 shrink-0 z-40">
-            <div className="flex flex-col items-center gap-1.5">
-              {ACTIVITY_RAIL_ITEMS.map((item) => {
+        /* Main Body: Customizable Position Activity Rail + Recursive 2D Multi-Row/Multi-Column Dock Grid */
+        <div
+          className={`flex-1 flex overflow-hidden relative ${
+            railPosition === 'left'
+              ? 'flex-row'
+              : railPosition === 'right'
+              ? 'flex-row-reverse'
+              : railPosition === 'top'
+              ? 'flex-col'
+              : 'flex-col-reverse'
+          }`}
+        >
+          {/* ==================== CUSTOMIZABLE ACTIVITY RAIL (Left / Right / Top / Bottom & Reorderable) ==================== */}
+          <aside
+            className={`bg-[#141417] border-[#27272c] flex items-center justify-between shrink-0 z-40 ${
+              isHorizontalRail
+                ? 'h-10 w-full flex-row px-2 border-y'
+                : 'w-10 h-full flex-col py-2 border-x'
+            }`}
+          >
+            <div
+              className={`flex items-center gap-1.5 ${
+                isHorizontalRail ? 'flex-row overflow-x-auto no-scrollbar' : 'flex-col'
+              }`}
+            >
+              {orderedRailItems.map((item) => {
                 const active = isPanelActiveAnywhere(item.id);
                 return (
                   <button
                     key={item.id}
+                    draggable
+                    onDragStart={() => setDraggingRailItemId(item.id)}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={() => {
+                      if (draggingRailItemId) {
+                        handleReorderRailItems(draggingRailItemId, item.id);
+                      }
+                      setDraggingRailItemId(null);
+                    }}
+                    onDragEnd={() => setDraggingRailItemId(null)}
                     onClick={() => handleOpenOrFocusWindow(item.id, 'dock')}
                     onContextMenu={(e) => {
                       e.preventDefault();
                       handleOpenOrFocusWindow(item.id, 'float');
                     }}
-                    title={`${item.label} (左键停靠打开 / 右键漂浮打开)`}
+                    title={`${tPanel(item.id)} (左键停靠打开 / 右键悬浮打开 / 拖拽调整图标顺序)`}
                     className={`relative w-8 h-8 rounded flex items-center justify-center transition ${
                       active
                         ? 'text-white bg-[#25252d]'
                         : 'text-zinc-500 hover:text-zinc-200 hover:bg-[#1d1d23]'
-                    }`}
+                    } ${draggingRailItemId === item.id ? 'opacity-40' : ''}`}
                   >
                     {active && (
-                      <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 bg-sky-400 rounded-r" />
+                      <span
+                        className={`absolute bg-sky-400 rounded ${
+                          isHorizontalRail
+                            ? 'bottom-0 left-1.5 right-1.5 h-0.5'
+                            : railPosition === 'right'
+                            ? 'right-0 top-1.5 bottom-1.5 w-0.5'
+                            : 'left-0 top-1.5 bottom-1.5 w-0.5'
+                        }`}
+                      />
                     )}
                     {item.icon}
                   </button>
@@ -1621,7 +1930,30 @@ export function App({
               })}
             </div>
 
-            <div className="flex flex-col items-center gap-1.5">
+            <div
+              className={`flex items-center gap-1.5 ${
+                isHorizontalRail ? 'flex-row' : 'flex-col'
+              }`}
+            >
+              {/* Quick Rail Position Cycle Button */}
+              <button
+                onClick={() => {
+                  const order: RailPosition[] = ['left', 'top', 'right', 'bottom'];
+                  const next = order[(order.indexOf(railPosition) + 1) % order.length];
+                  handleChangeRailPosition(next);
+                }}
+                title={`切换窗口选项栏位置 (当前: ${railPosition})`}
+                className="w-8 h-8 rounded flex items-center justify-center text-zinc-500 hover:text-sky-300 hover:bg-[#1d1d23] transition text-[10px] font-mono"
+              >
+                {railPosition === 'left'
+                  ? '⇤'
+                  : railPosition === 'right'
+                  ? '⇥'
+                  : railPosition === 'top'
+                  ? '⇧'
+                  : '⇩'}
+              </button>
+
               {/* Dark / Light 2 Themes Toggle (`开发方案 2: 界面风格有黑和白2种风格`) */}
               <button
                 onClick={() =>
@@ -1643,7 +1975,7 @@ export function App({
 
               <button
                 onClick={() => setIsSettingsOpen(true)}
-                title="系统与全局目录设置"
+                title="设置"
                 className="w-8 h-8 rounded flex items-center justify-center text-zinc-500 hover:text-zinc-200 hover:bg-[#1d1d23] transition"
               >
                 <Settings className="w-4 h-4" strokeWidth={1.7} />
@@ -1704,21 +2036,54 @@ export function App({
                       y: e.clientY - fw.y,
                     });
                   }}
+                  onTouchStart={(e) => {
+                    if ((e.target as HTMLElement).closest('button')) return;
+                    const t = e.touches[0];
+                    if (!t) return;
+                    setDraggingFloatingId(fw.id);
+                    setFloatDragOffset({
+                      x: t.clientX - fw.x,
+                      y: t.clientY - fw.y,
+                    });
+                  }}
                   className="h-8 bg-[#202027] border-b border-[#2e2e38] px-3 flex items-center justify-between cursor-move shrink-0"
                 >
                   <div className="flex items-center gap-2 text-xs font-semibold text-zinc-100 min-w-0">
                     <GripHorizontal className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
-                    <span className="truncate">{PANEL_TITLES[fw.id]}</span>
-                    <span className="px-1.5 py-0.2 rounded bg-sky-500/20 text-sky-300 text-[10px] font-normal shrink-0">
-                      自由漂浮 · 拖入中央罗盘即停靠
-                    </span>
+                    <span className="truncate">{tPanel(fw.id)}</span>
                   </div>
 
                   <div className="flex items-center gap-1 shrink-0">
+                    {(['left', 'top', 'bottom', 'right'] as DockDirection[]).map(
+                      (dir) => (
+                        <button
+                          key={dir}
+                          onClick={() => handleDockWindowAtDirection(fw.id, dir)}
+                          className="w-5 h-5 rounded bg-[#2c2c36] hover:bg-sky-500 hover:text-zinc-950 text-[10px] text-zinc-200 flex items-center justify-center transition"
+                          title={`停靠到${
+                            dir === 'left'
+                              ? '左侧'
+                              : dir === 'top'
+                              ? '上方'
+                              : dir === 'bottom'
+                              ? '下方'
+                              : '右侧'
+                          }`}
+                        >
+                          {dir === 'left'
+                            ? '←'
+                            : dir === 'top'
+                            ? '↑'
+                            : dir === 'bottom'
+                            ? '↓'
+                            : '→'}
+                        </button>
+                      )
+                    )}
                     <button
                       onClick={() => handleToggleDockFloat(fw.id)}
                       className="px-1.5 py-0.5 rounded bg-[#2c2c36] hover:bg-sky-500 hover:text-zinc-950 text-[10px] text-zinc-200 flex items-center gap-1 transition"
-                      title="直接停靠回工作区网格"
+                      title="合并回工作区网格"
                     >
                       <Minimize2 className="w-3 h-3" strokeWidth={1.6} />
                       停靠
@@ -1793,14 +2158,6 @@ export function App({
         />
       )}
 
-      {isSettingsOpen && (
-        <SettingsModal
-          project={project}
-          onUpdateProject={updateProjectMeta}
-          onClose={() => setIsSettingsOpen(false)}
-        />
-      )}
-
       {isLauncherOpen && (
         <ProjectLauncher
           canClose={true}
@@ -1809,7 +2166,16 @@ export function App({
             saveProjectToWorkspace(proj);
             setIsLauncherOpen(false);
           }}
+          onOpenSettings={() => setIsSettingsOpen(true)}
           onClose={() => setIsLauncherOpen(false)}
+        />
+      )}
+
+      {isSettingsOpen && (
+        <SettingsModal
+          project={project}
+          onUpdateProject={updateProjectMeta}
+          onClose={() => setIsSettingsOpen(false)}
         />
       )}
     </div>
