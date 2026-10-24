@@ -14,13 +14,13 @@ fn main() {
         moovn.save:create("Astral_Save_Slot_01");
     "#;
 
-    // 2. JavaScript fast API script (`moobn.sava:create(NAME)`)
+    // 2. JavaScript fast API script (`moovn.save:create(NAME)`)
     let js_script = r#"
         // JavaScript Visual Novel Fast API
         moovn.bg:weather("rain", 75);
         moovn.char:affection("char-yukina", 5);
-        moobn.sava:create("Astral_Save_Slot_02");
-        moobn.sava:load("Astral_Save_Slot_01");
+        moovn.save:create("Astral_Save_Slot_02");
+        moovn.save:load("Astral_Save_Slot_01");
     "#;
 
     // 3. C++ / Rust fast API script (`moovn::save::create(NAME)`)

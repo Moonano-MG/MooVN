@@ -15,7 +15,16 @@ const PROJECTS_STORAGE_KEY = 'moovn_studio_projects_v3';
  *   用户通过「导入本地 .mpvn 文件」或「重新创建一个新项目」进入工作台。
  * - 本地版 (`IS_WEB_EDITION === false`，即 `MooVN Studio` Tauri 桌面/移动版)：包含完整的本地工作区路径与磁盘保存管理。
  */
-export const IS_WEB_EDITION: boolean = false;
+export const IS_WEB_EDITION: boolean =
+  typeof import.meta !== 'undefined' &&
+  (import.meta as any).env?.VITE_EDITION === 'studio'
+    ? false
+    : typeof import.meta !== 'undefined' &&
+      (import.meta as any).env?.VITE_EDITION === 'web'
+    ? true
+    : typeof window === 'undefined'
+    ? true
+    : !('__TAURI_INTERNALS__' in window || '__TAURI__' in window);
 
 export function detectRuntimePlatform(): MooVNSystemSettings['platform'] {
   if (typeof navigator === 'undefined') return 'windows';

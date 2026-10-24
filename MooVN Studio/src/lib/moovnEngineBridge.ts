@@ -1,17 +1,13 @@
 /**
- * MooVN Engine Bridge (TypeScript <-> Rust Core Engine & Polyglot Translator)
+ * MooVN Script IR Bridge (`moovnEngineBridge.ts`)
  *
- * Mirrors `MooVN Engine/src/translator.rs`, `save.rs`, and `renderer/mod.rs`.
- * Translates and executes Visual Novel Fast APIs across:
- * - JavaScript (`moobn.sava:create(NAME)` / `moovn.save:create(NAME)`)
- * - TypeScript (`moobn.sava:create(NAME)` / `moovn.save:create(NAME)`)
- * - C# (`moovn.save:create(NAME)`)
- * - C++ (`moovn::save::create(NAME)` / `moovn.save:create(NAME)`)
- * - Rust (`moovn::save::create(NAME)` / `moovn.save:create(NAME)`)
- * And provides the reserved Rust + C++ Renderer Interface descriptor.
+ * Normalizes script API calls into canonical `EngineIRInstruction` records
+ * and formats instructions using the unified `moovn.*` namespace (`moovn.save:create(NAME)`).
+ * Legacy `moobn.sava` input is accepted one-way during parsing for backward compatibility
+ * and is never generated.
  */
 
-import { SceneNode, VNProject } from '../types';
+import type { SceneNode, VNProject } from '../types';
 
 export type EnginePolyglotLanguage =
   | 'javascript'
@@ -39,28 +35,11 @@ export interface EngineIRInstruction {
   rawLine: string;
 }
 
-export interface RendererInterfaceStatus {
-  architecture: 'Rust + C++20 Hybrid FFI (In Development)';
-  rustTrait: 'moovn_engine::renderer::MooVNRendererBackend';
-  cppHeader: 'MooVN Engine/cpp/include/moovn_renderer.hpp (moovn::renderer::IRendererDevice)';
-  cAbiVTable: 'CppRendererVTable (#[repr(C)])';
-  activeBackend: 'HybridRustCpp' | 'CppVulkan' | 'CppDirectX12' | 'RustWgpu';
-}
-
-export const RESERVED_RENDERER_STATUS: RendererInterfaceStatus = {
-  architecture: 'Rust + C++20 Hybrid FFI (In Development)',
-  rustTrait: 'moovn_engine::renderer::MooVNRendererBackend',
-  cppHeader: 'MooVN Engine/cpp/include/moovn_renderer.hpp (moovn::renderer::IRendererDevice)',
-  cAbiVTable: 'CppRendererVTable (#[repr(C)])',
-  activeBackend: 'HybridRustCpp',
-};
-
 /**
- * Normalizes any fast API call line from JS/TS, C#, C++, or Rust into a canonical `EngineIRInstruction`.
- * Examples accepted:
- * - C#:         `moovn.save:create("Slot_01")`
- * - JavaScript: `moobn.sava:create("Slot_01")`
- * - C++/Rust:   `moovn::save::create("Slot_01")`
+ * Parses a script API call line into a canonical `EngineIRInstruction`.
+ * Canonical syntax:
+ * - JS/TS/C#: `moovn.save:create("Slot_01")`
+ * - C++/Rust: `moovn::save::create("Slot_01")`
  */
 export function parsePolyglotFastApiLine(line: string): EngineIRInstruction | null {
   const clean = line.trim().replace(/;+$/, '').trim();
@@ -93,6 +72,7 @@ export function parsePolyglotFastApiLine(line: string): EngineIRInstruction | nu
   if (parts.length < 2) return null;
 
   const root = parts[0].toLowerCase();
+  // Accept legacy typo `moobn` only during parsing; never emit it
   if (root !== 'moovn' && root !== 'moobn') return null;
 
   let rawMod = parts.length >= 3 ? parts[1].toLowerCase() : 'core';
@@ -126,9 +106,9 @@ export function parsePolyglotFastApiLine(line: string): EngineIRInstruction | nu
     }
   }
 
-  const modMap: Record<string, EngineIRInstruction['module']> = {
+  const modAliases: Record<string, EngineIRInstruction['module']> = {
     save: 'save',
-    sava: 'save',
+    sava: 'save', // one-way legacy compatibility only
     saves: 'save',
     scene: 'scene',
     chapter: 'scene',
@@ -136,46 +116,43 @@ export function parsePolyglotFastApiLine(line: string): EngineIRInstruction | nu
     background: 'bg',
     char: 'char',
     character: 'char',
+    actor: 'char',
     text: 'text',
     dialogue: 'text',
+    say: 'text',
     choice: 'choice',
+    branch: 'choice',
     audio: 'audio',
+    sound: 'audio',
+    bgm: 'audio',
     camera: 'camera',
+    cam: 'camera',
     var: 'var',
+    vars: 'var',
+    state: 'var',
     clue: 'clue',
+    clues: 'clue',
     stream: 'stream',
+    memory: 'stream',
     renderer: 'renderer',
     render: 'renderer',
   };
 
-  const normMod = modMap[rawMod] || 'scene';
-  const actMap: Record<string, string> = {
-    create: 'create',
-    new: 'create',
-    save: 'create',
-    load: 'load',
-    restore: 'load',
-    delete: 'delete',
-    remove: 'delete',
-    quicksave: 'quick_save',
-    quick_save: 'quick_save',
-    quickload: 'quick_load',
-    quick_load: 'quick_load',
-    autosave: 'auto_save',
-    auto_save: 'auto_save',
-  };
-  const normAct = actMap[rawAct.toLowerCase()] || rawAct.toLowerCase();
+  const normMod = modAliases[rawMod] || 'scene';
+  const normAct = rawAct.toLowerCase();
 
   const args: string[] = [];
   let cur = '';
   let inQ = false;
-  let qCh = '"';
-  for (const ch of argsRaw) {
-    if ((ch === '"' || ch === "'") && !inQ) {
+  let qChar = '"';
+  for (let i = 0; i < argsRaw.length; i++) {
+    const ch = argsRaw[i];
+    if (!inQ && (ch === '"' || ch === "'")) {
       inQ = true;
-      qCh = ch;
+      qChar = ch;
       continue;
-    } else if (ch === qCh && inQ) {
+    }
+    if (inQ && ch === qChar) {
       inQ = false;
       continue;
     }
@@ -197,12 +174,9 @@ export function parsePolyglotFastApiLine(line: string): EngineIRInstruction | nu
 }
 
 /**
- * Formats an `EngineIRInstruction` into the target language's idiomatic Fast API syntax:
- * - C#:         `moovn.save:create("Slot_01");`
- * - JavaScript: `moobn.sava:create("Slot_01");`
- * - TypeScript: `moobn.sava:create("Slot_01");`
- * - C++:        `moovn::save::create("Slot_01");`
- * - Rust:       `moovn::save::create("Slot_01");`
+ * Formats an `EngineIRInstruction` into the canonical `moovn.*` API syntax:
+ * - JS/TS/C#: `moovn.save:create("Slot_01");`
+ * - C++/Rust: `moovn::save::create("Slot_01");`
  */
 export function formatIRInstructionForLanguage(
   inst: EngineIRInstruction,
@@ -217,16 +191,6 @@ export function formatIRInstructionForLanguage(
     })
     .join(', ');
 
-  if (inst.module === 'save') {
-    if (target === 'javascript' || target === 'typescript') {
-      return `moobn.sava:${inst.action}(${formattedArgs});`;
-    }
-    if (target === 'csharp') {
-      return `moovn.save:${inst.action}(${formattedArgs});`;
-    }
-    return `moovn::save::${inst.action}(${formattedArgs});`;
-  }
-
   if (target === 'javascript' || target === 'typescript' || target === 'csharp') {
     return `moovn.${inst.module}:${inst.action}(${formattedArgs});`;
   }
@@ -234,21 +198,13 @@ export function formatIRInstructionForLanguage(
 }
 
 /**
- * Translates a multi-line script from any supported language into the target language (`javascript`, `typescript`, `csharp`, `cpp`, `rust`).
+ * Normalizes a multi-line script into the target syntax (`moovn.*`).
  */
 export function translatePolyglotScript(
   source: string,
   target: EnginePolyglotLanguage
 ): string {
-  const headerMap: Record<EnginePolyglotLanguage, string> = {
-    javascript: '// [MooVN Engine · JavaScript 快速 API] 存档语法: moobn.sava:create(NAME)',
-    typescript: '// [MooVN Engine · TypeScript 快速 API] 存档语法: moobn.sava:create(NAME)',
-    csharp: '// [MooVN Engine · C# 快速 API] 存档语法: moovn.save:create(NAME)',
-    cpp: '// [MooVN Engine · C++20 快速 API + 混合渲染器接口] #include "moovn_api.hpp"',
-    rust: '// [MooVN Engine · Rust 原生 API + 混合渲染器接口] use moovn_engine::*;',
-  };
-
-  const outLines: string[] = [headerMap[target]];
+  const outLines: string[] = [];
   for (const line of source.split('\n')) {
     const parsed = parsePolyglotFastApiLine(line);
     if (parsed) {
@@ -259,7 +215,7 @@ export function translatePolyglotScript(
 }
 
 /**
- * Generates MooVN Engine Polyglot Fast API code for a single SceneNode in `javascript`, `typescript`, `csharp`, `cpp`, or `rust`.
+ * Generates clean node script code without promotional comments.
  */
 export function generateNodeEngineFastScript(
   node: SceneNode,
@@ -278,7 +234,7 @@ export function generateNodeEngineFastScript(
     insts.push({
       module: 'bg',
       action: 'weather',
-      args: [node.weatherEffect, '65'],
+      args: [node.weatherEffect, '60'],
       rawLine: '',
     });
   }
@@ -287,7 +243,7 @@ export function generateNodeEngineFastScript(
     insts.push({
       module: 'char',
       action: 'enter',
-      args: [ch.characterId, ch.x < 40 ? 'left' : ch.x > 60 ? 'right' : 'center'],
+      args: [ch.characterId, `${ch.x},${ch.y}`],
       rawLine: '',
     });
     insts.push({
@@ -325,68 +281,23 @@ export function generateNodeEngineFastScript(
     });
   }
 
-  // Always include a quick save slot checkpoint call demonstrating the language's save API
-  insts.push({
-    module: 'save',
-    action: 'create',
-    args: [`Auto_${node.id}`],
-    rawLine: '',
-  });
-
-  // Include reserved Rust + C++ renderer pass submission
-  insts.push({
-    module: 'renderer',
-    action: 'submit',
-    args: ['vn_composite_pass', `node=${node.id}`],
-    rawLine: '',
-  });
-
-  const headerMap: Record<EnginePolyglotLanguage, string> = {
-    javascript: `// [MooVN Engine · JavaScript] 节点: ${node.title} (${node.id})`,
-    typescript: `// [MooVN Engine · TypeScript] 节点: ${node.title} (${node.id})`,
-    csharp: `// [MooVN Engine · C#] 节点: ${node.title} (${node.id})`,
-    cpp: `// [MooVN Engine · C++20] 节点: ${node.title} (${node.id})\n#include "moovn_api.hpp"\n#include "moovn_renderer.hpp"`,
-    rust: `// [MooVN Engine · Rust] 节点: ${node.title} (${node.id})\nuse moovn_engine::{MooVNEngineRuntime, EngineOp};`,
-  };
-
-  return [
-    headerMap[target],
-    ...insts.map((i) => formatIRInstructionForLanguage(i, target)),
-  ].join('\n');
+  return insts.map((i) => formatIRInstructionForLanguage(i, target)).join('\n');
 }
 
 /**
- * Generates a full project script in C#, C++, or Rust using the MooVN Engine Fast API.
+ * Generates a full project script in the selected language.
  */
 export function generateProjectEnginePolyglotScript(
   project: VNProject,
   target: EnginePolyglotLanguage
 ): string {
-  const blocks: string[] = [
-    `// ============================================================================`,
-    `// MooVN Engine v0.1.0 (Rust Core + C++ Renderer Interface) — ${target.toUpperCase()}`,
-    `// Project: ${project.title} (${project.nodes.length} nodes)`,
-    `// Save API Example: ${
-      target === 'javascript' || target === 'typescript'
-        ? 'moobn.sava:create("Slot_01")'
-        : target === 'csharp'
-        ? 'moovn.save:create("Slot_01")'
-        : 'moovn::save::create("Slot_01")'
-    }`,
-    `// ============================================================================`,
-    '',
-  ];
-
-  for (const node of project.nodes.slice(0, 30)) {
+  const blocks: string[] = [];
+  for (const node of project.nodes) {
+    blocks.push(`// ${node.id}: ${node.title}`);
     blocks.push(generateNodeEngineFastScript(node, target));
     blocks.push('');
   }
-  if (project.nodes.length > 30) {
-    blocks.push(
-      `// ... 已省略其余 ${project.nodes.length - 30} 个节点的自动翻译指令（可在单节点模式下逐一编辑）`
-    );
-  }
-  return blocks.join('\n');
+  return blocks.join('\n').trim();
 }
 
 export function evalPolyglotScriptInEngine(
@@ -398,18 +309,17 @@ export function evalPolyglotScriptInEngine(
 } {
   const instructions: EngineIRInstruction[] = [];
   const logs: string[] = [
-    `[MooVN Engine] Loaded ${lang.toUpperCase()} script (${source.split('\n').length} lines)`,
+    `[${lang}] 解析脚本 (${source.split('\n').length} 行)`,
   ];
   for (const line of source.split('\n')) {
     const parsed = parsePolyglotFastApiLine(line);
     if (parsed) {
       instructions.push(parsed);
       logs.push(
-        `  -> Op [${parsed.module}::${parsed.action}] (${parsed.args.join(', ')})`
+        `  -> ${parsed.module}:${parsed.action}(${parsed.args.join(', ')})`
       );
     }
   }
-  logs.push(`[MooVN Engine] Executed ${instructions.length} IR ops OK.`);
+  logs.push(`共解析 ${instructions.length} 条指令`);
   return { instructions, logs };
 }
-

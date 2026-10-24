@@ -2,11 +2,13 @@
   "name": "moovn-studio",
   "private": true,
   "version": "0.1.0",
+  "license": "GPL-3.0-only",
   "description": "MooVN Studio — Cross-Platform Visual Novel IDE & GitHub Release Portal (TypeScript + Tauri 2 + Pixi.js + YAML)",
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 5173",
     "build": "tsc -b && vite build",
+    "test": "node --experimental-strip-types --test tests/moovn-core.test.mts",
     "preview": "vite preview --host 0.0.0.0 --port 5173",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
@@ -16,7 +18,6 @@
     "tauri:ios:init": "tauri ios init"
   },
   "dependencies": {
-    "@wllama/wllama": "^3.8.1",
     "lucide-react": "^0.468.0",
     "pixi.js": "^8.6.6",
     "react": "^18.3.1",

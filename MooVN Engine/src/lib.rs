@@ -3,7 +3,7 @@
 //! 视觉小说核心引擎，提供：
 //! 1. **多语言快速 API 翻译层 (`translator`)**：
 //!    通过语法归一化与 AST/词法翻译技术，将 JavaScript/TypeScript、C++、C#、Rust 的快速视觉小说指令
-//!    （例如 C# `moovn.save:create(NAME)`、JavaScript `moobn.sava:create(NAME)`、C++/Rust `moovn::save::create(NAME)`）
+//!    （例如 JS/TS/C# `moovn.save:create(NAME)`、C++/Rust `moovn::save::create(NAME)`）
 //!    统一编译为中间字节码指令 `EngineOp`。
 //! 2. **存档与世界状态管理 (`save`, `runtime`)**：
 //!    支持多槽位存档创建、读取、删除、自动存档、快速存档与 FNV-1a 64位校验。

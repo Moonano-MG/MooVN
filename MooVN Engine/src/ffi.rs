@@ -22,7 +22,7 @@ pub unsafe extern "C" fn moovn_engine_destroy(engine: *mut MooVNEngineRuntime) {
     }
 }
 
-/// Executes `moovn.save:create(NAME)` / `moobn.sava:create(NAME)` from any FFI host.
+/// Executes `moovn.save:create(NAME)` from any FFI host.
 #[no_mangle]
 pub unsafe extern "C" fn moovn_engine_save_create(
     engine: *mut MooVNEngineRuntime,
@@ -41,7 +41,7 @@ pub unsafe extern "C" fn moovn_engine_save_create(
     true
 }
 
-/// Executes `moovn.save:load(NAME)` / `moobn.sava:load(NAME)` from any FFI host.
+/// Executes `moovn.save:load(NAME)` from any FFI host.
 #[no_mangle]
 pub unsafe extern "C" fn moovn_engine_save_load(
     engine: *mut MooVNEngineRuntime,

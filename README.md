@@ -1,13 +1,11 @@
-# MooVN Studio
+# MooVN (`v0.1.0-dev`)
 
-轻量、直观的跨平台视觉小说创作工作台与引擎套件。
+MooVN 是一套开源视觉小说（Visual Novel）开发工具链，采用 **GNU GPL v3.0** 协议（含导出游戏作品豁免条款），仓库包含以下三个核心模块：
 
-## 目录结构
+- **`MooVN Studio/`**：基于 **Tauri v2 + React + TypeScript** 的视觉小说桌面与移动端集成开发环境（节点画布、分层动态立绘舞台、脚本编辑器、AI Agent 辅助与游戏导出）。
+- **`MooVN Engine/`**：基于 **Rust** 编写的视觉小说核心运行时与中间指令（IR）库，提供统一的存档校验（`moovn.save:create(NAME)`）、变量条件求值与剧本解析接口。
+- **`MooVN Web/`**：MooVN 官方网站与在线版 Web 编辑器入口（与 `MooVN Studio` 共享同一套前端组件与资源源码，通过构建目标区分本地版与 Web 版）。
 
-- **`MooVN Studio/`**：基于 **Tauri 2** 构建的本地视觉小说开发中间层与跨平台工作台（支持本地工作区路径管理、`.mpvn` 项目文件与多端打包）。
-- **`MooVN Engine/`**：基于 **Rust** 编写的视觉小说核心游戏引擎，通过多语言翻译层接入 **JavaScript / TypeScript、C++、C#、Rust** 快速视觉小说 API（如 `C#: moovn.save:create(NAME)`、`JS: moobn.sava:create(NAME)`），并预留 **Rust + C++** 混合渲染器接口。
-- **`MooVN Web/`**：官方网站（客户端下载中心）与 **Web 版 MooVN 工作台**（类似 Web 版 VS Code：无需本地路径配置，直接导入本地 `.mpvn` 文件或新建项目）。
+## 许可证 (License)
 
-## 许可证
-
-详见 [LICENSE](./LICENSE)。
+本项目采用 **GNU General Public License v3.0 (`GPL-3.0`)** 授权，详见 [LICENSE](./LICENSE)。使用 MooVN 导出的独立视觉小说游戏包及创作者自有的剧本、立绘、音频资源归创作者本人所有，不受 GPL 传染性约束。

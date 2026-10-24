@@ -15,10 +15,18 @@ const RATE_WINDOW_MS = 10 * 60 * 1000;
 const MAX_DOWNLOADS_PER_IP = 6;
 
 function getClientIp(req: any): string {
+  const realIp =
+    req.headers?.['x-vercel-forwarded-for'] ||
+    req.headers?.['x-real-ip'] ||
+    req.headers?.['cf-connecting-ip'];
+  if (typeof realIp === 'string' && realIp.trim()) {
+    return realIp.split(',')[0].trim();
+  }
   const xff = req.headers?.['x-forwarded-for'];
-  if (typeof xff === 'string' && xff.trim()) return xff.split(',')[0].trim();
-  const realIp = req.headers?.['x-real-ip'] || req.headers?.['cf-connecting-ip'];
-  if (typeof realIp === 'string' && realIp.trim()) return realIp.trim();
+  if (typeof xff === 'string' && xff.trim()) {
+    const hops = xff.split(',').map((s: string) => s.trim()).filter(Boolean);
+    return hops[hops.length - 1] || '127.0.0.1';
+  }
   return req.socket?.remoteAddress || '127.0.0.1';
 }
 
@@ -79,6 +87,12 @@ function ensureWorkspaceDirs() {
 }
 
 export default defineConfig({
+  resolve: {
+    preserveSymlinks: true,
+  },
+  define: {
+    'import.meta.env.VITE_EDITION': JSON.stringify('web'),
+  },
   build: {
     rollupOptions: {
       input: {
@@ -133,7 +147,7 @@ export default defineConfig({
                 downloadRemaining: 0,
                 downloadLimit: MAX_DOWNLOADS_PER_IP,
                 resetInSeconds: retryAfterSec,
-                error: `当前 IP (${masked}) 请求或下载过于频繁，已触发服务端 IP 限流保护（清除浏览器缓存无效）。请在 ${retryAfterSec} 秒后重试。`,
+                error: `当前 IP (${masked}) 请求过于频繁，请在 ${retryAfterSec} 秒后重试。`,
               })
             );
             return;
@@ -155,7 +169,7 @@ export default defineConfig({
                   downloadRemaining: 0,
                   downloadLimit: MAX_DOWNLOADS_PER_IP,
                   resetInSeconds: retryAfterSec,
-                  error: `当前 IP (${masked}) 在 10 分钟内下载次数已超过上限 (${MAX_DOWNLOADS_PER_IP} 次)，已触发 IP 级防刷限流。`,
+                  error: `当前 IP (${masked}) 在 10 分钟内下载次数已超过上限 (${MAX_DOWNLOADS_PER_IP} 次)。`,
                 })
               );
               return;

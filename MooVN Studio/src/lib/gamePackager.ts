@@ -5,6 +5,7 @@ import {
   buildChapterMsvnPackage,
 } from './assetCompressionEngine';
 import { writeFileToMountedMooVNFolder } from './workspaceManager';
+import { escapeHtmlText } from './vnRuntimeCore';
 
 export interface MultiPlatformBuildOptions {
   platform: ExportPlatform;
@@ -144,10 +145,15 @@ export function buildStandaloneGameHtml(
   project: VNProject,
   platform: ExportPlatform = 'web'
 ): string {
-  const projectJson = JSON.stringify(project);
-  const bgJson = JSON.stringify(BACKGROUND_ASSETS);
-  const charJson = JSON.stringify(CHARACTER_ASSETS);
-  const audioJson = JSON.stringify(AUDIO_ASSETS);
+  const safeJson = (val: unknown) =>
+    JSON.stringify(val)
+      .replace(/</g, '\\u003c')
+      .replace(/>/g, '\\u003e')
+      .replace(/&/g, '\\u0026');
+  const projectJson = safeJson(project);
+  const bgJson = safeJson(BACKGROUND_ASSETS);
+  const charJson = safeJson(CHARACTER_ASSETS);
+  const audioJson = safeJson(AUDIO_ASSETS);
   const originUrl = typeof window !== 'undefined' ? window.location.origin : '';
   const ui = project.uiConfig;
 
@@ -158,8 +164,8 @@ export function buildStandaloneGameHtml(
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
-  <meta name="theme-color" content="${ui.mainMenu.panelColor}" />
-  <title>${project.title}</title>
+  <meta name="theme-color" content="${escapeHtmlText(ui.mainMenu.panelColor)}" />
+  <title>${escapeHtmlText(project.title)}</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-tap-highlight-color: transparent; }
     body, html {
@@ -182,17 +188,21 @@ export function buildStandaloneGameHtml(
     .char-sprite {
       height: 100%; width: auto; object-fit: contain;
       filter: drop-shadow(0 16px 32px rgba(0,0,0,0.68));
+      transform-origin: bottom center;
     }
-    @keyframes moovn-breathe { 0%,100%{transform:scaleY(1);} 50%{transform:scaleY(1.018) translateY(-1%);} }
-    @keyframes moovn-float { 0%,100%{transform:translateY(0);} 50%{transform:translateY(-3%);} }
-    @keyframes moovn-talk { 0%,100%{transform:scale(1);} 50%{transform:scale(1.014,1.022) translateY(-1%);} }
-    @keyframes moovn-bounce { 0%,100%{transform:translateY(0);} 40%{transform:translateY(-5%);} }
-    @keyframes moovn-sway { 0%,100%{transform:rotate(0deg);} 25%{transform:rotate(-1.3deg);} 75%{transform:rotate(1.3deg);} }
-    .motion-breathe { animation: moovn-breathe 3.2s ease-in-out infinite; transform-origin: bottom center; }
-    .motion-float { animation: moovn-float 2.8s ease-in-out infinite; }
-    .motion-talk_pulse { animation: moovn-talk 0.6s ease-in-out infinite; transform-origin: bottom center; }
-    .motion-bounce { animation: moovn-bounce 0.85s ease-in-out infinite; }
-    .motion-sway { animation: moovn-sway 3.4s ease-in-out infinite; transform-origin: bottom center; }
+    @keyframes moovn-breathe { 0%,100%{transform:scaleY(1);} 50%{transform:scaleY(1.0075);} }
+    @keyframes moovn-enter-fade { from{opacity:0;transform:translateY(14px);} to{opacity:1;transform:translateY(0);} }
+    @keyframes moovn-cam-shake {
+      0%{transform:translate3d(0,0,0);}
+      20%{transform:translate3d(-7px,4px,0);}
+      40%{transform:translate3d(6px,-5px,0);}
+      60%{transform:translate3d(-4px,3px,0);}
+      80%{transform:translate3d(2px,-2px,0);}
+      100%{transform:translate3d(0,0,0);}
+    }
+    .motion-breathe { animation: moovn-breathe 4.2s ease-in-out infinite; transform-origin: bottom center; }
+    .enter-once { animation: moovn-enter-fade 0.22s ease-out 1 forwards; }
+    .cam-shake-once { animation: moovn-cam-shake 0.42s ease-out 1 forwards; }
 
     #screen-text-layer { position: absolute; inset: 0; z-index: 22; pointer-events: none; display: none; }
     #cinematic-top, #cinematic-bottom { position: absolute; left: 0; right: 0; height: 10vh; background: #000; z-index: 21; display: none; }
@@ -300,8 +310,9 @@ export function buildStandaloneGameHtml(
       padding: 11px 22px 11px 24px;
       border-radius: ${ui.choiceBox.borderRadius}px;
       font-size: ${ui.choiceBox.fontSize}px;
+      line-height: 1.45;
       cursor: pointer; text-align: left;
-      white-space: nowrap; overflow-x: auto; max-width: 92vw;
+      white-space: normal; word-break: break-word; height: auto; max-width: 92vw;
       box-shadow: 0 10px 26px rgba(0,0,0,0.55);
       transition: all 0.18s ease;
     }
@@ -389,17 +400,17 @@ export function buildStandaloneGameHtml(
     <div id="main-menu">
       <div class="menu-left">
         <div>
-          <div style="font-size:11px;letter-spacing:0.22em;color:${ui.mainMenu.accentColor};margin-bottom:10px;">${ui.mainMenu.subtitleText}</div>
-          <h1 style="font-size:30px;font-weight:800;line-height:1.25;color:${ui.mainMenu.titleColor};">${project.title}</h1>
-          <p style="font-size:12px;color:#94a3b8;margin-top:8px;">Version ${project.version}</p>
+          <div style="font-size:11px;letter-spacing:0.22em;color:${ui.mainMenu.accentColor};margin-bottom:10px;">${escapeHtmlText(ui.mainMenu.subtitleText)}</div>
+          <h1 style="font-size:30px;font-weight:800;line-height:1.25;color:${ui.mainMenu.titleColor};">${escapeHtmlText(project.title)}</h1>
+          <p style="font-size:12px;color:#94a3b8;margin-top:8px;">Version ${escapeHtmlText(project.version)}</p>
         </div>
         <div style="display:flex;flex-direction:column;gap:6px;">
           <button class="menu-btn" onclick="startNewGame()">开始游戏</button>
           <button class="menu-btn" onclick="openSaveModal('load')">读取存档</button>
           <button class="menu-btn" onclick="triggerMsvnFileInput()">加载章节包 (.msvn)</button>
-          <button class="menu-btn" onclick="window.close()">退出游戏</button>
+          <button class="menu-btn" onclick="resetGameSession()">重置进度</button>
         </div>
-        <div style="font-size:11px;color:#64748b;">Powered by MooVN Engine</div>
+        <div style="font-size:11px;color:#64748b;">MooVN Runtime</div>
       </div>
       <div class="menu-blur-bridge"></div>
       <div class="menu-right" id="menu-kv"></div>
@@ -464,6 +475,33 @@ export function buildStandaloneGameHtml(
     let uiHidden = false;
     let activeModalMode = "save";
     let activeSaveTab = "1";
+
+    function escHtml(raw) {
+      return String(raw == null ? "" : raw)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    function fnv1aHex(str) {
+      let h = 2166136261 >>> 0;
+      const s = String(str || "");
+      for (let i = 0; i < s.length; i++) {
+        h ^= s.charCodeAt(i);
+        h = Math.imul(h, 16777619) >>> 0;
+      }
+      return h.toString(16).padStart(8, "0");
+    }
+
+    function resetGameSession() {
+      historyStack = [];
+      backlog = [];
+      PROJECT.characters.forEach(c => affection[c.id] = c.initialAffection);
+      (PROJECT.variables || []).forEach(v => variables[v.key] = v.defaultValue);
+      showToast("已重置当前周目变量与状态");
+    }
 
     function loadAllSaves() {
       try {
@@ -562,11 +600,11 @@ export function buildStandaloneGameHtml(
         if (slot) {
           card.innerHTML = \`
             <div style="display:flex;justify-content:space-between;font-size:11px;color:#38bdf8;margin-bottom:4px;">
-              <span>#\${i + 1} · \${slot.chapterTitle}</span>
-              <span style="color:#64748b;">\${slot.savedAt}</span>
+              <span>#\${i + 1} · \${escHtml(slot.chapterTitle)}</span>
+              <span style="color:#64748b;">\${escHtml(slot.savedAt)}</span>
             </div>
-            <div style="font-size:13px;font-weight:700;color:#f1f5f9;margin-bottom:4px;">\${slot.nodeTitle}</div>
-            <div style="font-size:12px;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">\${slot.speakerName ? slot.speakerName + "：" : ""}\${slot.textPreview}</div>
+            <div style="font-size:13px;font-weight:700;color:#f1f5f9;margin-bottom:4px;">\${escHtml(slot.nodeTitle)}</div>
+            <div style="font-size:12px;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">\${slot.speakerName ? escHtml(slot.speakerName) + "：" : ""}\${escHtml(slot.textPreview)}</div>
           \`;
         } else {
           card.innerHTML = \`
@@ -596,8 +634,8 @@ export function buildStandaloneGameHtml(
         ? '<div style="color:#64748b;padding:20px;">暂无历史对话记录</div>'
         : backlog.slice(-40).map(item => \`
           <div style="padding:10px 14px;border-radius:8px;background:#101b30;border:1px solid rgba(148,163,184,0.15);">
-            <div style="font-size:12px;font-weight:700;color:#38bdf8;margin-bottom:3px;">\${item.speaker || "旁白"}</div>
-            <div style="font-size:13px;color:#e2e8f0;">\${item.text}</div>
+            <div style="font-size:12px;font-weight:700;color:#38bdf8;margin-bottom:3px;">\${escHtml(item.speaker || "旁白")}</div>
+            <div style="font-size:13px;color:#e2e8f0;">\${escHtml(item.text)}</div>
           </div>
         \`).join("");
       document.getElementById("modal-overlay").style.display = "flex";
@@ -705,7 +743,7 @@ export function buildStandaloneGameHtml(
       const node = getNode(currentNodeId);
       if (!node) return;
 
-      if (node.customScript && /moovn\\.save:create|moobn\\.sava:create|moovn::save::create/i.test(node.customScript)) {
+      if (node.customScript && /moovn(?:\.save:|::save::)create/i.test(node.customScript)) {
         persistSaveSlot("auto", 0);
       }
 
@@ -728,10 +766,20 @@ export function buildStandaloneGameHtml(
         stLayer.style.background = st.bgOverlay === 'dim' ? 'rgba(2,6,23,0.68)' : st.bgOverlay === 'black' ? '#020617' : 'transparent';
         topBar.style.display = st.bgOverlay === 'cinematic_bars' ? 'block' : 'none';
         botBar.style.display = st.bgOverlay === 'cinematic_bars' ? 'block' : 'none';
-        stLayer.innerHTML = \`<div style="position:absolute;left:\${st.x}%;top:\${st.y}%;transform:translate(-50%,-50%);text-align:\${st.align};width:84%;">
-          <div style="font-size:\${st.fontSize}px;font-weight:800;color:\${st.color};text-shadow:0 4px 24px rgba(0,0,0,0.85);white-space:pre-wrap;">\${st.text}</div>
-          \${st.subText ? \`<div style="font-size:13px;letter-spacing:0.24em;color:#94a3b8;margin-top:10px;">\${st.subText}</div>\` : ''}
-        </div>\`;
+        stLayer.innerHTML = "";
+        const stWrap = document.createElement("div");
+        stWrap.style.cssText = \`position:absolute;left:\${Number(st.x)||50}%;top:\${Number(st.y)||50}%;transform:translate(-50%,-50%);text-align:\${st.align||'center'};width:84%;\`;
+        const mainTextEl = document.createElement("div");
+        mainTextEl.style.cssText = \`font-size:\${Number(st.fontSize)||28}px;font-weight:800;color:\${st.color||'#ffffff'};text-shadow:0 4px 24px rgba(0,0,0,0.85);white-space:pre-wrap;\`;
+        mainTextEl.textContent = st.text || "";
+        stWrap.appendChild(mainTextEl);
+        if (st.subText) {
+          const subTextEl = document.createElement("div");
+          subTextEl.style.cssText = "font-size:13px;letter-spacing:0.24em;color:#94a3b8;margin-top:10px;";
+          subTextEl.textContent = st.subText;
+          stWrap.appendChild(subTextEl);
+        }
+        stLayer.appendChild(stWrap);
       } else {
         stLayer.style.display = "none";
         topBar.style.display = "none";
@@ -754,15 +802,10 @@ export function buildStandaloneGameHtml(
         const rawSrc = pl.mediaUrl || (prof && prof.mediaUrl) || (asset ? asset.path : "");
         const src = resolveUrl(rawSrc);
         const mediaType = pl.mediaType || (prof && prof.mediaType) || "image";
-        const isSpeaking = line.speakerId === pl.characterId;
-        const motion = pl.idleMotion && pl.idleMotion !== "none"
-          ? pl.idleMotion
-          : (prof && prof.idleMotion && prof.idleMotion !== "none")
-          ? prof.idleMotion
-          : isSpeaking ? "talk_pulse" : "none";
+        const motion = pl.idleMotion === "breathe" || (prof && prof.idleMotion === "breathe") ? "breathe" : "none";
 
         const wrap = document.createElement("div");
-        wrap.className = "char-actor-wrap";
+        wrap.className = "char-actor-wrap enter-once";
         wrap.style.left = pl.x + "%";
         wrap.style.top = pl.y + "%";
         wrap.style.height = (76 * (pl.scale || 1)) + "vh";
@@ -771,7 +814,7 @@ export function buildStandaloneGameHtml(
 
         if (isVideoUrl(src, mediaType)) {
           const vid = document.createElement("video");
-          vid.className = "char-sprite" + (motion !== "none" ? " motion-" + motion : "");
+          vid.className = "char-sprite" + (motion === "breathe" ? " motion-breathe" : "");
           vid.src = src;
           vid.autoplay = true;
           vid.loop = pl.videoLoop !== false;
@@ -780,7 +823,7 @@ export function buildStandaloneGameHtml(
           wrap.appendChild(vid);
         } else {
           const img = document.createElement("img");
-          img.className = "char-sprite" + (motion !== "none" ? " motion-" + motion : "");
+          img.className = "char-sprite" + (motion === "breathe" ? " motion-breathe" : "");
           img.src = src;
           wrap.appendChild(img);
         }

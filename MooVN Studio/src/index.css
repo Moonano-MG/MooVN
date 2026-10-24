@@ -1,81 +1,102 @@
 @import "tailwindcss";
 
-@theme {
-  --font-sans: "Inter", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
-  --font-serif: "Noto Serif SC", "Songti SC", serif;
-  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+:root {
+  color-scheme: dark;
+  --moovn-bg-root: #111113;
+  --moovn-bg-panel: #161619;
+  --moovn-bg-header: #141417;
+  --moovn-bg-elevated: #1c1c20;
+  --moovn-border: #27272c;
+  --moovn-text-main: #e4e4e7;
+  --moovn-text-muted: #9ca3af;
 }
 
-:root,
-html,
-body,
-#root {
-  height: 100%;
-  margin: 0;
-  padding: 0;
-  color-scheme: dark;
+* {
+  box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: #2f2f37 #141417;
 }
 
 body {
-  font-family: var(--font-sans);
-  background: #111113;
-  color: #e4e4e7;
-  overflow-x: hidden;
+  margin: 0;
+  background-color: var(--moovn-bg-root);
+  color: var(--moovn-text-main);
+  font-family: -apple-system, BlinkMacSystemFont, "Inter", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  overflow: hidden;
   -webkit-font-smoothing: antialiased;
 }
 
-::selection {
-  background: rgba(255, 255, 255, 0.16);
+/* ==================== REAL TOKEN-BASED LIGHT THEME (NO FILTER INVERT) ==================== */
+.theme-light {
+  color-scheme: light;
+  --moovn-bg-root: #f3f4f6;
+  --moovn-bg-panel: #ffffff;
+  --moovn-bg-header: #e5e7eb;
+  --moovn-bg-elevated: #f9fafb;
+  --moovn-border: #d1d5db;
+  --moovn-text-main: #18181b;
+  --moovn-text-muted: #52525b;
+  background-color: #f3f4f6 !important;
+  color: #18181b !important;
 }
 
-/* ============================================================================
-   全局统一深色滚动条（彻底消除原生 HTML 纯白+灰滚动条）
-   ============================================================================ */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: #323238 transparent;
+.theme-light header,
+.theme-light aside,
+.theme-light footer,
+.theme-light [data-leaf-container] {
+  background-color: #f8fafc !important;
+  border-color: #d1d5db !important;
+  color: #18181b !important;
 }
 
-*::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
+.theme-light [data-dock-zone="center"] {
+  background-color: #eef2f6 !important;
+  border-color: #cbd5e1 !important;
 }
 
-*::-webkit-scrollbar-track {
-  background: transparent;
+.theme-light input:not([type="color"]):not([type="range"]),
+.theme-light select,
+.theme-light textarea {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
 }
 
-*::-webkit-scrollbar-thumb {
-  background: #2e2e34;
-  border-radius: 999px;
+/* Dark Minimal Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
 }
 
-*::-webkit-scrollbar-thumb:hover {
-  background: #484852;
+::-webkit-scrollbar-track {
+  background: #141417;
 }
 
-*::-webkit-scrollbar-corner {
-  background: transparent;
+::-webkit-scrollbar-thumb {
+  background: #2f2f37;
+  border-radius: 3px;
 }
 
-/* ============================================================================
-   全局统一深色拖拉条 input[type="range"]（彻底消除原生纯白+灰轨道）
-   ============================================================================ */
+::-webkit-scrollbar-thumb:hover {
+  background: #42424d;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Dark Minimal Form Controls */
 input[type="range"] {
   -webkit-appearance: none;
   appearance: none;
-  width: 100%;
+  background: #242429;
   height: 4px;
-  background: #27272c;
-  border-radius: 999px;
+  border-radius: 2px;
   outline: none;
-  cursor: pointer;
-}
-
-input[type="range"]::-webkit-slider-runnable-track {
-  height: 4px;
-  background: #27272c;
-  border-radius: 999px;
 }
 
 input[type="range"]::-webkit-slider-thumb {
@@ -85,191 +106,138 @@ input[type="range"]::-webkit-slider-thumb {
   height: 12px;
   border-radius: 50%;
   background: #d4d4d8;
-  border: 2px solid #18181b;
-  margin-top: -4px;
-  transition: transform 0.12s ease, background-color 0.12s ease;
+  border: 1px solid #18181b;
+  cursor: pointer;
 }
 
 input[type="range"]::-webkit-slider-thumb:hover {
   background: #ffffff;
-  transform: scale(1.12);
 }
 
-input[type="range"]::-moz-range-track {
-  height: 4px;
-  background: #27272c;
-  border-radius: 999px;
-}
-
-input[type="range"]::-moz-range-thumb {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: #d4d4d8;
-  border: 2px solid #18181b;
-  cursor: pointer;
-}
-
-/* ============================================================================
-   全局统一深色输入框、下拉框、复选框与颜色选择器
-   ============================================================================ */
-input[type="text"],
-input[type="number"],
-input[type="password"],
-textarea,
-select {
+select,
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+textarea {
   background-color: #1c1c20;
-  border: 1px solid #2c2c32;
+  border: 1px solid #2e2e34;
   color: #e4e4e7;
-  border-radius: 6px;
-  font-size: 12px;
-  outline: none;
-  transition: border-color 0.15s ease, background-color 0.15s ease;
-}
-
-input[type="text"]:focus,
-input[type="number"]:focus,
-input[type="password"]:focus,
-textarea:focus,
-select:focus {
-  border-color: #52525b;
-  background-color: #202025;
-}
-
-select option {
-  background-color: #18181b;
-  color: #e4e4e7;
-}
-
-input[type="checkbox"] {
-  accent-color: #71717a;
-  width: 13px;
-  height: 13px;
-  border-radius: 3px;
-  cursor: pointer;
-}
-
-input[type="color"] {
-  -webkit-appearance: none;
-  appearance: none;
-  background: #1c1c20;
-  border: 1px solid #2c2c32;
-  border-radius: 6px;
-  padding: 2px;
-  cursor: pointer;
-}
-
-input[type="color"]::-webkit-color-swatch-wrapper {
-  padding: 0;
-}
-
-input[type="color"]::-webkit-color-swatch {
-  border: none;
   border-radius: 4px;
 }
 
-/* 统一无色极简图标按钮 */
+select:focus,
+input:focus,
+textarea:focus {
+  outline: none;
+  border-color: #52525b;
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: #71717a;
+}
+
+/* Minimal Icon Button Utility */
 .icon-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 26px;
   height: 26px;
-  border-radius: 5px;
+  border-radius: 4px;
   color: #a1a1aa;
   background: transparent;
   border: 1px solid transparent;
-  transition: color 0.12s ease, background-color 0.12s ease, border-color 0.12s ease;
+  transition: all 0.12s ease;
   cursor: pointer;
+  flex-shrink: 0;
 }
 
 .icon-btn:hover:not(:disabled) {
   color: #f4f4f5;
-  background: #27272c;
-}
-
-.icon-btn.active {
-  color: #ffffff;
-  background: #27272c;
-  border-color: #3f3f46;
+  background: #232329;
+  border-color: #2f2f37;
 }
 
 .icon-btn:disabled {
-  opacity: 0.3;
+  opacity: 0.35;
   cursor: not-allowed;
 }
 
-/* ============================================================================
-   黑 / 白 双主题支持 (开发方案 2: 界面风格有黑和白2种风格)
-   ============================================================================ */
-.theme-light {
-  filter: invert(0.93) hue-rotate(180deg);
+/* ==================== SINGLE-SHOT ENTRANCE & DECAYING CAMERA SHAKE ==================== */
+@keyframes moovn-enter-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
-.theme-light img,
-.theme-light video,
-.theme-light canvas,
-.theme-light .preserve-theme-color {
-  filter: invert(1) hue-rotate(180deg);
+@keyframes moovn-enter-up-fade {
+  from { opacity: 0; transform: translate3d(0, 16px, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
 }
 
-/* ============================================================================
-   角色动态呼吸 / 悬浮 / 说话 / 律动关键帧动画与视频立绘样式
-   ============================================================================ */
-@keyframes moovn-breathe-kf {
-  0%, 100% { transform: scaleY(1) translateY(0); }
-  50% { transform: scaleY(1.018) translateY(-1.2%); }
+@keyframes moovn-enter-left-fade {
+  from { opacity: 0; transform: translate3d(-18px, 0, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
 }
 
-@keyframes moovn-float-kf {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-3.2%); }
+@keyframes moovn-enter-right-fade {
+  from { opacity: 0; transform: translate3d(18px, 0, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
 }
 
-@keyframes moovn-talk-kf {
-  0%, 100% { transform: scale(1) translateY(0); }
-  25% { transform: scale(1.012, 1.022) translateY(-1.4%); }
-  50% { transform: scale(0.996, 1.005) translateY(-0.4%); }
-  75% { transform: scale(1.01, 1.018) translateY(-1.1%); }
+.moovn-enter-fade {
+  animation: moovn-enter-fade 0.2s ease-out 1 forwards;
 }
 
-@keyframes moovn-bounce-kf {
-  0%, 100% { transform: translateY(0); }
-  30% { transform: translateY(-6%); }
-  60% { transform: translateY(-2%); }
+.moovn-enter-up {
+  animation: moovn-enter-up-fade 0.22s cubic-bezier(0.22, 1, 0.36, 1) 1 forwards;
 }
 
-@keyframes moovn-sway-kf {
-  0%, 100% { transform: rotate(0deg); }
-  25% { transform: rotate(-1.4deg); }
-  75% { transform: rotate(1.4deg); }
+.moovn-enter-left {
+  animation: moovn-enter-left-fade 0.22s cubic-bezier(0.22, 1, 0.36, 1) 1 forwards;
 }
 
-.moovn-char-breathe {
-  animation: moovn-breathe-kf 3.4s ease-in-out infinite;
-  transform-origin: bottom center;
+.moovn-enter-right {
+  animation: moovn-enter-right-fade 0.22s cubic-bezier(0.22, 1, 0.36, 1) 1 forwards;
 }
 
-.moovn-char-float {
-  animation: moovn-float-kf 3s ease-in-out infinite;
+/* Decaying Single-Shot Camera Shake (Plays ONCE and stops) */
+@keyframes moovn-camera-shake-light {
+  0% { transform: translate3d(0, 0, 0); }
+  20% { transform: translate3d(-3px, 2px, 0); }
+  40% { transform: translate3d(3px, -2px, 0); }
+  60% { transform: translate3d(-2px, 1px, 0); }
+  80% { transform: translate3d(1px, -1px, 0); }
+  100% { transform: translate3d(0, 0, 0); }
 }
 
-.moovn-char-talk {
-  animation: moovn-talk-kf 0.65s ease-in-out infinite;
-  transform-origin: bottom center;
+@keyframes moovn-camera-shake-medium {
+  0% { transform: translate3d(0, 0, 0); }
+  16% { transform: translate3d(-6px, 4px, 0); }
+  32% { transform: translate3d(5px, -4px, 0); }
+  48% { transform: translate3d(-4px, 3px, 0); }
+  64% { transform: translate3d(3px, -2px, 0); }
+  80% { transform: translate3d(-2px, 1px, 0); }
+  100% { transform: translate3d(0, 0, 0); }
 }
 
-.moovn-char-bounce {
-  animation: moovn-bounce-kf 0.9s ease-in-out infinite;
+@keyframes moovn-camera-shake-heavy {
+  0% { transform: translate3d(0, 0, 0); }
+  14% { transform: translate3d(-11px, 7px, 0); }
+  28% { transform: translate3d(10px, -8px, 0); }
+  42% { transform: translate3d(-8px, 5px, 0); }
+  56% { transform: translate3d(6px, -4px, 0); }
+  70% { transform: translate3d(-4px, 3px, 0); }
+  85% { transform: translate3d(2px, -1px, 0); }
+  100% { transform: translate3d(0, 0, 0); }
 }
 
-.moovn-char-sway {
-  animation: moovn-sway-kf 3.6s ease-in-out infinite;
-  transform-origin: bottom center;
+.moovn-shake-light {
+  animation: moovn-camera-shake-light 0.36s ease-out 1 forwards;
 }
 
-button {
-  white-space: nowrap;
+.moovn-shake-medium {
+  animation: moovn-camera-shake-medium 0.42s ease-out 1 forwards;
 }
 
-
+.moovn-shake-heavy {
+  animation: moovn-camera-shake-heavy 0.48s ease-out 1 forwards;
+}
