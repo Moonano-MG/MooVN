@@ -213,3 +213,63 @@ input[type="color"]::-webkit-color-swatch {
   filter: invert(1) hue-rotate(180deg);
 }
 
+/* ============================================================================
+   角色动态呼吸 / 悬浮 / 说话 / 律动关键帧动画与视频立绘样式
+   ============================================================================ */
+@keyframes moovn-breathe-kf {
+  0%, 100% { transform: scaleY(1) translateY(0); }
+  50% { transform: scaleY(1.018) translateY(-1.2%); }
+}
+
+@keyframes moovn-float-kf {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3.2%); }
+}
+
+@keyframes moovn-talk-kf {
+  0%, 100% { transform: scale(1) translateY(0); }
+  25% { transform: scale(1.012, 1.022) translateY(-1.4%); }
+  50% { transform: scale(0.996, 1.005) translateY(-0.4%); }
+  75% { transform: scale(1.01, 1.018) translateY(-1.1%); }
+}
+
+@keyframes moovn-bounce-kf {
+  0%, 100% { transform: translateY(0); }
+  30% { transform: translateY(-6%); }
+  60% { transform: translateY(-2%); }
+}
+
+@keyframes moovn-sway-kf {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(-1.4deg); }
+  75% { transform: rotate(1.4deg); }
+}
+
+.moovn-char-breathe {
+  animation: moovn-breathe-kf 3.4s ease-in-out infinite;
+  transform-origin: bottom center;
+}
+
+.moovn-char-float {
+  animation: moovn-float-kf 3s ease-in-out infinite;
+}
+
+.moovn-char-talk {
+  animation: moovn-talk-kf 0.65s ease-in-out infinite;
+  transform-origin: bottom center;
+}
+
+.moovn-char-bounce {
+  animation: moovn-bounce-kf 0.9s ease-in-out infinite;
+}
+
+.moovn-char-sway {
+  animation: moovn-sway-kf 3.6s ease-in-out infinite;
+  transform-origin: bottom center;
+}
+
+button {
+  white-space: nowrap;
+}
+
+

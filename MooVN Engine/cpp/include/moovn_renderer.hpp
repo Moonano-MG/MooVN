@@ -1,19 +1,27 @@
 #pragma once
+
 /**
  * @file moovn_renderer.hpp
- * @brief MooVN Engine — Reserved Hybrid Rust + C++ Renderer Interface (WIP)
+ * @brief MooVN Engine — Hybrid Rust + C++20 Renderer Interface & RGBA Compositor
  *
- * This header defines the C++20 abstract renderer device (`moovn::renderer::IRendererDevice`)
- * and the C-ABI VTable (`MooVNCppRendererVTable`) that bridges the C++ rendering pipeline
- * into the Rust `MooVNEngineRuntime`.
+ * Provides both the C-ABI vtable bridged with Rust (`src/renderer/mod.rs`) and
+ * the concrete C++20 `SoftwareCompositorDevice` supporting:
+ * - Multi-layer RGBA8888 scene compositing
+ * - Real-time Chroma-Key video matting for MP4/WebM character animations
+ * - Weather particle simulation (rain, snow, sakura, fireflies)
+ * - Post-process color filters (sepia, grayscale, night_blue)
  */
 
 #include <cstdint>
 #include <cstddef>
+#include <vector>
+#include <string>
 
+#ifdef __cplusplus
 extern "C" {
+#endif
 
-struct MooVNCppRendererVTable {
+typedef struct MooVNCppRendererVTable {
     void* user_data;
     bool (*on_init)(void* user_data, uint32_t width, uint32_t height);
     void (*on_resize)(void* user_data, uint32_t width, uint32_t height);
@@ -30,27 +38,26 @@ struct MooVNCppRendererVTable {
     );
     void (*on_present_frame)(void* user_data, uint64_t frame_index);
     void (*on_shutdown)(void* user_data);
-};
+} MooVNCppRendererVTable;
 
+#ifdef __cplusplus
 } // extern "C"
 
 namespace moovn::renderer {
 
-enum class GraphicsApi : uint8_t {
-    Vulkan = 0,
-    DirectX12 = 1,
-    Metal = 2,
-    OpenGL = 3,
-    SoftwareStub = 4,
+struct Particle2D {
+    float x;
+    float y;
+    float vx;
+    float vy;
+    float size;
+    float alpha;
 };
 
-/**
- * @brief Abstract C++ Renderer Interface (under active development alongside Rust core).
- */
 class IRendererDevice {
 public:
     virtual ~IRendererDevice() = default;
-    virtual GraphicsApi api_kind() const noexcept = 0;
+
     virtual bool initialize(uint32_t width, uint32_t height) = 0;
     virtual void resize(uint32_t width, uint32_t height) = 0;
     virtual void begin_frame(uint64_t frame_index) = 0;
@@ -68,8 +75,66 @@ public:
 };
 
 /**
- * @brief Builds a C-ABI VTable wrapping any `IRendererDevice*` for attachment to Rust `MooVNEngineRuntime`.
+ * Concrete C++20 RGBA8888 Compositor & Video Chroma-Key Matting Device.
  */
+class SoftwareCompositorDevice final : public IRendererDevice {
+public:
+    SoftwareCompositorDevice() = default;
+    ~SoftwareCompositorDevice() override = default;
+
+    bool initialize(uint32_t width, uint32_t height) override;
+    void resize(uint32_t width, uint32_t height) override;
+    void begin_frame(uint64_t frame_index) override;
+    void draw_background(const char* bg_id, const char* transition) override;
+    void draw_character(
+        const char* char_id,
+        const char* sprite_id,
+        float x_norm,
+        float y_norm,
+        float scale,
+        float opacity
+    ) override;
+    void present_frame(uint64_t frame_index) override;
+    void shutdown() override;
+
+    /**
+     * Real-time Chroma-Key matting for video character sprites (e.g. MP4 green/black screen).
+     */
+    static void apply_chroma_key_rgba(
+        uint8_t* rgba_pixels,
+        size_t pixel_count,
+        uint8_t key_r,
+        uint8_t key_g,
+        uint8_t key_b,
+        uint8_t tolerance
+    ) noexcept;
+
+    /**
+     * Post-processing color filter over RGBA8888 buffer.
+     */
+    void apply_color_filter(const std::string& filter_name) noexcept;
+
+    /**
+     * Steps weather particle emitter for rain / snow / sakura / fireflies.
+     */
+    void step_particles(float dt_sec) noexcept;
+
+    const std::vector<uint8_t>& framebuffer() const noexcept { return framebuffer_; }
+    uint32_t width() const noexcept { return width_; }
+    uint32_t height() const noexcept { return height_; }
+    uint64_t completed_frames() const noexcept { return completed_frames_; }
+
+private:
+    uint32_t width_ = 1920;
+    uint32_t height_ = 1080;
+    uint64_t current_frame_ = 0;
+    uint64_t completed_frames_ = 0;
+    std::string active_bg_;
+    std::vector<uint8_t> framebuffer_;
+    std::vector<Particle2D> particles_;
+};
+
 MooVNCppRendererVTable create_vtable_for_device(IRendererDevice* device) noexcept;
 
 } // namespace moovn::renderer
+#endif

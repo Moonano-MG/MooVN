@@ -22,6 +22,7 @@ import {
   applyChapterMinimumCharacterStats,
   parseAndDecompressMsvnPackage,
 } from '../lib/assetCompressionEngine';
+import { CharacterMediaRenderer } from './CharacterMediaRenderer';
 
 interface PreviewPlayerProps {
   project: VNProject;
@@ -789,9 +790,10 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
               </div>
             )}
 
-            {/* Characters Layer (with live per-line expression switching!) */}
+            {/* Characters Layer (Supports Static Images, GIF/WebP Animations, and MP4/WebM Video Sprites!) */}
             <div className="absolute inset-0 pointer-events-none">
               {currentNode.characters.map((pl) => {
+                const charProfile = project.characters.find((c) => c.id === pl.characterId);
                 const activeSpriteId =
                   currentLine?.speakerId === pl.characterId && currentLine?.expressionSpriteId
                     ? currentLine.expressionSpriteId
@@ -801,6 +803,11 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
                     ? currentNode.targetExpressionSpriteId
                     : pl.spriteId;
                 const sprite = getCharacterById(activeSpriteId);
+                const mediaSrc = pl.mediaUrl || charProfile?.mediaUrl || sprite.path;
+                const mediaType =
+                  pl.mediaType || charProfile?.mediaType || sprite.mediaType || 'image';
+                const idleMotion = pl.idleMotion || charProfile?.idleMotion || 'none';
+                const chromaKeyColor = pl.chromaKeyColor || charProfile?.chromaKeyColor;
                 const isSpeaking = currentLine?.speakerId === pl.characterId;
 
                 return (
@@ -818,9 +825,17 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
                       isSpeaking ? 'brightness-105 z-20' : 'brightness-90 z-10'
                     }`}
                   >
-                    <img
-                      src={sprite.path}
+                    <CharacterMediaRenderer
+                      src={mediaSrc}
                       alt={pl.name}
+                      mediaType={mediaType}
+                      videoLoop={pl.videoLoop ?? charProfile?.videoLoop ?? true}
+                      videoPlaybackRate={
+                        pl.videoPlaybackRate ?? charProfile?.videoPlaybackRate ?? 1
+                      }
+                      chromaKeyColor={chromaKeyColor}
+                      idleMotion={idleMotion}
+                      isSpeaking={isSpeaking}
                       className="h-[76vh] w-auto object-contain drop-shadow-[0_20px_40px_rgba(0,0,0,0.72)]"
                     />
                   </div>

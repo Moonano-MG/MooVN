@@ -91,7 +91,7 @@ export function getPlatformDefaultPaths(platform: MooVNSystemSettings['platform'
 }
 
 export async function syncWriteToRealWorkspaceDisk(
-  subFolder: 'Projects' | 'Exports' | 'Cache' | 'Models' | '',
+  subFolder: 'Projects' | 'Exports' | 'Cache' | 'Models' | 'Scripts' | '',
   fileName: string,
   content: string,
   customDir?: string
@@ -183,6 +183,24 @@ export function saveSystemSettings(settings: MooVNSystemSettings): void {
     // ignore storage quota errors
   }
   syncWriteToRealWorkspaceDisk('', 'settings.moovn.json', payload);
+}
+
+export function resetSystemSettings(): MooVNSystemSettings {
+  try {
+    localStorage.removeItem(SETTINGS_STORAGE_KEY);
+  } catch {
+    // ignore
+  }
+  const fresh = loadSystemSettings();
+  saveSystemSettings(fresh);
+  return fresh;
+}
+
+export async function syncSystemSettingsToDisk(
+  settings: MooVNSystemSettings
+): Promise<string | null> {
+  const payload = JSON.stringify(settings, null, 2);
+  return syncWriteToRealWorkspaceDisk('', 'settings.moovn.json', payload);
 }
 
 export function exportSettingsFileJson(settings: MooVNSystemSettings): void {

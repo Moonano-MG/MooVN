@@ -13,6 +13,7 @@ import { SceneNode, StoryChapter, WorkflowNodeType, NodeCategory } from '../type
 import { BACKGROUND_ASSETS, CHARACTER_ASSETS, AUDIO_ASSETS } from '../data/assets';
 import { NODE_CATEGORIES, NODE_REGISTRY, getNodeMeta } from '../data/nodeRegistry';
 import { soundEngine } from '../lib/soundEngine';
+import { useUILanguage } from '../lib/i18n';
 
 interface LeftPanelProps {
   chapters: StoryChapter[];
@@ -49,6 +50,7 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
   onOpenYamlTab,
   onOpenTsTab,
 }) => {
+  const { t } = useUILanguage();
   const [mainTab, setMainTab] = useState<'chapters' | 'nodes' | 'assets'>(defaultTab);
   const [assetSubTab, setAssetSubTab] = useState<'bg' | 'char' | 'audio'>('bg');
   const [showRootTree, setShowRootTree] = useState(false);
@@ -100,9 +102,9 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
       <div className="grid grid-cols-3 border-b border-[#27272c] bg-[#141417] shrink-0 text-xs">
         {(
           [
-            ['nodes', '节点库'],
-            ['chapters', '章节'],
-            ['assets', '素材'],
+            ['nodes', t('left.tabNodes')],
+            ['chapters', t('left.tabChapters')],
+            ['assets', t('left.tabAssets')],
           ] as const
         ).map(([id, label]) => (
           <button

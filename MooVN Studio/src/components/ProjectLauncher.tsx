@@ -30,20 +30,22 @@ import {
   saveSystemSettings,
 } from '../lib/workspaceManager';
 import { parseMpvnProject } from '../lib/mpvnFormat';
-import { useUILanguage, SUPPORTED_UI_LANGUAGES } from '../lib/i18n';
+import { useUILanguage } from '../lib/i18n';
 
 interface ProjectLauncherProps {
   onOpenProject: (project: VNProject) => void;
   onClose?: () => void;
+  onOpenSettings?: () => void;
   canClose?: boolean;
 }
 
 export const ProjectLauncher: React.FC<ProjectLauncherProps> = ({
   onOpenProject,
   onClose,
+  onOpenSettings,
   canClose = false,
 }) => {
-  const { lang, setLang, t } = useUILanguage();
+  const { t } = useUILanguage();
   const [tab, setTab] = useState<'projects' | 'create' | 'workspace'>(
     IS_WEB_EDITION ? 'create' : 'projects'
   );
@@ -222,18 +224,16 @@ export const ProjectLauncher: React.FC<ProjectLauncherProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
-          <select
-            value={lang}
-            onChange={(e) => setLang(e.target.value as any)}
-            className="px-2 py-1 rounded bg-[#1c1c20] border border-[#27272c] text-zinc-200 text-xs"
-            title={t('menu.language')}
-          >
-            {SUPPORTED_UI_LANGUAGES.map((l) => (
-              <option key={l.id} value={l.id}>
-                {l.nativeName}
-              </option>
-            ))}
-          </select>
+          {onOpenSettings && (
+            <button
+              onClick={onOpenSettings}
+              className="px-2.5 py-1.5 rounded bg-[#1c1c20] hover:bg-[#27272c] border border-[#27272c] text-zinc-200 text-xs flex items-center gap-1.5"
+              title={t('menu.settings')}
+            >
+              <Settings className="w-3.5 h-3.5" strokeWidth={1.6} />
+              {t('menu.settings')}
+            </button>
+          )}
 
           {!IS_WEB_EDITION && (
             <button

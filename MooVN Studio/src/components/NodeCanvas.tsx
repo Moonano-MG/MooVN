@@ -68,12 +68,10 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
   };
 
   const [isMobileViewport, setIsMobileViewport] = useState<boolean>(checkPhoneViewport);
-  const [mobileViewMode, setMobileViewMode] = useState<'flow' | 'canvas'>(() =>
-    checkPhoneViewport() ? 'flow' : 'canvas'
-  );
+  const [mobileViewMode, setMobileViewMode] = useState<'flow' | 'canvas'>('canvas');
 
   const [zoom, setZoom] = useState(() =>
-    checkPhoneViewport() ? 0.72 : 0.92
+    checkPhoneViewport() ? 0.78 : 0.92
   );
   const [pan, setPan] = useState({ x: 24, y: 48 });
   const [isPanning, setIsPanning] = useState(false);
@@ -99,6 +97,37 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, []);
+
+  // Global touchmove / touchend listener so dragging node cards or panning the 2D canvas on mobile never drops!
+  useEffect(() => {
+    if (!isPanning && !draggingNodeId) return;
+    const onWinTouchMove = (e: TouchEvent) => {
+      if (e.touches.length !== 1) return;
+      e.preventDefault();
+      const t = e.touches[0];
+      if (isPanning) {
+        setPan({ x: t.clientX - panStart.x, y: t.clientY - panStart.y });
+      } else if (draggingNodeId) {
+        const newX = Math.round((t.clientX - pan.x) / zoom - dragOffset.x);
+        const newY = Math.round((t.clientY - pan.y) / zoom - dragOffset.y);
+        onUpdateNode(draggingNodeId, (prev) => ({
+          ...prev,
+          position: { x: newX, y: newY },
+        }));
+      }
+    };
+    const onWinTouchEnd = () => {
+      setIsPanning(false);
+      setDraggingNodeId(null);
+      pinchDistRef.current = null;
+    };
+    window.addEventListener('touchmove', onWinTouchMove, { passive: false });
+    window.addEventListener('touchend', onWinTouchEnd);
+    return () => {
+      window.removeEventListener('touchmove', onWinTouchMove);
+      window.removeEventListener('touchend', onWinTouchEnd);
+    };
+  }, [isPanning, draggingNodeId, panStart, pan, zoom, dragOffset]);
 
   const visibleNodes =
     filterChapter === 'all' ? nodes : nodes.filter((n) => n.chapterId === filterChapter);

@@ -388,3 +388,28 @@ export function generateProjectEnginePolyglotScript(
   }
   return blocks.join('\n');
 }
+
+export function evalPolyglotScriptInEngine(
+  source: string,
+  lang: EnginePolyglotLanguage
+): {
+  instructions: EngineIRInstruction[];
+  logs: string[];
+} {
+  const instructions: EngineIRInstruction[] = [];
+  const logs: string[] = [
+    `[MooVN Engine] Loaded ${lang.toUpperCase()} script (${source.split('\n').length} lines)`,
+  ];
+  for (const line of source.split('\n')) {
+    const parsed = parsePolyglotFastApiLine(line);
+    if (parsed) {
+      instructions.push(parsed);
+      logs.push(
+        `  -> Op [${parsed.module}::${parsed.action}] (${parsed.args.join(', ')})`
+      );
+    }
+  }
+  logs.push(`[MooVN Engine] Executed ${instructions.length} IR ops OK.`);
+  return { instructions, logs };
+}
+
