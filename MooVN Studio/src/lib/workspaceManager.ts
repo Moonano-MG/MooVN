@@ -1,10 +1,10 @@
-import {
+import type {
   MooVNSystemSettings,
   SavedProjectMeta,
   VNProject,
-} from '../types';
-import { DEFAULT_PROJECT } from '../data/defaultProject';
-import { DEFAULT_PERFORMANCE_CONFIG } from './assetCompressionEngine';
+} from '../types.ts';
+import { DEFAULT_PROJECT } from '../data/defaultProject.ts';
+import { DEFAULT_PERFORMANCE_CONFIG } from './assetCompressionEngine.ts';
 
 const SETTINGS_STORAGE_KEY = 'moovn_studio_settings_v3';
 const PROJECTS_STORAGE_KEY = 'moovn_studio_projects_v3';

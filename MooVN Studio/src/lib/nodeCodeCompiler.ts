@@ -1,10 +1,10 @@
-import {
+import type {
   NestedChildNode,
   SceneNode,
   VNProject,
   WorkflowNodeType,
-} from '../types';
-import { getNodeMeta } from '../data/nodeRegistry';
+} from '../types.ts';
+import { getNodeMeta } from '../data/nodeRegistry.ts';
 
 export interface TsCompilerDiagnostic {
   id: string;
@@ -21,9 +21,24 @@ export interface TsCompileReport {
   errorCount: number;
   warningCount: number;
   durationMs: number;
+  elapsedMs: number;
+  lineCount: number;
   diagnostics: TsCompilerDiagnostic[];
   compiledTypeScript: string;
   compiledJavaScript: string;
+}
+
+export function normalizeConditionForCtx(
+  rawExpr: string,
+  defaultCharId = 'protagonist'
+): string {
+  return rawExpr
+    .replace(/\b(?<!ctx\.)affection\.([a-zA-Z0-9_]+)/g, 'ctx.affection.$1')
+    .replace(/\b(?<!ctx\.)vars\.([a-zA-Z0-9_]+)/g, 'ctx.vars.$1')
+    .replace(
+      /\b(?<!ctx\.)affection\s*(>=|<=|===|==|!=|>|<)\s*(-?\d+(?:\.\d+)?)/g,
+      `(ctx.affection[${JSON.stringify(defaultCharId)}] ?? 0) $1 $2`
+    );
 }
 
 /**
@@ -62,7 +77,9 @@ function compileNestedChildNode(
       break;
     }
     case 'while_loop': {
-      const expr = String(child.params.conditionExpr || 'ctx.vars.day_count < 5');
+      const expr = normalizeConditionForCtx(
+        String(child.params.conditionExpr || 'ctx.vars.day_count < 5')
+      );
       lines.push(`${indent}while (${expr}) {`);
       for (const s of child.childrenNodes || []) {
         lines.push(compileNestedChildNode(s, lang, indent + '  '));
@@ -71,7 +88,9 @@ function compileNestedChildNode(
       break;
     }
     case 'if_else_container': {
-      const expr = String(child.params.conditionExpr || 'ctx.affection.yukina >= 60');
+      const expr = normalizeConditionForCtx(
+        String(child.params.conditionExpr || 'ctx.affection.yukina >= 60')
+      );
       lines.push(`${indent}if (${expr}) {`);
       for (const s of child.childrenNodes || []) {
         lines.push(compileNestedChildNode(s, lang, indent + '  '));
@@ -297,7 +316,9 @@ export function generateSingleNodeCode(
     }
 
     case 'while_loop': {
-      const cond = node.loopConfig?.conditionExpr || 'ctx.getVar("loop_flag") === true';
+      const cond = normalizeConditionForCtx(
+        node.loopConfig?.conditionExpr || 'ctx.getVar("loop_flag") === true'
+      );
       body.push(`  ${isTs ? 'let guard: number = 0;' : 'let guard = 0;'}`);
       body.push(`  while ((${cond}) && guard++ < 1000) {`);
       for (const child of node.childrenNodes || []) {
@@ -321,7 +342,9 @@ export function generateSingleNodeCode(
     }
 
     case 'if_else_container': {
-      const cond = node.loopConfig?.conditionExpr || 'ctx.getAffection("yukina") >= 60';
+      const cond = normalizeConditionForCtx(
+        node.loopConfig?.conditionExpr || 'ctx.getAffection("yukina") >= 60'
+      );
       body.push(`  if (${cond}) {`);
       for (const child of node.childrenNodes || []) {
         body.push(compileNestedChildNode(child, lang, '    '));
@@ -574,37 +597,57 @@ export interface VNRuntimeContext {
  */
 export function compileAndCheckProjectTypeScript(project: VNProject): TsCompileReport {
   const startTime = performance.now();
+  const compiledTypeScript = generateFullProjectCode(project, 'typescript');
+  const compiledJavaScript = generateFullProjectCode(project, 'javascript');
+  const tsLines = compiledTypeScript.split('\n');
+
+  const findNodeStartLine = (nodeId: string): number => {
+    const fnName = `export async function node_${nodeId.replace(/[^a-zA-Z0-9_]/g, '_')}`;
+    const idx = tsLines.findIndex((l) => l.startsWith(fnName));
+    return idx >= 0 ? idx + 1 : 1;
+  };
+
   const diagnostics: TsCompilerDiagnostic[] = [];
   const nodeIds = new Set(project.nodes.map((n) => n.id));
   const charIds = new Set(project.characters.map((c) => c.id));
   const varMap = new Map(project.variables.map((v) => [v.key, v]));
 
-  project.nodes.forEach((node, idx) => {
-    const lineBase = idx * 14 + 28;
+  project.nodes.forEach((node) => {
+    const lineBase = findNodeStartLine(node.id);
 
     // 1. 检查 nextNodeId 是否指向不存在的节点
     if (node.nextNodeId && !nodeIds.has(node.nextNodeId)) {
       diagnostics.push({
         id: `diag-next-${node.id}`,
-        code: 'TS2304',
+        code: 'MVN101',
         severity: 'error',
         nodeId: node.id,
         nodeTitle: node.title,
-        line: lineBase + 6,
+        line: lineBase,
         message: `找不到下一跳节点 ID "${node.nextNodeId}"（目标节点可能已被删除）。`,
       });
     }
 
     // 2. 检查分支选项目标
     node.choices.forEach((ch, cIdx) => {
-      if (ch.targetNodeId && !nodeIds.has(ch.targetNodeId)) {
+      if (!ch.targetNodeId) {
+        diagnostics.push({
+          id: `diag-choice-empty-${node.id}-${cIdx}`,
+          code: 'MVN102',
+          severity: 'warning',
+          nodeId: node.id,
+          nodeTitle: node.title,
+          line: lineBase + 1,
+          message: `选项 "${ch.text}" 尚未绑定跳转目标节点。`,
+        });
+      } else if (!nodeIds.has(ch.targetNodeId)) {
         diagnostics.push({
           id: `diag-choice-${node.id}-${cIdx}`,
-          code: 'TS2304',
+          code: 'MVN103',
           severity: 'error',
           nodeId: node.id,
           nodeTitle: node.title,
-          line: lineBase + 3 + cIdx,
+          line: lineBase + 1,
           message: `选项 "${ch.text}" 的跳转目标 "${ch.targetNodeId}" 不存在。`,
         });
       }
@@ -622,63 +665,42 @@ export function compileAndCheckProjectTypeScript(project: VNProject): TsCompileR
         ) {
           diagnostics.push({
             id: `diag-type-${node.id}`,
-            code: 'TS2322',
+            code: 'MVN104',
             severity: 'error',
             nodeId: node.id,
             nodeTitle: node.title,
-            line: lineBase + 4,
+            line: lineBase + 1,
             message: `类型不匹配：无法将字符串 "${val}" 赋值给 number 类型的全局变量 "${node.variableKey}"。`,
           });
         }
       } else {
         diagnostics.push({
           id: `diag-var-undeclared-${node.id}`,
-          code: 'TS7006',
+          code: 'MVN201',
           severity: 'warning',
           nodeId: node.id,
           nodeTitle: node.title,
-          line: lineBase + 4,
-          message: `变量 "${node.variableKey}" 未在全局变量表中显式声明类型，TS 编译时将推断为 any。`,
+          line: lineBase + 1,
+          message: `变量 "${node.variableKey}" 未在全局变量表中显式声明类型。`,
         });
       }
     }
 
-    // 4. 检查容器节点（重复循环/如果否则/并行块）是否为空
+    // 4. 检查容器节点是否为空
     const meta = getNodeMeta(node.type);
     if (meta.isContainer && (!node.childrenNodes || node.childrenNodes.length === 0)) {
       diagnostics.push({
         id: `diag-empty-container-${node.id}`,
-        code: 'MOOVN204',
+        code: 'MVN204',
         severity: 'warning',
         nodeId: node.id,
         nodeTitle: node.title,
-        line: lineBase + 3,
+        line: lineBase + 1,
         message: `容器节点 [${meta.title}] 内部尚未添加任何嵌套子节点。`,
       });
     }
 
-    // 5. 检查自定义 JS/TS 脚本语法
-    if (node.customScript && node.customScript.trim()) {
-      // 剥离简单 TS 类型标注后用 Function 构造器检测 JS 语法错误
-      const stripped = node.customScript
-        .replace(/:\s*(string|number|boolean|any|unknown|void)(\[\])?/g, '')
-        .replace(/as\s+(string|number|boolean|any)/g, '');
-      try {
-        new Function('ctx', `"use strict";\nreturn (async () => {\n${stripped}\n})();`);
-      } catch (err: any) {
-        diagnostics.push({
-          id: `diag-syntax-${node.id}`,
-          code: 'TS1005',
-          severity: 'error',
-          nodeId: node.id,
-          nodeTitle: node.title,
-          line: lineBase + 5,
-          message: `脚本语法错误：${err?.message || '无法解析的表达式'}`,
-        });
-      }
-    }
-
-    // 6. 检查角色引用
+    // 5. 检查角色引用
     if (
       node.type === 'affection_change' &&
       node.affectionTargetCharId &&
@@ -686,19 +708,17 @@ export function compileAndCheckProjectTypeScript(project: VNProject): TsCompileR
     ) {
       diagnostics.push({
         id: `diag-char-${node.id}`,
-        code: 'TS2304',
+        code: 'MVN105',
         severity: 'error',
         nodeId: node.id,
         nodeTitle: node.title,
-        line: lineBase + 4,
+        line: lineBase + 1,
         message: `好感度变更节点引用了不存在的角色 ID "${node.affectionTargetCharId}"。`,
       });
     }
   });
 
-  const compiledTypeScript = generateFullProjectCode(project, 'typescript');
-  const compiledJavaScript = generateFullProjectCode(project, 'javascript');
-  const durationMs = Math.max(12, Math.round(performance.now() - startTime));
+  const durationMs = Math.max(0, Math.round(performance.now() - startTime));
   const errorCount = diagnostics.filter((d) => d.severity === 'error').length;
   const warningCount = diagnostics.filter((d) => d.severity === 'warning').length;
 
@@ -707,6 +727,8 @@ export function compileAndCheckProjectTypeScript(project: VNProject): TsCompileR
     errorCount,
     warningCount,
     durationMs,
+    elapsedMs: durationMs,
+    lineCount: tsLines.length,
     diagnostics,
     compiledTypeScript,
     compiledJavaScript,

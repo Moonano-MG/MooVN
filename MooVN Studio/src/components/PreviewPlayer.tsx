@@ -818,10 +818,21 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
                     key={pl.id}
                     style={{
                       left: `${pl.x}%`,
-                      top: `${pl.y}%`,
-                      transform: `translate(-50%, -50%) scale(${
-                        pl.scale * (isSpeaking ? 1.03 : 0.98)
-                      }) ${pl.flipX ? 'scaleX(-1)' : ''}`,
+                      ...(pl.y > 70
+                        ? {
+                            bottom: `${Math.max(0, 100 - pl.y)}%`,
+                            transformOrigin: 'bottom center',
+                            transform: `translate(-50%, 0) scale(${
+                              pl.scale * (isSpeaking ? 1.03 : 0.98)
+                            }) ${pl.flipX ? 'scaleX(-1)' : ''}`,
+                          }
+                        : {
+                            top: `${pl.y}%`,
+                            transformOrigin: 'center center',
+                            transform: `translate(-50%, -50%) scale(${
+                              pl.scale * (isSpeaking ? 1.03 : 0.98)
+                            }) ${pl.flipX ? 'scaleX(-1)' : ''}`,
+                          }),
                       opacity: pl.opacity ?? 1,
                     }}
                     className={`absolute transition-all duration-300 ${
@@ -831,6 +842,7 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
                     <CharacterMediaRenderer
                       mediaUrl={mediaSrc}
                       alt={pl.name}
+                      layerTextures={pl.layerTextures || charProfile?.layerTextures}
                       mediaType={
                         mediaType === 'video' || mediaType === 'animated_image'
                           ? mediaType

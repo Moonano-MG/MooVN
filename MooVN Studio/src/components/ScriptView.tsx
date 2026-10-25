@@ -24,6 +24,7 @@ import {
   evalPolyglotScriptInEngine,
   generateNodeEngineFastScript,
   generateProjectEnginePolyglotScript,
+  translatePolyglotScriptWithReport,
 } from '../lib/moovnEngineBridge';
 import { syncWriteToRealWorkspaceDisk } from '../lib/workspaceManager';
 
@@ -505,13 +506,15 @@ export const ScriptView: React.FC<ScriptViewProps> = ({
 
     let starter = '';
     if (meta.ext === 'yaml' || meta.ext === 'yml') {
-      starter = `chapter: ${selectedChapterId || 'ch-1'}\nnodes:\n  - id: node-1\n    background: bg-classroom-day\n`;
+      starter = `moovn_schema: "1.0"\nchapter:\n  id: ${selectedChapterId || 'ch-1'}\nnodes:\n  - id: node-1\n    background: bg-classroom-day\n`;
     } else if (meta.ext === 'json') {
       starter = `{\n  "scene": "node-1",\n  "background": "bg-classroom-day"\n}\n`;
     } else if (meta.ext === 'cpp' || meta.ext === 'rs') {
       starter = `moovn::bg::show("bg-classroom-day", "fade");\nmoovn::text::say("星野雪奈", "新场景已载入。");\nmoovn::save::create("Slot_01");\n`;
+    } else if (meta.ext === 'cs') {
+      starter = `Moovn.Bg.Show("bg-classroom-day", "fade");\nMoovn.Text.Say("星野雪奈", "新场景已载入。");\nMoovn.Save.Create("Slot_01");\n`;
     } else {
-      starter = `moovn.bg:show("bg-classroom-day", "fade");\nmoovn.text:say("星野雪奈", "新场景已载入。");\nmoovn.save:create("Slot_01");\n`;
+      starter = `moovn.bg.show("bg-classroom-day", "fade");\nmoovn.text.say("星野雪奈", "新场景已载入。");\nmoovn.save.create("Slot_01");\n`;
     }
 
     const created: ProjectScriptFile = {
@@ -542,19 +545,24 @@ export const ScriptView: React.FC<ScriptViewProps> = ({
     setFiles((prev) =>
       prev.map((f) => {
         if (f.id !== fileId) return f;
-        // If this is the active node script and user changed extension (e.g. .ts -> .cs / .js / .cpp / .rs),
-        // regenerate template if untouched or keep user code
+        // Preserve custom user code when renaming extensions via non-destructive IR transpilation (`Kimi 1G`, `GPT-10`)
         let nextContent = f.content;
         if (
-          f.linkedNodeId &&
-          selectedNode &&
           newMeta.engineLang !== 'yaml' &&
-          newMeta.engineLang !== 'json'
+          newMeta.engineLang !== 'json' &&
+          f.content.trim().length > 0
         ) {
-          nextContent = generateNodeEngineFastScript(
-            selectedNode,
+          const report = translatePolyglotScriptWithReport(
+            f.content,
             newMeta.engineLang
           );
+          nextContent = report.code;
+          if (report.unrecognizedLines.length > 0) {
+            setStatusNotice(
+              `已转换至 .${newMeta.ext}（保留了 ${report.unrecognizedLines.length} 行宿主代码）`
+            );
+            setTimeout(() => setStatusNotice(null), 3200);
+          }
         }
         return {
           ...f,
@@ -608,7 +616,7 @@ export const ScriptView: React.FC<ScriptViewProps> = ({
     a.href = url;
     a.download = activeFile.fileName;
     a.click();
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   const handleSyncScroll = () => {

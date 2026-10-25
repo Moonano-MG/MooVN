@@ -3,12 +3,12 @@
 //! Translates visual novel fast API calls from JavaScript, TypeScript, C++, C#, and Rust
 //! into canonical `EngineOp` IR instructions, and transpiles between any of those languages.
 //!
-//! Supported fast-API dialects include:
-//! - C#:         `moovn.save:create(NAME)` / `MooVN.Save.Create(NAME)`
-//! - JavaScript: `moovn.save:create(NAME)`
-//! - TypeScript: `moovn.save:create(NAME)`
-//! - C++:        `moovn::save::create(NAME)` / `moovn.save:create(NAME)`
-//! - Rust:       `moovn::save::create(NAME)` / `moovn.save:create(NAME)`
+//! Supported API dialects:
+//! - JavaScript: `moovn.save.create(NAME);`
+//! - TypeScript: `moovn.save.create(NAME);`
+//! - C#:         `Moovn.Save.Create(NAME);`
+//! - C++:        `moovn::save::create(NAME);`
+//! - Rust:       `moovn::save::create(NAME);`
 
 use crate::ir::{EngineOp, EngineScriptProgram, SourceLanguage};
 
@@ -46,20 +46,38 @@ impl PolyglotTranslator {
             if let Some((module, action, args)) = Self::parse_fast_api_call(trimmed) {
                 let norm_mod = Self::normalize_module(&module);
                 let norm_act = Self::normalize_action(&action);
-                let canonical = format!("moovn.{}:{}({})", norm_mod, norm_act, args.join(", "));
+                let canonical = format!("moovn.{}.{}({})", norm_mod, norm_act, args.join(", "));
 
                 if let Some(op) = Self::map_to_engine_op(&norm_mod, &norm_act, &args) {
                     diagnostics.push(TranslationDiagnostic {
                         line: line_no,
                         message: format!(
-                            "[{} -> IR] 已翻译指令为 {:?}",
+                            "[{} -> IR] 已解析指令 {:?}",
                             source_language.as_str(),
                             op
                         ),
                         normalized_token: canonical,
                     });
                     operations.push(op);
+                } else {
+                    diagnostics.push(TranslationDiagnostic {
+                        line: line_no,
+                        message: format!(
+                            "[WARN line {}] 未知的模块或动作 '{}.{}'",
+                            line_no, norm_mod, norm_act
+                        ),
+                        normalized_token: trimmed.to_string(),
+                    });
                 }
+            } else {
+                diagnostics.push(TranslationDiagnostic {
+                    line: line_no,
+                    message: format!(
+                        "[SKIP line {}] 非 moovn.* API 调用行已跳过: {}",
+                        line_no, trimmed
+                    ),
+                    normalized_token: trimmed.to_string(),
+                });
             }
         }
 
@@ -104,60 +122,19 @@ impl PolyglotTranslator {
 
     fn format_op_for_language(op: &EngineOp, target: SourceLanguage) -> String {
         match op {
-            EngineOp::SaveCreate { slot_name } => match target {
-                SourceLanguage::JavaScript | SourceLanguage::TypeScript | SourceLanguage::CSharp => {
-                    format!("moovn.save:create(\"{}\");", slot_name)
-                }
-                SourceLanguage::Cpp | SourceLanguage::Rust => {
-                    format!("moovn::save::create(\"{}\");", slot_name)
-                }
-            },
-            EngineOp::SaveLoad { slot_name } => match target {
-                SourceLanguage::JavaScript | SourceLanguage::TypeScript | SourceLanguage::CSharp => {
-                    format!("moovn.save:load(\"{}\");", slot_name)
-                }
-                SourceLanguage::Cpp | SourceLanguage::Rust => {
-                    format!("moovn::save::load(\"{}\");", slot_name)
-                }
-            },
-            EngineOp::SaveDelete { slot_name } => match target {
-                SourceLanguage::JavaScript | SourceLanguage::TypeScript | SourceLanguage::CSharp => {
-                    format!("moovn.save:delete(\"{}\");", slot_name)
-                }
-                SourceLanguage::Cpp | SourceLanguage::Rust => {
-                    format!("moovn::save::delete(\"{}\");", slot_name)
-                }
-            },
-            EngineOp::SaveQuickSave => match target {
-                SourceLanguage::JavaScript | SourceLanguage::TypeScript | SourceLanguage::CSharp => {
-                    "moovn.save:quick_save();".to_string()
-                }
-                SourceLanguage::Cpp | SourceLanguage::Rust => {
-                    "moovn::save::quick_save();".to_string()
-                }
-            },
-            EngineOp::SaveQuickLoad => match target {
-                SourceLanguage::JavaScript | SourceLanguage::TypeScript | SourceLanguage::CSharp => {
-                    "moovn.save:quick_load();".to_string()
-                }
-                SourceLanguage::Cpp | SourceLanguage::Rust => {
-                    "moovn::save::quick_load();".to_string()
-                }
-            },
-            EngineOp::SaveAutoSave => match target {
-                SourceLanguage::JavaScript | SourceLanguage::TypeScript | SourceLanguage::CSharp => {
-                    "moovn.save:auto_save();".to_string()
-                }
-                SourceLanguage::Cpp | SourceLanguage::Rust => {
-                    "moovn::save::auto_save();".to_string()
-                }
-            },
-            EngineOp::SaveList => match target {
-                SourceLanguage::JavaScript | SourceLanguage::TypeScript | SourceLanguage::CSharp => {
-                    "moovn.save:list();".to_string()
-                }
-                SourceLanguage::Cpp | SourceLanguage::Rust => "moovn::save::list();".to_string(),
-            },
+            EngineOp::SaveCreate { slot_name } => {
+                Self::fmt_call(target, "save", "create", &[format!("\"{}\"", slot_name)])
+            }
+            EngineOp::SaveLoad { slot_name } => {
+                Self::fmt_call(target, "save", "load", &[format!("\"{}\"", slot_name)])
+            }
+            EngineOp::SaveDelete { slot_name } => {
+                Self::fmt_call(target, "save", "delete", &[format!("\"{}\"", slot_name)])
+            }
+            EngineOp::SaveQuickSave => Self::fmt_call(target, "save", "quick_save", &[]),
+            EngineOp::SaveQuickLoad => Self::fmt_call(target, "save", "quick_load", &[]),
+            EngineOp::SaveAutoSave => Self::fmt_call(target, "save", "auto_save", &[]),
+            EngineOp::SaveList => Self::fmt_call(target, "save", "list", &[]),
             EngineOp::BgShow { bg_id, transition } => {
                 Self::fmt_call(target, "bg", "show", &[format!("\"{}\"", bg_id), format!("\"{}\"", transition)])
             }
@@ -292,11 +269,33 @@ impl PolyglotTranslator {
         }
     }
 
+    fn to_pascal_case(snake: &str) -> String {
+        snake
+            .split('_')
+            .filter(|s| !s.is_empty())
+            .map(|seg| {
+                let mut chars = seg.chars();
+                match chars.next() {
+                    Some(first) => first.to_ascii_uppercase().to_string() + chars.as_str(),
+                    None => String::new(),
+                }
+            })
+            .collect()
+    }
+
     fn fmt_call(target: SourceLanguage, module: &str, action: &str, args: &[String]) -> String {
         let joined = args.join(", ");
         match target {
-            SourceLanguage::JavaScript | SourceLanguage::TypeScript | SourceLanguage::CSharp => {
-                format!("moovn.{}:{}({});", module, action, joined)
+            SourceLanguage::JavaScript | SourceLanguage::TypeScript => {
+                format!("moovn.{}.{}({});", module, action, joined)
+            }
+            SourceLanguage::CSharp => {
+                format!(
+                    "Moovn.{}.{}({});",
+                    Self::to_pascal_case(module),
+                    Self::to_pascal_case(action),
+                    joined
+                )
             }
             SourceLanguage::Cpp | SourceLanguage::Rust => {
                 format!("moovn::{}::{}({});", module, action, joined)
@@ -304,11 +303,10 @@ impl PolyglotTranslator {
         }
     }
 
-    /// Parses any fast API call line such as:
-    /// - `moovn.save:create("slot1")`
+    /// Parses any API call line such as:
+    /// - `moovn.save.create("slot1");`
+    /// - `Moovn.Save.Create("slot1");`
     /// - `moovn::save::create("slot1");`
-    /// - `MooVN.Save.Create("slot1");`
-    /// - `MooVN.setBg("bg-1", "fade")`
     fn parse_fast_api_call(line: &str) -> Option<(String, String, Vec<String>)> {
         let clean = line.trim().trim_end_matches(';').trim();
         let open_paren = clean.find('(')?;
@@ -335,7 +333,7 @@ impl PolyglotTranslator {
         }
 
         let root_lower = parts[0].to_ascii_lowercase();
-        if root_lower != "moovn" && root_lower != "moobn" {
+        if root_lower != "moovn" {
             return None;
         }
 
@@ -378,7 +376,7 @@ impl PolyglotTranslator {
 
     fn normalize_module(raw: &str) -> String {
         match raw.trim().to_ascii_lowercase().as_str() {
-            "save" | "sava" | "saves" => "save".to_string(),
+            "save" | "saves" => "save".to_string(),
             "bg" | "background" => "bg".to_string(),
             "char" | "character" | "actor" => "char".to_string(),
             "text" | "dialogue" | "dialog" | "say" => "text".to_string(),

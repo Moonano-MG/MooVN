@@ -83,6 +83,13 @@ export const SceneStageView: React.FC<SceneStageViewProps> = ({
 
   useEffect(() => {
     if (!draggingCharId && !draggingScreenText) return;
+    const onWinMouseMove = (e: MouseEvent) => {
+      updateDragFromClientXY(e.clientX, e.clientY);
+    };
+    const onWinMouseUp = () => {
+      setDraggingCharId(null);
+      setDraggingScreenText(false);
+    };
     const onWinTouchMove = (e: TouchEvent) => {
       if (e.touches.length > 0) {
         e.preventDefault();
@@ -93,11 +100,23 @@ export const SceneStageView: React.FC<SceneStageViewProps> = ({
       setDraggingCharId(null);
       setDraggingScreenText(false);
     };
+    const onWinKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setDraggingCharId(null);
+        setDraggingScreenText(false);
+      }
+    };
+    window.addEventListener('mousemove', onWinMouseMove);
+    window.addEventListener('mouseup', onWinMouseUp);
     window.addEventListener('touchmove', onWinTouchMove, { passive: false });
     window.addEventListener('touchend', onWinTouchEnd);
+    window.addEventListener('keydown', onWinKeyDown);
     return () => {
+      window.removeEventListener('mousemove', onWinMouseMove);
+      window.removeEventListener('mouseup', onWinMouseUp);
       window.removeEventListener('touchmove', onWinTouchMove);
       window.removeEventListener('touchend', onWinTouchEnd);
+      window.removeEventListener('keydown', onWinKeyDown);
     };
   }, [draggingCharId, draggingScreenText]);
 
@@ -260,6 +279,14 @@ export const SceneStageView: React.FC<SceneStageViewProps> = ({
               onChange={(e) => {
                 const file = e.target.files?.[0];
                 if (!file || !selectedPlacement) return;
+                const MAX_STAGE_MEDIA_BYTES = 15 * 1024 * 1024; // 15 MB guard (`GPT-27`)
+                if (file.size > MAX_STAGE_MEDIA_BYTES) {
+                  window.alert(
+                    `媒体文件过大 (${(file.size / (1024 * 1024)).toFixed(1)} MB > 15 MB 上限)。请压缩视频或图片后再导入，以免超出本地存储配额。`
+                  );
+                  e.target.value = '';
+                  return;
+                }
                 const isVid =
                   file.type.startsWith('video/') ||
                   /\.(mp4|webm|mov|ogv)$/i.test(file.name);
@@ -417,11 +444,22 @@ export const SceneStageView: React.FC<SceneStageViewProps> = ({
                 onClick={(e) => e.stopPropagation()}
                 style={{
                   left: `${pl.x}%`,
-                  top: `${pl.y}%`,
+                  ...(pl.y > 70
+                    ? {
+                        bottom: `${Math.max(0, 100 - pl.y)}%`,
+                        transformOrigin: 'bottom center',
+                        transform: `translate(-50%, 0) scale(${pl.scale}) ${
+                          pl.flipX ? 'scaleX(-1)' : ''
+                        }`,
+                      }
+                    : {
+                        top: `${pl.y}%`,
+                        transformOrigin: 'center center',
+                        transform: `translate(-50%, -50%) scale(${pl.scale}) ${
+                          pl.flipX ? 'scaleX(-1)' : ''
+                        }`,
+                      }),
                   height: '78%',
-                  transform: `translate(-50%, -50%) scale(${pl.scale}) ${
-                    pl.flipX ? 'scaleX(-1)' : ''
-                  }`,
                   opacity: pl.opacity ?? 1,
                 }}
                 className={`absolute cursor-move ${
@@ -431,6 +469,7 @@ export const SceneStageView: React.FC<SceneStageViewProps> = ({
                 <CharacterMediaRenderer
                   mediaUrl={mediaSrc}
                   alt={pl.name}
+                  layerTextures={pl.layerTextures || charProfile?.layerTextures}
                   mediaType={
                     mediaType === 'video' || mediaType === 'animated_image'
                       ? mediaType

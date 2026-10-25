@@ -108,15 +108,34 @@ void SoftwareCompositorDevice::draw_character(
     if (framebuffer_.empty() || opacity <= 0.0f || scale <= 0.0f) {
         return;
     }
-    const int cx = static_cast<int>(std::clamp(x_norm, 0.0f, 1.0f) * static_cast<float>(width_ - 1));
-    const int cy = static_cast<int>(std::clamp(y_norm, 0.0f, 1.0f) * static_cast<float>(height_ - 1));
-    const size_t idx = (static_cast<size_t>(cy) * width_ + static_cast<size_t>(cx)) * 4;
-    if (idx + 3 < framebuffer_.size()) {
-        const uint8_t a = static_cast<uint8_t>(std::clamp(opacity, 0.0f, 1.0f) * 255.0f);
-        framebuffer_[idx] = 220;
-        framebuffer_[idx + 1] = 235;
-        framebuffer_[idx + 2] = 255;
-        framebuffer_[idx + 3] = a;
+    const float clamped_scale = std::clamp(scale, 0.2f, 3.0f);
+    const float alpha = std::clamp(opacity, 0.0f, 1.0f);
+    const int quad_w = std::max(8, static_cast<int>(static_cast<float>(width_) * 0.18f * clamped_scale));
+    const int quad_h = std::max(16, static_cast<int>(static_cast<float>(height_) * 0.65f * clamped_scale));
+
+    const int anchor_x = static_cast<int>(std::clamp(x_norm, 0.0f, 1.0f) * static_cast<float>(width_ - 1));
+    const int anchor_bottom_y = static_cast<int>(std::clamp(y_norm, 0.0f, 1.0f) * static_cast<float>(height_ - 1));
+
+    const int x0 = std::clamp(anchor_x - quad_w / 2, 0, static_cast<int>(width_));
+    const int x1 = std::clamp(anchor_x + quad_w / 2, 0, static_cast<int>(width_));
+    const int y0 = std::clamp(anchor_bottom_y - quad_h, 0, static_cast<int>(height_));
+    const int y1 = std::clamp(anchor_bottom_y, 0, static_cast<int>(height_));
+
+    const uint8_t src_r = 220;
+    const uint8_t src_g = 235;
+    const uint8_t src_b = 255;
+    const uint32_t a_int = static_cast<uint32_t>(alpha * 255.0f);
+    const uint32_t inv_a = 255 - a_int;
+
+    for (int py = y0; py < y1; ++py) {
+        const size_t row_offset = static_cast<size_t>(py) * width_ * 4;
+        for (int px = x0; px < x1; ++px) {
+            const size_t idx = row_offset + static_cast<size_t>(px) * 4;
+            framebuffer_[idx]     = static_cast<uint8_t>((src_r * a_int + framebuffer_[idx]     * inv_a) / 255);
+            framebuffer_[idx + 1] = static_cast<uint8_t>((src_g * a_int + framebuffer_[idx + 1] * inv_a) / 255);
+            framebuffer_[idx + 2] = static_cast<uint8_t>((src_b * a_int + framebuffer_[idx + 2] * inv_a) / 255);
+            framebuffer_[idx + 3] = 255;
+        }
     }
 }
 
@@ -173,6 +192,18 @@ void SoftwareCompositorDevice::apply_color_filter(const std::string& filter_name
             framebuffer_[i] = static_cast<uint8_t>(std::min<uint32_t>(255, (r * 101 + g * 197 + b * 48) >> 8));
             framebuffer_[i + 1] = static_cast<uint8_t>(std::min<uint32_t>(255, (r * 89 + g * 176 + b * 43) >> 8));
             framebuffer_[i + 2] = static_cast<uint8_t>(std::min<uint32_t>(255, (r * 70 + g * 137 + b * 33) >> 8));
+        }
+    } else if (filter_name == "night_blue") {
+        for (size_t i = 0; i + 3 < total; i += 4) {
+            framebuffer_[i]     = static_cast<uint8_t>((static_cast<uint32_t>(framebuffer_[i]) * 140) >> 8);
+            framebuffer_[i + 1] = static_cast<uint8_t>((static_cast<uint32_t>(framebuffer_[i + 1]) * 175) >> 8);
+            framebuffer_[i + 2] = static_cast<uint8_t>(std::min<uint32_t>(255, (static_cast<uint32_t>(framebuffer_[i + 2]) * 235) >> 8));
+        }
+    } else if (filter_name == "dream_bloom") {
+        for (size_t i = 0; i + 3 < total; i += 4) {
+            framebuffer_[i]     = static_cast<uint8_t>(std::min<uint32_t>(255, static_cast<uint32_t>(framebuffer_[i]) + 22));
+            framebuffer_[i + 1] = static_cast<uint8_t>(std::min<uint32_t>(255, static_cast<uint32_t>(framebuffer_[i + 1]) + 18));
+            framebuffer_[i + 2] = static_cast<uint8_t>(std::min<uint32_t>(255, static_cast<uint32_t>(framebuffer_[i + 2]) + 28));
         }
     }
 }

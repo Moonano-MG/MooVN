@@ -581,14 +581,12 @@ impl MooVNEngineRuntime {
     }
 
     fn snapshot_to_save_record(&self, slot_name: &str) -> SaveSlotRecord {
-        let summary = format!(
-            "{}:{}:{}:{}",
-            slot_name,
-            self.state.current_chapter_id,
-            self.state.current_node_id,
-            self.state.active_background
-        );
-        SaveSlotRecord {
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+
+        let mut rec = SaveSlotRecord {
             slot_name: slot_name.to_string(),
             chapter_id: self.state.current_chapter_id.clone(),
             node_id: self.state.current_node_id.clone(),
@@ -597,9 +595,11 @@ impl MooVNEngineRuntime {
             active_bgm: self.state.active_bgm.clone(),
             variables: self.state.variables.clone(),
             affection: self.state.affection.clone(),
-            checksum_fnv1a: SaveManager::compute_fnv1a64(&summary),
-            timestamp_epoch_ms: 1792800000000,
-        }
+            checksum_fnv1a: 0,
+            timestamp_epoch_ms: now_ms,
+        };
+        rec.checksum_fnv1a = rec.compute_canonical_checksum();
+        rec
     }
 
     fn restore_from_save_record(&mut self, rec: &SaveSlotRecord) {

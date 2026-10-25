@@ -139,6 +139,46 @@ impl RendererBridge {
             if let Some(begin) = vt.on_begin_frame {
                 begin(vt.user_data, packet.frame_index);
             }
+            for cmd in &packet.commands {
+                match cmd {
+                    RenderLayerCommand::DrawBackground { bg_id, transition } => {
+                        if let Some(draw_bg) = vt.on_draw_background {
+                            if let (Ok(c_bg), Ok(c_tr)) = (
+                                std::ffi::CString::new(bg_id.as_str()),
+                                std::ffi::CString::new(transition.as_str()),
+                            ) {
+                                draw_bg(vt.user_data, c_bg.as_ptr(), c_tr.as_ptr());
+                            }
+                        }
+                    }
+                    RenderLayerCommand::DrawCharacterSprite {
+                        char_id,
+                        sprite_id,
+                        x_norm,
+                        y_norm,
+                        scale,
+                        opacity,
+                    } => {
+                        if let Some(draw_char) = vt.on_draw_character {
+                            if let (Ok(c_id), Ok(s_id)) = (
+                                std::ffi::CString::new(char_id.as_str()),
+                                std::ffi::CString::new(sprite_id.as_str()),
+                            ) {
+                                draw_char(
+                                    vt.user_data,
+                                    c_id.as_ptr(),
+                                    s_id.as_ptr(),
+                                    *x_norm,
+                                    *y_norm,
+                                    *scale,
+                                    *opacity,
+                                );
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
             if let Some(present) = vt.on_present_frame {
                 present(vt.user_data, packet.frame_index);
             }

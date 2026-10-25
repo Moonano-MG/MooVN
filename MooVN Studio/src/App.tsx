@@ -51,6 +51,11 @@ import { PanelId } from './types';
 import { saveProjectToWorkspace } from './lib/workspaceManager';
 import { useUILanguage } from './lib/i18n';
 import { clampSplitRatio } from './lib/vnRuntimeCore';
+import {
+  clampAllFloatingWindows,
+  clampFloatingRect,
+  normalizeWindowZIndices,
+} from './lib/windowManager';
 import type { WorkflowNodeType } from './types';
 
 const PANEL_TITLES: Record<PanelId, string> = {
@@ -59,13 +64,13 @@ const PANEL_TITLES: Record<PanelId, string> = {
   canvas: '可视化节点画布',
   stage: '场景舞台',
   ui_customizer: '界面定制',
-  ts_code: '多语言脚本 (TS/JS/Lua/Teal/Python)',
+  ts_code: '多语言脚本 (TS/JS/C#/C++/Rust)',
   yaml_code: 'YAML 剧本',
   inspector: '属性与积木检查器',
   characters: '角色好感表',
   ai_agent: 'AI 助手',
   terminal: '终端与编译诊断',
-  asset_studio: '抠图与生图工坊',
+  asset_studio: '抠图与分层立绘工坊',
   settings: '系统设置',
 };
 
@@ -539,11 +544,78 @@ export function App({
   };
 
   // ==================== Recursive 2D Split Tree + Floating State ====================
-  const [splitRoot, setSplitRoot] = useState<EditorSplitNode | null>(() =>
-    createDefaultSplitTree()
-  );
-  const [floatingWindows, setFloatingWindows] = useState<FloatingWindowState[]>([]);
+  const [splitRoot, setSplitRoot] = useState<EditorSplitNode | null>(() => {
+    try {
+      const raw = localStorage.getItem('moovn_workspace_layout_v2');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && parsed.splitRoot) {
+          return parsed.splitRoot as EditorSplitNode;
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return createDefaultSplitTree();
+  });
+  const [floatingWindows, setFloatingWindows] = useState<FloatingWindowState[]>(() => {
+    try {
+      const raw = localStorage.getItem('moovn_workspace_layout_v2');
+      if (raw && typeof window !== 'undefined') {
+        const parsed = JSON.parse(raw);
+        if (parsed && Array.isArray(parsed.floatingWindows)) {
+          const clamped: FloatingWindowState[] = parsed.floatingWindows.map(
+            (w: FloatingWindowState) => ({
+              ...w,
+              ...clampFloatingRect(
+                w,
+                { width: window.innerWidth, height: window.innerHeight },
+                320,
+                220
+              ),
+            })
+          );
+          return normalizeWindowZIndices(clamped);
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return [];
+  });
   const [topZ, setTopZ] = useState<number>(60);
+
+  // Persist layout state (`splitRoot` + `floatingWindows`) (`GPT-30`, `GPT-39`)
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        'moovn_workspace_layout_v2',
+        JSON.stringify({ splitRoot, floatingWindows })
+      );
+    } catch {
+      // ignore quota errors
+    }
+  }, [splitRoot, floatingWindows]);
+
+  // Clamp floating windows when browser / Tauri window resizes (`GPT-19`, `GPT-24`, `Kimi 1L`)
+  useEffect(() => {
+    const onViewportResize = () => {
+      setFloatingWindows((prev) => {
+        if (prev.length === 0) return prev;
+        return prev.map((w) => ({
+          ...w,
+          ...clampFloatingRect(
+            w,
+            { width: window.innerWidth, height: window.innerHeight },
+            320,
+            220
+          ),
+        }));
+      });
+    };
+    window.addEventListener('resize', onViewportResize);
+    return () => window.removeEventListener('resize', onViewportResize);
+  }, []);
 
   // Dragging state for seamless Dock <-> Float transitions
   const [draggingFloatingId, setDraggingFloatingId] = useState<PanelId | null>(
@@ -604,41 +676,48 @@ export function App({
     }
   };
 
-  // Convert a docked panel directly into a Floating Window
+  // Convert a docked panel directly into a Floating Window (clamped to viewport)
   const undockPanelToFloat = (
     panelId: PanelId,
     clientX = 240,
     clientY = 110,
     startDraggingImmediately = false
   ) => {
-    const nextZ = topZ + 1;
-    setTopZ(nextZ);
     setSplitRoot((prev) => removePanelFromSplitTree(prev, panelId));
 
     const defaultW =
       panelId === 'canvas' || panelId === 'stage' ? 680 : 480;
     const defaultH = panelId === 'terminal' ? 320 : 500;
-    const newX = Math.max(48, Math.min(window.innerWidth - 320, clientX - 120));
-    const newY = Math.max(42, Math.min(window.innerHeight - 180, clientY - 16));
+    const clamped = clampFloatingRect(
+      {
+        x: clientX - 120,
+        y: clientY - 16,
+        width: defaultW,
+        height: defaultH,
+      },
+      { width: window.innerWidth, height: window.innerHeight },
+      320,
+      220
+    );
 
     setFloatingWindows((prev) => {
       const exists = prev.find((w) => w.id === panelId);
-      if (exists) {
-        return prev.map((w) =>
-          w.id === panelId ? { ...w, x: newX, y: newY, zIndex: nextZ } : w
-        );
-      }
-      return [
-        ...prev,
-        {
-          id: panelId,
-          x: newX,
-          y: newY,
-          width: defaultW,
-          height: defaultH,
-          zIndex: nextZ,
-        },
-      ];
+      const updated = exists
+        ? prev.map((w) =>
+            w.id === panelId ? { ...w, x: clamped.x, y: clamped.y } : w
+          )
+        : [
+            ...prev,
+            {
+              id: panelId,
+              x: clamped.x,
+              y: clamped.y,
+              width: clamped.width,
+              height: clamped.height,
+              zIndex: 999,
+            },
+          ];
+      return normalizeWindowZIndices(updated as any, panelId) as unknown as FloatingWindowState[];
     });
 
     if (startDraggingImmediately) {
@@ -920,18 +999,28 @@ export function App({
       }
     }
 
-    // 2. Dragging a Floating Window: supports both 5-way compass AND full-pane edge docking (Left/Right/Top/Bottom/Center)!
+    // 2. Dragging a Floating Window (clamped to viewport bounds so it never leaves screen)
     if (draggingFloatingId) {
       setFloatingWindows((prev) =>
-        prev.map((w) =>
-          w.id === draggingFloatingId
-            ? {
-                ...w,
-                x: Math.max(24, clientX - floatDragOffset.x),
-                y: Math.max(36, clientY - floatDragOffset.y),
-              }
-            : w
-        )
+        prev.map((w) => {
+          if (w.id !== draggingFloatingId) return w;
+          const clamped = clampFloatingRect(
+            {
+              x: clientX - floatDragOffset.x,
+              y: clientY - floatDragOffset.y,
+              width: w.width,
+              height: w.height,
+            },
+            { width: window.innerWidth, height: window.innerHeight },
+            320,
+            220
+          );
+          return {
+            ...w,
+            x: clamped.x,
+            y: clamped.y,
+          };
+        })
       );
 
       const zoneElements = document.querySelectorAll('[data-dock-zone]');
@@ -989,22 +1078,34 @@ export function App({
       return;
     }
 
-    // 3. Resizing a Floating Window from bottom-right corner (strict minimum size 360x260)
+    // 3. Resizing a Floating Window from bottom-right corner (clamped to viewport & min size 320x220)
     if (resizingFloatRef.current) {
       const { panelId, startX, startY, startW, startH } =
         resizingFloatRef.current;
       const dw = clientX - startX;
       const dh = clientY - startY;
       setFloatingWindows((prev) =>
-        prev.map((w) =>
-          w.id === panelId
-            ? {
-                ...w,
-                width: Math.max(360, startW + dw),
-                height: Math.max(260, startH + dh),
-              }
-            : w
-        )
+        prev.map((w) => {
+          if (w.id !== panelId) return w;
+          const clamped = clampFloatingRect(
+            {
+              x: w.x,
+              y: w.y,
+              width: startW + dw,
+              height: startH + dh,
+            },
+            { width: window.innerWidth, height: window.innerHeight },
+            320,
+            220
+          );
+          return {
+            ...w,
+            width: clamped.width,
+            height: clamped.height,
+            x: clamped.x,
+            y: clamped.y,
+          };
+        })
       );
       return;
     }
@@ -1383,47 +1484,8 @@ export function App({
             })}
           </div>
 
-          {/* Free Dock Position Buttons (Left / Top / Bottom / Right) + Split / Float */}
+          {/* Split / Float Actions */}
           <div className="flex items-center gap-0.5 shrink-0 pl-1">
-            <button
-              onClick={() =>
-                handleDockWindowAtDirection(activePanel, 'left', leaf.id)
-              }
-              className="icon-btn !w-5 !h-5"
-              title="将当前窗口移至左侧停靠栏"
-            >
-              <ArrowLeft className="w-3 h-3" strokeWidth={1.7} />
-            </button>
-            <button
-              onClick={() =>
-                handleDockWindowAtDirection(activePanel, 'top', leaf.id)
-              }
-              className="icon-btn !w-5 !h-5"
-              title="将当前窗口移至上方停靠栏"
-            >
-              <ArrowUp className="w-3 h-3" strokeWidth={1.7} />
-            </button>
-            <button
-              onClick={() =>
-                handleDockWindowAtDirection(activePanel, 'bottom', leaf.id)
-              }
-              className="icon-btn !w-5 !h-5"
-              title="将当前窗口移至下方停靠栏"
-            >
-              <ArrowDown className="w-3 h-3" strokeWidth={1.7} />
-            </button>
-            <button
-              onClick={() =>
-                handleDockWindowAtDirection(activePanel, 'right', leaf.id)
-              }
-              className="icon-btn !w-5 !h-5"
-              title="将当前窗口移至右侧停靠栏"
-            >
-              <ArrowRight className="w-3 h-3" strokeWidth={1.7} />
-            </button>
-
-            <div className="w-px h-3 bg-[#2c2c34] mx-0.5" />
-
             <button
               onClick={() => {
                 const candidate: PanelId =
@@ -1920,12 +1982,8 @@ export function App({
               <div
                 key={fw.id}
                 onMouseDown={() => {
-                  const nextZ = topZ + 1;
-                  setTopZ(nextZ);
                   setFloatingWindows((prev) =>
-                    prev.map((w) =>
-                      w.id === fw.id ? { ...w, zIndex: nextZ } : w
-                    )
+                    normalizeWindowZIndices(prev as any, fw.id) as unknown as FloatingWindowState[]
                   );
                 }}
                 style={{
@@ -1942,7 +2000,7 @@ export function App({
                     : 'opacity-100 border-zinc-600/80'
                 }`}
               >
-                {/* Floating Window Draggable Title Bar */}
+                {/* Floating Window Draggable Title Bar (`[标题] ... [停靠] [关闭]`) */}
                 <div
                   onMouseDown={(e) => {
                     if ((e.target as HTMLElement).closest('button')) return;
@@ -1970,39 +2028,13 @@ export function App({
                   </div>
 
                   <div className="flex items-center gap-1 shrink-0">
-                    {(['left', 'top', 'bottom', 'right'] as DockDirection[]).map(
-                      (dir) => (
-                        <button
-                          key={dir}
-                          onClick={() => handleDockWindowAtDirection(fw.id, dir)}
-                          className="w-5 h-5 rounded bg-[#2c2c36] hover:bg-sky-500 hover:text-zinc-950 text-[10px] text-zinc-200 flex items-center justify-center transition"
-                          title={`停靠到${
-                            dir === 'left'
-                              ? '左侧'
-                              : dir === 'top'
-                              ? '上方'
-                              : dir === 'bottom'
-                              ? '下方'
-                              : '右侧'
-                          }`}
-                        >
-                          {dir === 'left'
-                            ? '←'
-                            : dir === 'top'
-                            ? '↑'
-                            : dir === 'bottom'
-                            ? '↓'
-                            : '→'}
-                        </button>
-                      )
-                    )}
                     <button
                       onClick={() => handleToggleDockFloat(fw.id)}
-                      className="px-1.5 py-0.5 rounded bg-[#2c2c36] hover:bg-sky-500 hover:text-zinc-950 text-[10px] text-zinc-200 flex items-center gap-1 transition"
-                      title="合并回工作区网格"
+                      className="px-2 py-0.5 rounded bg-[#2c2c36] hover:bg-sky-500 hover:text-zinc-950 text-[10px] text-zinc-200 flex items-center gap-1 transition"
+                      title="停靠归位至工作区网格"
                     >
                       <Minimize2 className="w-3 h-3" strokeWidth={1.6} />
-                      停靠
+                      <span>停靠归位</span>
                     </button>
                     <button
                       onClick={() =>

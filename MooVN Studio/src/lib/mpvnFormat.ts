@@ -1,5 +1,8 @@
-import { VNProject } from '../types';
-import { writeFileToMountedMooVNFolder } from './workspaceManager';
+import type { VNProject, SceneNode, StoryChapter } from '../types.ts';
+import { writeFileToMountedMooVNFolder } from './workspaceManager.ts';
+
+export const MAX_MPVN_PROJECT_BYTES = 16 * 1024 * 1024; // 16 MiB limit
+export const MAX_MPVN_NODES_COUNT = 5000;
 
 export interface MpvnProjectPackage {
   magic: 'MPVN_STUDIO_PROJECT';
@@ -17,6 +20,81 @@ export interface MpvnProjectPackage {
     charactersCount: number;
   };
   project: VNProject;
+}
+
+function hasDangerousKeys(obj: unknown, depth = 0): boolean {
+  if (depth > 16 || !obj || typeof obj !== 'object') return false;
+  if (
+    Object.prototype.hasOwnProperty.call(obj, '__proto__') ||
+    Object.prototype.hasOwnProperty.call(obj, 'constructor') ||
+    Object.prototype.hasOwnProperty.call(obj, 'prototype')
+  ) {
+    return true;
+  }
+  for (const val of Object.values(obj as Record<string, unknown>)) {
+    if (val && typeof val === 'object' && hasDangerousKeys(val, depth + 1)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function validateVNProjectShape(proj: unknown): {
+  ok: boolean;
+  project?: VNProject;
+  error?: string;
+} {
+  if (!proj || typeof proj !== 'object') {
+    return { ok: false, error: 'ERR_SCHEMA_INVALID: 工程根节点不是有效对象' };
+  }
+  const p = proj as Record<string, unknown>;
+  if (!Array.isArray(p.nodes) || p.nodes.length === 0) {
+    return { ok: false, error: 'ERR_SCHEMA_NODES: 工程缺少有效的 nodes 数组' };
+  }
+  if (p.nodes.length > MAX_MPVN_NODES_COUNT) {
+    return {
+      ok: false,
+      error: `ERR_SCHEMA_NODE_LIMIT: 节点数量 (${p.nodes.length}) 超过安全上限 (${MAX_MPVN_NODES_COUNT})`,
+    };
+  }
+  if (!Array.isArray(p.chapters) || p.chapters.length === 0) {
+    return { ok: false, error: 'ERR_SCHEMA_CHAPTERS: 工程缺少有效的 chapters 数组' };
+  }
+
+  for (let i = 0; i < p.nodes.length; i++) {
+    const n = p.nodes[i] as Partial<SceneNode> | null;
+    if (!n || typeof n !== 'object' || typeof n.id !== 'string' || !n.id.trim()) {
+      return { ok: false, error: `ERR_SCHEMA_NODE_ID: 第 ${i + 1} 个节点缺少有效 id` };
+    }
+    if (!Array.isArray(n.dialogues)) n.dialogues = [];
+    if (!Array.isArray(n.choices)) n.choices = [];
+    if (!Array.isArray(n.characters)) n.characters = [];
+    if (!n.position || typeof n.position.x !== 'number' || typeof n.position.y !== 'number') {
+      n.position = { x: 120 + i * 280, y: 160 };
+    }
+  }
+
+  for (let i = 0; i < p.chapters.length; i++) {
+    const c = p.chapters[i] as Partial<StoryChapter> | null;
+    if (!c || typeof c !== 'object' || typeof c.id !== 'string' || !c.id.trim()) {
+      return { ok: false, error: `ERR_SCHEMA_CHAPTER_ID: 第 ${i + 1} 个章节缺少有效 id` };
+    }
+  }
+
+  const typed = p as unknown as VNProject;
+  if (!typed.id || typeof typed.id !== 'string') {
+    typed.id = `proj-${Date.now()}`;
+  }
+  if (!typed.title || typeof typed.title !== 'string') {
+    typed.title = '未命名视觉小说项目';
+  }
+  if (!typed.startNodeId || !typed.nodes.some((n) => n.id === typed.startNodeId)) {
+    typed.startNodeId = typed.nodes[0].id;
+  }
+  if (!Array.isArray(typed.characters)) typed.characters = [];
+  if (!Array.isArray(typed.variables)) typed.variables = [];
+
+  return { ok: true, project: typed };
 }
 
 /**
@@ -44,20 +122,36 @@ export function serializeMpvnProject(project: VNProject): string {
 }
 
 /**
- * 解析 .mpvn 项目文件（同时兼容旧版 .moovn.json 工程文件），拒绝将已编译的游戏产物(.msvn)误当作项目导入
+ * 解析并校验 .mpvn 项目文件（含大小上限、原型污染检测与节点/章节 schema 校验，`GPT-12`）
  */
 export function parseMpvnProject(rawText: string): {
   ok: boolean;
   project?: VNProject;
   error?: string;
 } {
+  if (typeof rawText !== 'string' || !rawText.trim()) {
+    return { ok: false, error: 'ERR_EMPTY_FILE: .mpvn 文件内容为空' };
+  }
+  if (new TextEncoder().encode(rawText).byteLength > MAX_MPVN_PROJECT_BYTES) {
+    return {
+      ok: false,
+      error: `ERR_FILE_TOO_LARGE: 项目文件超过 ${MAX_MPVN_PROJECT_BYTES / (1024 * 1024)}MB 安全限制`,
+    };
+  }
+
   try {
     const parsed = JSON.parse(rawText);
     if (!parsed || typeof parsed !== 'object') {
-      return { ok: false, error: '无效的 .mpvn 项目文件格式' };
+      return { ok: false, error: 'ERR_INVALID_JSON: 无效的 .mpvn 项目文件格式' };
     }
 
-    // 拦截游戏运行时章节包 (.msvn)
+    if (hasDangerousKeys(parsed)) {
+      return {
+        ok: false,
+        error: 'ERR_PROTOTYPE_POLLUTION: 检测到非法属性名 (__proto__ / constructor)',
+      };
+    }
+
     if (
       parsed.magic === 'MSVN_CHAPTER_PACK' ||
       parsed.magic === 'MSVN_CHAPTER_PACKAGE_V1' ||
@@ -66,45 +160,19 @@ export function parseMpvnProject(rawText: string): {
       return {
         ok: false,
         error:
-          '该文件是已导出的游戏章节运行包 (.msvn)，不是 MooVN Studio 可编辑项目文件 (.mpvn)。请导入 .mpvn 项目文件。',
+          'ERR_MSVN_NOT_PROJECT: 该文件是章节资源包 (.msvn)，不是可编辑项目文件 (.mpvn)。',
       };
     }
 
-    // 标准 .mpvn 封装结构（兼容 MPVN_STUDIO_PROJECT / MOOVN_PROJECT_MPVN_V1 以及任意带 project.nodes 的 .mpvn 包）
-    if (
-      parsed.project &&
-      typeof parsed.project === 'object' &&
-      Array.isArray(parsed.project.nodes) &&
-      Array.isArray(parsed.project.chapters)
-    ) {
-      const proj = parsed.project as VNProject;
-      if (!proj.startNodeId && proj.nodes.length > 0) {
-        proj.startNodeId = proj.nodes[0].id;
-      }
-      return { ok: true, project: proj };
+    if (parsed.project && typeof parsed.project === 'object') {
+      return validateVNProjectShape(parsed.project);
     }
 
-    // 兼容直接包含 VNProject 结构的 .mpvn / .moovn.json 文件
-    if (
-      Array.isArray(parsed.nodes) &&
-      Array.isArray(parsed.chapters)
-    ) {
-      const proj = parsed as VNProject;
-      if (!proj.id) proj.id = `proj-${Date.now()}`;
-      if (!proj.startNodeId && proj.nodes.length > 0) {
-        proj.startNodeId = proj.nodes[0].id;
-      }
-      return { ok: true, project: proj };
-    }
-
-    return {
-      ok: false,
-      error: '文件缺少有效的 MooVN Studio 项目节点与章节结构 (.mpvn)',
-    };
+    return validateVNProjectShape(parsed);
   } catch (err) {
     return {
       ok: false,
-      error: `解析 .mpvn 项目文件失败: ${
+      error: `ERR_JSON_SYNTAX: 解析 .mpvn 项目文件失败: ${
         err instanceof Error ? err.message : String(err)
       }`,
     };
@@ -112,7 +180,7 @@ export function parseMpvnProject(rawText: string): {
 }
 
 /**
- * 导出并下载 .mpvn 项目文件（同时同步写入本地工作区 Projects 目录）
+ * 导出并下载 .mpvn 项目文件（延时回收 ObjectURL 避免 Safari/Firefox 下载中断，`Kimi 1L`）
  */
 export async function exportProjectAsMpvn(project: VNProject): Promise<string> {
   const safeName = (project.title || project.id || 'MooVN_Project').replace(
@@ -133,7 +201,7 @@ export async function exportProjectAsMpvn(project: VNProject): Promise<string> {
     a.href = url;
     a.download = fileName;
     a.click();
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
   }
 
   return fileName;

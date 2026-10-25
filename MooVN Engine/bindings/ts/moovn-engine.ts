@@ -1,8 +1,5 @@
 /**
- * MooVN Engine — JavaScript / TypeScript Fast API & Polyglot Binding
- *
- * Official JavaScript / TypeScript SDK for MooVN Engine (`moovn.save:create(NAME)`).
- * translating all calls into the same underlying Rust Engine IR operations.
+ * MooVN Engine — JavaScript / TypeScript API Binding (`moovn.save.create(NAME)`)
  */
 
 export type PolyglotLanguage = 'javascript' | 'typescript' | 'cpp' | 'csharp' | 'rust';
@@ -39,4 +36,3 @@ export const moovn = {
     },
   },
 };
-
