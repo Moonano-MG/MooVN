@@ -438,8 +438,19 @@ export default defineConfig({
       },
     },
   ],
+  resolve: {
+    alias: {
+      react: path.resolve(__dirname, 'node_modules/react'),
+      'react-dom': path.resolve(__dirname, 'node_modules/react-dom'),
+      'lucide-react': path.resolve(__dirname, 'node_modules/lucide-react'),
+      yaml: path.resolve(__dirname, 'node_modules/yaml'),
+    },
+  },
   server: {
     host: '0.0.0.0',
     allowedHosts: true,
+    fs: {
+      allow: ['..'],
+    },
   },
 });
