@@ -1932,9 +1932,13 @@ export const Inspector: React.FC<InspectorProps> = ({
                             <option value="fade">入场：淡入 (单次 200ms)</option>
                             <option value="slide-left">入场：自左移入淡入 (单次)</option>
                             <option value="slide-right">入场：自右移入淡入 (单次)</option>
-                            <option value="jump">入场：自下上移淡入 (单次)</option>
                           </select>
                         </div>
+                        {!pl.layerTextures?.eyes_closed && !pl.layerTextures?.mouth_talk_a && (
+                          <div className="mt-1 px-2 py-1 rounded bg-amber-950/35 border border-amber-500/30 text-[10px] text-amber-200/90">
+                            L0 静态立绘模式：未绑定 <code className="font-mono">eyes_closed</code> / <code className="font-mono">mouth_talk_a</code> 分层贴图，眨眼与口型联动已自动停用（可在「素材工坊 · 分层立绘」中绑定）。
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>

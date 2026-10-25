@@ -16,23 +16,62 @@ import { CHARACTER_ASSETS, BACKGROUND_ASSETS, AUDIO_ASSETS } from '../data/asset
 import { getNodeMeta } from '../data/nodeRegistry';
 
 export function useEditor() {
-  const [project, setProject] = useState<VNProject>(() => {
+  const [editorState, setEditorState] = useState<{
+    project: VNProject;
+    history: VNProject[];
+    future: VNProject[];
+  }>(() => {
+    let initial = DEFAULT_PROJECT;
     try {
       const saved = localStorage.getItem('moovn_studio_project_v6');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed && Array.isArray(parsed.chapters) && Array.isArray(parsed.nodes) && parsed.uiConfig) {
-          return parsed;
+        if (
+          parsed &&
+          Array.isArray(parsed.chapters) &&
+          Array.isArray(parsed.nodes) &&
+          parsed.uiConfig
+        ) {
+          initial = parsed;
         }
       }
     } catch {
       // ignore
     }
-    return DEFAULT_PROJECT;
+    return { project: initial, history: [], future: [] };
   });
 
-  const [history, setHistory] = useState<VNProject[]>([]);
-  const [future, setFuture] = useState<VNProject[]>([]);
+  const [storageWarning, setStorageWarning] = useState<string | null>(null);
+  const project = editorState.project;
+  const history = editorState.history;
+  const future = editorState.future;
+
+  const setProject = useCallback(
+    (updaterOrNext: VNProject | ((prev: VNProject) => VNProject)) => {
+      setEditorState((prev) => {
+        const next =
+          typeof updaterOrNext === 'function'
+            ? (updaterOrNext as (p: VNProject) => VNProject)(prev.project)
+            : updaterOrNext;
+        try {
+          localStorage.setItem('moovn_studio_project_v6', JSON.stringify(next));
+          setStorageWarning(null);
+        } catch (err: unknown) {
+          setStorageWarning(
+            err instanceof Error
+              ? `浏览器本地缓存配额已满 (${err.message})，请及时导出 .mpvn 工程文件`
+              : '浏览器本地缓存配额已满，请及时导出 .mpvn 工程文件'
+          );
+        }
+        return {
+          project: next,
+          history: [...prev.history.slice(-24), prev.project],
+          future: [],
+        };
+      });
+    },
+    []
+  );
 
   const [selectedChapterId, setSelectedChapterId] = useState<string>(
     project.chapters[0]?.id || 'chapter-1'
@@ -41,39 +80,46 @@ export function useEditor() {
   const [selectedDialogueIndex, setSelectedDialogueIndex] = useState<number>(0);
   const [selectedCharacterPlacementId, setSelectedCharacterPlacementId] = useState<string | null>(null);
 
-  const commitProject = useCallback((updater: (prev: VNProject) => VNProject) => {
-    setProject((prev) => {
-      const next = updater(prev);
-      setHistory((h) => [...h.slice(-24), prev]);
-      setFuture([]);
+  const commitProject = useCallback(
+    (updater: (prev: VNProject) => VNProject) => {
+      setProject(updater);
+    },
+    [setProject]
+  );
+
+  const undo = useCallback(() => {
+    setEditorState((prev) => {
+      if (prev.history.length === 0) return prev;
+      const previous = prev.history[prev.history.length - 1];
       try {
-        localStorage.setItem('moovn_studio_project_v6', JSON.stringify(next));
+        localStorage.setItem('moovn_studio_project_v6', JSON.stringify(previous));
       } catch {
-        // ignore quota error
+        // ignore
       }
-      return next;
+      return {
+        project: previous,
+        history: prev.history.slice(0, -1),
+        future: [prev.project, ...prev.future],
+      };
     });
   }, []);
 
-  const undo = useCallback(() => {
-    setHistory((h) => {
-      if (h.length === 0) return h;
-      const previous = h[h.length - 1];
-      setFuture((f) => [project, ...f]);
-      setProject(previous);
-      return h.slice(0, -1);
-    });
-  }, [project]);
-
   const redo = useCallback(() => {
-    setFuture((f) => {
-      if (f.length === 0) return f;
-      const next = f[0];
-      setHistory((h) => [...h, project]);
-      setProject(next);
-      return f.slice(1);
+    setEditorState((prev) => {
+      if (prev.future.length === 0) return prev;
+      const next = prev.future[0];
+      try {
+        localStorage.setItem('moovn_studio_project_v6', JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+      return {
+        project: next,
+        history: [...prev.history, prev.project],
+        future: prev.future.slice(1),
+      };
     });
-  }, [project]);
+  }, []);
 
   const selectedNode = useMemo(() => {
     return (
@@ -207,13 +253,13 @@ export function useEditor() {
                   speakerId:
                     type === 'narration' || type === 'inner_monologue'
                       ? 'narrator'
-                      : project.characters[0]?.id || 'yukina',
+                      : project.characters[0]?.id || 'protagonist',
                   speakerName:
                     type === 'narration'
                       ? '旁白'
                       : type === 'inner_monologue'
                       ? '内心独白'
-                      : project.characters[0]?.name || '星野雪奈',
+                      : project.characters[0]?.name || '默认角色',
                   speakerColor:
                     type === 'narration' || type === 'inner_monologue'
                       ? '#94a3b8'
@@ -227,32 +273,32 @@ export function useEditor() {
             ? [
                 {
                   id: `opt-${Date.now()}-1`,
-                  text: '选项一：深入调查钟塔怀表（星野雪奈好感 +10）',
-                  targetNodeId: project.startNodeId,
-                  affectionCharacterId: project.characters[0]?.id || 'yukina',
-                  affectionDelta: 10,
+                  text: '分支选项一',
+                  targetNodeId: '',
+                  affectionCharacterId: project.characters[0]?.id || 'protagonist',
+                  affectionDelta: 5,
                 },
                 {
                   id: `opt-${Date.now()}-2`,
-                  text: '选项二：前往海湾石阶寻找浅浅（雾岛浅浅好感 +10）',
-                  targetNodeId: project.startNodeId,
-                  affectionCharacterId: 'qianqian',
-                  affectionDelta: 10,
+                  text: '分支选项二',
+                  targetNodeId: '',
+                  affectionCharacterId: project.characters[0]?.id || 'protagonist',
+                  affectionDelta: 0,
                 },
               ]
             : [],
         timedChoiceSeconds: type === 'timed_choice' ? 12 : undefined,
-        defaultTimeoutTargetId: type === 'timed_choice' ? project.startNodeId : undefined,
+        defaultTimeoutTargetId: undefined,
         conditionRule:
           type === 'condition'
             ? {
                 variableType: 'affection',
-                characterId: project.characters[0]?.id || 'yukina',
+                characterId: project.characters[0]?.id || 'protagonist',
                 attributeKey: 'affection',
                 operator: '>=',
                 compareValue: 50,
-                trueTargetNodeId: project.startNodeId,
-                falseTargetNodeId: project.startNodeId,
+                trueTargetNodeId: '',
+                falseTargetNodeId: '',
               }
             : undefined,
         fadeConfig:
@@ -260,7 +306,7 @@ export function useEditor() {
             ? {
                 targetType: 'screen',
                 direction: 'in',
-                characterId: project.characters[0]?.id || 'yukina',
+                characterId: project.characters[0]?.id || 'protagonist',
                 backgroundId: BACKGROUND_ASSETS[0].id,
                 durationMs: 800,
                 easing: 'ease-in-out',
@@ -275,14 +321,14 @@ export function useEditor() {
             ? {
                 text:
                   type === 'chapter_title'
-                    ? '新章节 · 命运交汇的黄昏'
+                    ? '新章节标题'
                     : type === 'banner_notice'
-                    ? '4月14日 17:45 · 星海学园第三图书室'
-                    : '「在第十三声钟鸣落下之前，握紧我的手。」',
+                    ? '场景地点与时间提示'
+                    : '在此输入全屏字幕内容',
                 subText:
                   type === 'chapter_title'
-                    ? 'NEW CHAPTER — TWILIGHT OF DESTINY'
-                    : 'SHIOMI CHRONICLE',
+                    ? 'NEW CHAPTER'
+                    : '',
                 x: type === 'banner_notice' ? 22 : 50,
                 y: type === 'floating_subtitle' ? 84 : type === 'banner_notice' ? 14 : 46,
                 fontSize: type === 'chapter_title' ? 36 : type === 'banner_notice' ? 20 : 28,
@@ -313,21 +359,21 @@ export function useEditor() {
         waitDurationMs: type === 'wait_timer' ? 1500 : undefined,
         toastMessage:
           type === 'popup_toast'
-            ? '系统提示：获得关键道具【旧校舍黄铜钥匙】'
+            ? '系统提示：获得新道具'
             : type === 'clue_unlock'
             ? '已解锁新档案词条！'
             : undefined,
-        unlockedClueTitle: type === 'clue_unlock' ? '档案词条：钟塔第13格齿轮' : undefined,
-        unlockedClueDesc: type === 'clue_unlock' ? '记载于《潮汐历》卷末的时间回溯核心机制。' : undefined,
+        unlockedClueTitle: type === 'clue_unlock' ? '新档案词条' : undefined,
+        unlockedClueDesc: type === 'clue_unlock' ? '在此填写解锁线索的详细说明。' : undefined,
         targetExpressionCharId:
-          type === 'char_expression' ? project.characters[0]?.id || 'yukina' : undefined,
+          type === 'char_expression' ? project.characters[0]?.id || 'protagonist' : undefined,
         targetExpressionSpriteId:
-          type === 'char_expression' ? 'char-yukina-3' : undefined,
+          type === 'char_expression' ? CHARACTER_ASSETS[0]?.id || 'char-yukina-1' : undefined,
         affectionTargetCharId:
-          type === 'affection_change' ? project.characters[0]?.id || 'yukina' : undefined,
+          type === 'affection_change' ? project.characters[0]?.id || 'protagonist' : undefined,
         affectionDelta: type === 'affection_change' ? 10 : undefined,
-        variableKey: type === 'set_variable' ? 'clueCount' : undefined,
-        variableValue: type === 'set_variable' ? 3 : undefined,
+        variableKey: type === 'set_variable' ? 'chapterIndex' : undefined,
+        variableValue: type === 'set_variable' ? 1 : undefined,
         loopConfig:
           type === 'repeat_loop' ||
           type === 'while_loop' ||
@@ -338,9 +384,9 @@ export function useEditor() {
                 repeatCount: type === 'repeat_loop' ? 3 : undefined,
                 conditionExpr:
                   type === 'while_loop'
-                    ? 'ctx.vars.clueCount < 5'
+                    ? 'ctx.vars.chapterIndex < 5'
                     : type === 'if_else_container'
-                    ? 'ctx.affection.yukina >= 60'
+                    ? `ctx.affection.${project.characters[0]?.id || 'protagonist'} >= 60`
                     : undefined,
                 iteratorVar: type === 'for_each_loop' ? 'char' : undefined,
                 collectionTarget: type === 'for_each_loop' ? 'characters' : undefined,
@@ -353,16 +399,16 @@ export function useEditor() {
           type === 'array_operation' ||
           type === 'function_call'
             ? {
-                targetVar: 'clueCount',
+                targetVar: 'chapterIndex',
                 mathOp: type === 'math_operation' ? '+=' : undefined,
-                operandValue: type === 'math_operation' ? 1 : '钟塔星盘碎片',
+                operandValue: type === 'math_operation' ? 1 : '新记录项',
                 clampMin: 0,
                 clampMax: 100,
                 formatTemplate:
-                  type === 'string_format' ? '第 ${day_count} 日 · 已收集 ${clueCount} 枚线索' : undefined,
+                  type === 'string_format' ? '当前进度：第 ${chapterIndex} 章' : undefined,
                 arrayAction: type === 'array_operation' ? 'push' : undefined,
-                functionName: type === 'function_call' ? 'onClocktowerChime' : undefined,
-                functionArgs: type === 'function_call' ? 'ctx, 13' : undefined,
+                functionName: type === 'function_call' ? 'onCustomEvent' : undefined,
+                functionArgs: type === 'function_call' ? 'ctx' : undefined,
               }
             : undefined,
         childrenNodes:
@@ -382,8 +428,11 @@ export function useEditor() {
                 {
                   id: `child-${Date.now()}-2`,
                   type: 'dialogue',
-                  title: '角色对白',
-                  params: { speaker: '星野 雪奈', text: '钟塔的齿轮正在回转……' },
+                  title: '子块对白',
+                  params: {
+                    speaker: project.characters[0]?.name || '默认角色',
+                    text: '在此输入容器内部子块台词……',
+                  },
                 },
               ]
             : undefined,
@@ -394,18 +443,18 @@ export function useEditor() {
                   id: `else-${Date.now()}-1`,
                   type: 'dialogue',
                   title: '否则分支对白',
-                  params: { speaker: '旁白', text: '条件尚未满足，钟声渐渐远去。' },
+                  params: { speaker: '旁白', text: '在此输入条件未满足时的分支台词。' },
                 },
               ]
             : undefined,
         visualBlocks: [],
         nextNodeId: null,
         endingType: type === 'end' ? 'good' : undefined,
-        endingTitle: type === 'end' ? '结局：未完的约定' : undefined,
+        endingTitle: type === 'end' ? '结局' : undefined,
         scriptLanguage: 'typescript',
         customScript:
           type === 'script'
-            ? `// @moovn/sdk 原生 TypeScript 节点逻辑\nimport { runtime } from '@moovn/sdk';\n\nexport async function onExecute() {\n  runtime.addAffection('yukina', 5);\n}\n`
+            ? `// MooVN 节点自定义脚本\nmoovn.text.say("旁白", "执行自定义脚本节点");\nmoovn.save.create("Auto_Slot");\n`
             : undefined,
       };
 
@@ -425,15 +474,33 @@ export function useEditor() {
       if (project.nodes.length <= 1) return;
       commitProject((prev) => {
         const filtered = prev.nodes.filter((n) => n.id !== nodeId);
-        const fallbackId = filtered[0].id;
+        const fallbackStartId = filtered[0].id;
         return {
           ...prev,
-          startNodeId: prev.startNodeId === nodeId ? fallbackId : prev.startNodeId,
+          startNodeId:
+            prev.startNodeId === nodeId ? fallbackStartId : prev.startNodeId,
           nodes: filtered.map((n) => ({
             ...n,
             nextNodeId: n.nextNodeId === nodeId ? null : n.nextNodeId,
+            defaultTimeoutTargetId:
+              n.defaultTimeoutTargetId === nodeId
+                ? undefined
+                : n.defaultTimeoutTargetId,
+            conditionRule: n.conditionRule
+              ? {
+                  ...n.conditionRule,
+                  trueTargetNodeId:
+                    n.conditionRule.trueTargetNodeId === nodeId
+                      ? ''
+                      : n.conditionRule.trueTargetNodeId,
+                  falseTargetNodeId:
+                    n.conditionRule.falseTargetNodeId === nodeId
+                      ? ''
+                      : n.conditionRule.falseTargetNodeId,
+                }
+              : undefined,
             choices: n.choices.map((c) =>
-              c.targetNodeId === nodeId ? { ...c, targetNodeId: fallbackId } : c
+              c.targetNodeId === nodeId ? { ...c, targetNodeId: '' } : c
             ),
           })),
         };
@@ -614,17 +681,21 @@ export function useEditor() {
 
   const resetToDefault = useCallback(() => {
     localStorage.removeItem('moovn_studio_project_v6');
-    setProject(DEFAULT_PROJECT);
+    setEditorState({
+      project: DEFAULT_PROJECT,
+      history: [],
+      future: [],
+    });
+    setStorageWarning(null);
     setSelectedChapterId(DEFAULT_PROJECT.chapters[0].id);
     setSelectedNodeId(DEFAULT_PROJECT.startNodeId);
     setSelectedDialogueIndex(0);
-    setHistory([]);
-    setFuture([]);
   }, []);
 
   return {
     project,
     setProject,
+    storageWarning,
     selectedChapterId,
     setSelectedChapterId,
     selectedChapter,

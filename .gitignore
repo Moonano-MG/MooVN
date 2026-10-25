@@ -4,6 +4,8 @@ dist
 **/dist
 dist-ssr
 *.local
+*.tmp
+*.tmp.*
 *.tsbuildinfo
 **/*.tsbuildinfo
 src-tauri/target
@@ -12,3 +14,4 @@ src-tauri/gen
 **/src-tauri/gen
 .DS_Store
 MooVN_Workspace
+**/MooVN_Workspace

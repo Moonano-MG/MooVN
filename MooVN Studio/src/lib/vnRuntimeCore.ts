@@ -37,6 +37,7 @@ export function computeFnv1a64Hex(payload: string): string {
 }
 
 export interface VerifiedSaveRecord {
+  schemaVersion?: number;
   slotKey: string;
   nodeId: string;
   nodeTitle: string;
@@ -52,7 +53,9 @@ export interface VerifiedSaveRecord {
   checksumFnv64: string;
 }
 
-export function serializeSaveCanonical(record: Omit<VerifiedSaveRecord, 'checksumFnv64'>): string {
+export function serializeSaveCanonical(
+  record: Omit<VerifiedSaveRecord, 'checksumFnv64'>
+): string {
   return JSON.stringify({
     slotKey: record.slotKey,
     nodeId: record.nodeId,
@@ -71,15 +74,40 @@ export function createVerifiedSaveRecord(
   const checksumFnv64 = computeFnv1a64Hex(canonical);
   return {
     ...input,
+    schemaVersion: 2,
     checksumFnv64,
   };
 }
 
-export function verifySaveRecord(record: VerifiedSaveRecord | null | undefined): boolean {
-  if (!record || typeof record !== 'object' || !record.nodeId) return false;
-  if (!record.checksumFnv64) return true; // backwards compatibility with older saves
-  const expected = computeFnv1a64Hex(serializeSaveCanonical(record));
+/**
+ * Strictly verifies a save record's 64-bit FNV-1a checksum (`GPT-09`).
+ * Missing or empty `checksumFnv64` is rejected (`false`).
+ * Legacy unverified saves must be checked separately via `isLegacyUnverifiedSave`.
+ */
+export function verifySaveRecord(
+  record: Partial<VerifiedSaveRecord> | null | undefined
+): boolean {
+  if (!record || typeof record !== 'object' || !record.nodeId || !record.slotKey) {
+    return false;
+  }
+  if (typeof record.checksumFnv64 !== 'string' || record.checksumFnv64.length !== 16) {
+    return false;
+  }
+  const expected = computeFnv1a64Hex(
+    serializeSaveCanonical(record as Omit<VerifiedSaveRecord, 'checksumFnv64'>)
+  );
   return expected === record.checksumFnv64;
+}
+
+/**
+ * Identifies a legacy v1 save record that lacks `checksumFnv64` so callers can prompt
+ * the user before migrating it into a verified v2 record.
+ */
+export function isLegacyUnverifiedSave(
+  record: Partial<VerifiedSaveRecord> | null | undefined
+): boolean {
+  if (!record || typeof record !== 'object') return false;
+  return Boolean(record.nodeId && record.slotKey && !record.checksumFnv64);
 }
 
 /**

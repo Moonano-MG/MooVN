@@ -1,11 +1,25 @@
 # MooVN (`v0.1.0-dev`)
 
-MooVN 是一套开源视觉小说（Visual Novel）开发工具链，采用 **GNU GPL v3.0** 协议（含导出游戏作品豁免条款），仓库包含以下三个核心模块：
+MooVN 是一套开源视觉小说（Visual Novel）创作与编译工具链，采用 **GNU GPL v3.0 (`GPL-3.0-only`)** 协议（含导出游戏作品豁免条款），仓库包含以下三个核心模块：
 
-- **`MooVN Studio/`**：基于 **Tauri v2 + React + TypeScript** 的视觉小说桌面与移动端集成开发环境（节点画布、分层动态立绘舞台、脚本编辑器、AI Agent 辅助与游戏导出）。
-- **`MooVN Engine/`**：基于 **Rust** 编写的视觉小说核心运行时与中间指令（IR）库，提供统一的存档校验（`moovn.save:create(NAME)`）、变量条件求值与剧本解析接口。
-- **`MooVN Web/`**：MooVN 官方网站与在线版 Web 编辑器入口（与 `MooVN Studio` 共享同一套前端组件与资源源码，通过构建目标区分本地版与 Web 版）。
+- **`MooVN Studio/`**：基于 **Tauri v2 + React + TypeScript** 的视觉小说桌面端与移动端工作台（节点图编排、舞台预览、分层立绘配置、脚本编辑与导出校验）。
+- **`MooVN Engine/`**：基于 **Rust** 编写的视觉小说核心运行时与中间指令（IR）库，提供 64-bit FNV-1a 存档校验（`moovn.save.create("Slot_01")`）、条件表达式求值与 C++20 软件合成桥接。
+- **`MooVN Web/`**：MooVN 官方网站与在线版 Web 编辑器入口。
 
-## 许可证 (License)
+## 工程与导出文件格式说明
 
-本项目采用 **GNU General Public License v3.0 (`GPL-3.0`)** 授权，详见 [LICENSE](./LICENSE)。使用 MooVN 导出的独立视觉小说游戏包及创作者自有的剧本、立绘、音频资源归创作者本人所有，不受 GPL 传染性约束。
+| 格式后缀 | 用途与内容 | 是否可再次导入编辑 | 是否可直接运行 |
+| --- | --- | --- | --- |
+| **`.mpvn`** | **完整项目工程包**（JSON 结构 + 64-bit FNV-1a 校验）：包含全部章节、节点图、角色设定与 UI 配置 | 是（支持 Studio 完整导入与备份恢复） | 否（工程源文件） |
+| **`.msvn`** | **独立章节增量包**：包含单章节节点、保底好感度与 LZ77 压缩资源清单 | 是（可作为章节模块挂载） | 需配合主工程或播放器运行 |
+| **`.html`** | **单文件可运行 Web 游戏包**：内嵌运行时状态机、存档校验与转义后的剧本数据 | 否（编译产物） | 是（双击即可在浏览器运行） |
+
+## 功能状态矩阵（v0.1.0-dev）
+
+- **已稳定实现**：三栏自适应工作台、窗口越界钳制与布局持久化、Tauri 原子保存（`temp -> fsync -> rename`）与崩溃备份恢复、L0 静态立绘与 L1 分层立绘（当绑定 `eyes_closed` / `mouth_talk_*` 图层时驱动眨眼与口型）、单文件 HTML5 导出与导出前冒烟校验、全量四语言 UI 字典（`zh-CN` / `zh-TW` / `en-US` / `ja-JP`）。
+- **实验性特性**：`moovn.*` API 跨语言调用转换（JS / TS / C# / C++ / Rust）、AI 辅助对话与结构化节点建议（需配置外部 HTTPS 模型 API 或本地 Ollama）。
+- **尚未内置**：Live2D Cubism / Spine 原生骨骼运行时（因官方 SDK 闭源授权限制未内置，未配置时禁用）、原生 `.cs` / `.cpp` / `.rs` 编译器及桌面/移动端安装器签名打包（需本地安装 Tauri CLI 工具链构建）。
+
+## 许可证与第三方声明 (License)
+
+本项目源码采用 **GNU General Public License v3.0 (`GPL-3.0-only`)** 授权，详见 [LICENSE](./LICENSE)。使用 MooVN 导出的独立视觉小说游戏包及创作者自有的剧本、立绘、音频资源归创作者本人所有，不受 GPL 传染性约束。

@@ -32,6 +32,7 @@ import {
   saveSystemSettings,
 } from '../lib/workspaceManager';
 import { exportProjectAsMpvn } from '../lib/mpvnFormat';
+import { compileAndCheckProjectTypeScript } from '../lib/nodeCodeCompiler';
 
 interface ExportModalProps {
   project: VNProject;
@@ -158,11 +159,15 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     a.href = url;
     a.download = filename;
     a.click();
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
     setStatusMessage(`已导出单文件可玩游戏：${filename}`);
   };
 
   const currentCompSpec = COMPRESSION_FORMAT_SPECS[perf.compressionFormat];
+  const compileCheck = React.useMemo(
+    () => compileAndCheckProjectTypeScript(project),
+    [project]
+  );
 
   return (
     <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 select-none">
@@ -201,6 +206,31 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
         {/* Body */}
         <div className="p-4 overflow-y-auto space-y-4 text-xs flex-1">
+          {/* Real Pre-Export Static Verification Summary (`GPT-12`, `Kimi 4G`) */}
+          <div
+            className={`p-2.5 rounded-md border flex items-center justify-between gap-2 ${
+              compileCheck.errorCount > 0
+                ? 'bg-rose-950/30 border-rose-500/40 text-rose-200'
+                : compileCheck.warningCount > 0
+                ? 'bg-amber-950/30 border-amber-500/40 text-amber-200'
+                : 'bg-emerald-950/25 border-emerald-500/35 text-emerald-200'
+            }`}
+          >
+            <div className="min-w-0">
+              <div className="font-semibold text-[11px]">
+                构建前静态校验 ({project.chapters.length} 章节 · {project.nodes.length} 节点 · {compileCheck.lineCount} 行代码)
+              </div>
+              <div className="text-[10px] opacity-85 truncate">
+                {compileCheck.errorCount === 0 && compileCheck.warningCount === 0
+                  ? '入口节点、分支目标引用与节点脚本均通过校验'
+                  : `发现 ${compileCheck.errorCount} 个错误、${compileCheck.warningCount} 个警告 (${compileCheck.diagnostics[0]?.message || ''})`}
+              </div>
+            </div>
+            <span className="px-2 py-0.5 rounded bg-black/30 font-mono text-[10px] shrink-0">
+              {compileCheck.elapsedMs}ms
+            </span>
+          </div>
+
           {/* TAB 1: Unified Game Export (Platform + App Info + Inline Compression Config) */}
           {activeTab === 'package' && (
             <>

@@ -1,6 +1,11 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { CharacterIdleMotion, CharacterMediaType } from '../types';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import type {
+  AvatarLayerTextureMap,
+  CharacterIdleMotion,
+  CharacterMediaType,
+} from '../types';
 import {
+  ALL_AVATAR_LAYER_IDS,
   clampAvatarDelta,
   IAvatarRenderable,
   newImageAvatar,
@@ -10,6 +15,7 @@ interface CharacterMediaRendererProps {
   mediaUrl: string;
   alt: string;
   mediaType?: CharacterMediaType;
+  layerTextures?: AvatarLayerTextureMap;
   videoLoop?: boolean;
   videoMuted?: boolean;
   videoPlaybackRate?: number;
@@ -17,6 +23,7 @@ interface CharacterMediaRendererProps {
   idleMotion?: CharacterIdleMotion;
   blinkEnabled?: boolean;
   isTalking?: boolean;
+  motionLevel?: 'off' | 'subtle' | 'full';
   className?: string;
   style?: React.CSSProperties;
 }
@@ -75,6 +82,7 @@ export const CharacterMediaRenderer: React.FC<CharacterMediaRendererProps> = ({
   mediaUrl,
   alt,
   mediaType,
+  layerTextures,
   videoLoop = true,
   videoMuted = true,
   videoPlaybackRate = 1,
@@ -82,6 +90,7 @@ export const CharacterMediaRenderer: React.FC<CharacterMediaRendererProps> = ({
   idleMotion = 'none',
   blinkEnabled = true,
   isTalking = false,
+  motionLevel = 'subtle',
   className = '',
   style,
 }) => {
@@ -89,116 +98,157 @@ export const CharacterMediaRenderer: React.FC<CharacterMediaRendererProps> = ({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const avatarRef = useRef<IAvatarRenderable | null>(null);
+  const bodyContainerRef = useRef<HTMLDivElement | null>(null);
 
   const [videoStatus, setVideoStatus] = useState<'ready' | 'blocked' | 'error'>('ready');
-  const [renderState, setRenderState] = useState<{
-    bodyScaleY: number;
-    hairRotDeg: number;
-    eyesClosed: boolean;
-    mouthFrame: 'neutral' | 'talk_a' | 'talk_b';
-    prevTexture: string | null;
-    currTexture: string | null;
-    crossfadeAlpha: number;
-  }>({
-    bodyScaleY: 1,
-    hairRotDeg: 0,
-    eyesClosed: false,
-    mouthFrame: 'neutral',
-    prevTexture: null,
-    currTexture: mediaUrl,
-    crossfadeAlpha: 1,
+  const [chromaError, setChromaError] = useState<string | null>(null);
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState<boolean>(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return false;
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   });
 
-  // Initialize and clean up layered ImageAvatar instance
+  // Track single-shot texture crossfade on expression switch
+  const [crossfade, setCrossfade] = useState<{
+    prevUrl: string | null;
+    currUrl: string;
+    fading: boolean;
+  }>({
+    prevUrl: null,
+    currUrl: mediaUrl,
+    fading: false,
+  });
+
+  // Track L1 facial frame changes ONLY when L1 layered textures are actually configured
+  const [l1FacialState, setL1FacialState] = useState<{
+    eyesClosed: boolean;
+    mouthFrame: 'neutral' | 'talk_a' | 'talk_b';
+  }>({
+    eyesClosed: false,
+    mouthFrame: 'neutral',
+  });
+
+  const hasL1Layers = useMemo(() => {
+    if (!layerTextures) return false;
+    return Boolean(
+      layerTextures.eyes_closed ||
+        layerTextures.mouth_talk_a ||
+        layerTextures.mouth_talk_b ||
+        layerTextures.blush ||
+        layerTextures.hair_front
+    );
+  }, [layerTextures]);
+
+  const effectiveMotionOff = motionLevel === 'off' || prefersReducedMotion;
+
+  // Listen to OS prefers-reduced-motion media query (`GPT-33`)
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const onChange = (e: MediaQueryListEvent) => setPrefersReducedMotion(e.matches);
+    mq.addEventListener?.('change', onChange);
+    return () => mq.removeEventListener?.('change', onChange);
+  }, []);
+
+  // Single-shot 180ms crossfade when `mediaUrl` changes (no 60fps React setState)
+  useEffect(() => {
+    setCrossfade((prev) => {
+      if (prev.currUrl === mediaUrl) return prev;
+      if (effectiveMotionOff) {
+        return { prevUrl: null, currUrl: mediaUrl, fading: false };
+      }
+      return { prevUrl: prev.currUrl, currUrl: mediaUrl, fading: true };
+    });
+    if (effectiveMotionOff) return;
+    const timer = window.setTimeout(() => {
+      setCrossfade((prev) => ({ ...prev, prevUrl: null, fading: false }));
+    }, 180);
+    return () => window.clearTimeout(timer);
+  }, [mediaUrl, effectiveMotionOff]);
+
+  // Initialize ImageAvatar instance
   useEffect(() => {
     const avatar = newImageAvatar({
       baseTexture: mediaUrl,
-      breathingEnabled: idleMotion === 'breathe',
-      blinkEnabled,
+      layerTextures,
+      breathingEnabled: !effectiveMotionOff && idleMotion === 'breathe',
+      blinkEnabled: !effectiveMotionOff && blinkEnabled && hasL1Layers,
     });
     avatarRef.current = avatar;
     return () => {
       avatar.release();
       avatarRef.current = null;
     };
-  }, []);
+  }, [layerTextures, hasL1Layers]);
 
-  // Sync expression texture changes (triggers single-shot 180ms crossfade, never loops)
   useEffect(() => {
     const avatar = avatarRef.current;
     if (!avatar) return;
-    avatar.setExpression(mediaUrl);
-    const cf = avatar.getCrossfadeState();
-    setRenderState((prev) => ({
-      ...prev,
-      prevTexture: cf.previousTexture,
-      currTexture: cf.currentTexture || mediaUrl,
-      crossfadeAlpha: cf.alpha,
-    }));
-  }, [mediaUrl]);
+    avatar.setBreathingEnabled(!effectiveMotionOff && idleMotion === 'breathe');
+    avatar.setBlinkEnabled(!effectiveMotionOff && blinkEnabled && hasL1Layers);
+    avatar.setTalking(!effectiveMotionOff && Boolean(isTalking) && hasL1Layers);
+  }, [idleMotion, blinkEnabled, isTalking, effectiveMotionOff, hasL1Layers]);
 
-  // Sync breathing / blink / lip-sync channels
-  useEffect(() => {
-    const avatar = avatarRef.current;
-    if (!avatar) return;
-    avatar.setBreathingEnabled(idleMotion === 'breathe');
-    avatar.setBlinkEnabled(blinkEnabled);
-    avatar.setTalking(Boolean(isTalking));
-  }, [idleMotion, blinkEnabled, isTalking]);
-
-  // Run layered avatar state machine loop with clamped dt (clamp(dt, 0, 0.05))
+  // Imperative RAF loop ONLY runs when L1 layers or breathing are active (`GPT-14`)
+  // Updates body breathing via imperative DOM transform (0 React re-renders per frame!)
+  // and only triggers React state when discrete L1 blink/mouth state changes.
   useEffect(() => {
     if (resolvedType === 'video') return;
+    const shouldAnimate =
+      !effectiveMotionOff && (hasL1Layers || idleMotion === 'breathe');
+    if (!shouldAnimate) {
+      if (bodyContainerRef.current) {
+        bodyContainerRef.current.style.transform = 'scaleY(1)';
+      }
+      return;
+    }
+
     let rafId = 0;
     let lastTime = performance.now();
 
     const step = (now: number) => {
-      const rawDt = (now - lastTime) / 1000;
+      if (typeof document !== 'undefined' && document.hidden) {
+        lastTime = now;
+        rafId = requestAnimationFrame(step);
+        return;
+      }
+
+      const dt = clampAvatarDelta((now - lastTime) / 1000);
       lastTime = now;
-      const dt = clampAvatarDelta(rawDt);
       const avatar = avatarRef.current;
+
       if (avatar && !avatar.isReleased()) {
         avatar.update(dt);
         const layers = avatar.getAllLayers();
-        const cf = avatar.getCrossfadeState();
-        const mouthFrame: 'neutral' | 'talk_a' | 'talk_b' = layers.mouth_talk_b.visible
-          ? 'talk_b'
-          : layers.mouth_talk_a.visible
-          ? 'talk_a'
-          : 'neutral';
 
-        setRenderState((prev) => {
-          const nextScaleY = Math.round(layers.body.scaleY * 10000) / 10000;
-          const nextHairRot = Math.round(layers.hair_front.rotationDeg * 100) / 100;
+        // Imperative DOM update for subtle body breathing (no React re-render)
+        if (bodyContainerRef.current) {
+          const sy = layers.body.scaleY;
+          bodyContainerRef.current.style.transform =
+            Math.abs(sy - 1) > 0.0002 ? `scale(1, ${sy.toFixed(4)})` : 'scale(1, 1)';
+        }
+
+        // Only update React state if L1 discrete blink/mouth frame actually changed
+        if (hasL1Layers) {
           const nextBlink = layers.eyes_closed.visible;
-          const nextAlpha = Math.round(cf.alpha * 100) / 100;
-          if (
-            prev.bodyScaleY === nextScaleY &&
-            prev.hairRotDeg === nextHairRot &&
-            prev.eyesClosed === nextBlink &&
-            prev.mouthFrame === mouthFrame &&
-            prev.crossfadeAlpha === nextAlpha &&
-            prev.currTexture === (cf.currentTexture || mediaUrl)
-          ) {
-            return prev;
-          }
-          return {
-            bodyScaleY: nextScaleY,
-            hairRotDeg: nextHairRot,
-            eyesClosed: nextBlink,
-            mouthFrame,
-            prevTexture: cf.previousTexture,
-            currTexture: cf.currentTexture || mediaUrl,
-            crossfadeAlpha: nextAlpha,
-          };
-        });
+          const nextMouth: 'neutral' | 'talk_a' | 'talk_b' = layers.mouth_talk_b.visible
+            ? 'talk_b'
+            : layers.mouth_talk_a.visible
+            ? 'talk_a'
+            : 'neutral';
+          setL1FacialState((prev) =>
+            prev.eyesClosed === nextBlink && prev.mouthFrame === nextMouth
+              ? prev
+              : { eyesClosed: nextBlink, mouthFrame: nextMouth }
+          );
+        }
       }
+
       rafId = requestAnimationFrame(step);
     };
 
     rafId = requestAnimationFrame(step);
     return () => cancelAnimationFrame(rafId);
-  }, [resolvedType, mediaUrl]);
+  }, [resolvedType, effectiveMotionOff, hasL1Layers, idleMotion]);
 
   // Video playback & downsampled chroma-key compositing
   useEffect(() => {
@@ -207,6 +257,7 @@ export const CharacterMediaRenderer: React.FC<CharacterMediaRendererProps> = ({
     if (!video) return;
 
     setVideoStatus('ready');
+    setChromaError(null);
     video.playbackRate = Math.max(0.25, Math.min(3, videoPlaybackRate || 1));
 
     const playPromise = video.play();
@@ -232,8 +283,11 @@ export const CharacterMediaRenderer: React.FC<CharacterMediaRendererProps> = ({
     const thresholdSq = 68 * 68;
 
     const renderFrame = () => {
+      if (typeof document !== 'undefined' && document.hidden) {
+        rafId = requestAnimationFrame(renderFrame);
+        return;
+      }
       if (video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
-        // Downsample chroma-key buffer to MAX_CHROMA_DIMENSION so main thread never stalls
         const aspect = video.videoWidth / video.videoHeight;
         const targetW =
           video.videoWidth > video.videoHeight
@@ -248,27 +302,27 @@ export const CharacterMediaRenderer: React.FC<CharacterMediaRendererProps> = ({
           canvas.width = Math.max(1, targetW);
           canvas.height = Math.max(1, targetH);
         }
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
         try {
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
           const frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
           const data = frame.data;
           for (let i = 0; i < data.length; i += 4) {
             const dr = data[i] - kr;
             const dg = data[i + 1] - kg;
             const db = data[i + 2] - kb;
-            const distSq = dr * dr + dg * dg + db * db;
-            if (distSq < thresholdSq) {
+            if (dr * dr + dg * dg + db * db <= thresholdSq) {
               data[i + 3] = 0;
-            } else if (distSq < thresholdSq * 1.6) {
-              const alphaRatio =
-                (distSq - thresholdSq) / (thresholdSq * 0.6);
-              data[i + 3] = Math.round(data[i + 3] * alphaRatio);
             }
           }
           ctx.putImageData(frame, 0, 0);
-        } catch {
-          // Cross-origin video without CORS falls back to standard video element
+        } catch (err: unknown) {
+          setChromaError(
+            err instanceof Error
+              ? `跨域或画布像素读取受限 (${err.message})`
+              : '视频色键读取受限'
+          );
+          return;
         }
       }
       rafId = requestAnimationFrame(renderFrame);
@@ -277,112 +331,127 @@ export const CharacterMediaRenderer: React.FC<CharacterMediaRendererProps> = ({
     rafId = requestAnimationFrame(renderFrame);
     return () => {
       cancelAnimationFrame(rafId);
+      video.pause();
     };
   }, [resolvedType, mediaUrl, videoPlaybackRate, chromaKeyColor]);
 
-  const useChromaCanvas =
-    resolvedType === 'video' &&
-    Boolean(chromaKeyColor && chromaKeyColor !== 'none' && parseHexRgb(chromaKeyColor));
-
   if (resolvedType === 'video') {
+    const useChromaCanvas = Boolean(
+      chromaKeyColor && chromaKeyColor !== 'none' && parseHexRgb(chromaKeyColor) && !chromaError
+    );
     return (
-      <div className="relative inline-flex items-end justify-center max-w-full max-h-full">
+      <div
+        className={`relative inline-flex items-end justify-center select-none ${className}`}
+        style={style}
+      >
         <video
           ref={videoRef}
           src={mediaUrl}
           loop={videoLoop}
           muted={videoMuted}
           playsInline
-          autoPlay
-          crossOrigin="anonymous"
           onError={() => setVideoStatus('error')}
-          className={`${className} ${useChromaCanvas ? 'hidden' : ''}`}
-          style={{
-            ...style,
-            transformOrigin: 'bottom center',
-          }}
+          className={
+            useChromaCanvas
+              ? 'hidden'
+              : 'w-full h-full object-contain pointer-events-none select-none'
+          }
         />
         {useChromaCanvas && (
           <canvas
             ref={canvasRef}
-            aria-label={alt}
-            className={className}
-            style={{
-              ...style,
-              transformOrigin: 'bottom center',
-            }}
+            className="w-full h-full object-contain pointer-events-none select-none"
           />
         )}
         {videoStatus !== 'ready' && (
           <button
             type="button"
-            onClick={() => {
+            onClick={(e) => {
+              e.stopPropagation();
               const v = videoRef.current;
               if (v) {
+                v.muted = true;
                 v.play()
                   .then(() => setVideoStatus('ready'))
                   .catch(() => setVideoStatus('error'));
               }
             }}
-            className="absolute bottom-3 px-2 py-1 rounded bg-zinc-900/90 border border-zinc-600 text-[11px] text-zinc-200 hover:bg-zinc-800"
+            className="absolute inset-x-2 bottom-4 px-2.5 py-1.5 rounded bg-zinc-900/90 border border-amber-500/50 text-[11px] text-amber-200 shadow pointer-events-auto"
           >
-            {videoStatus === 'blocked' ? '点击播放视频立绘' : '视频立绘加载失败'}
+            {videoStatus === 'blocked'
+              ? '自动播放受阻，点击恢复播放'
+              : '视频资源加载失败'}
           </button>
+        )}
+        {chromaError && (
+          <div className="absolute top-2 inset-x-2 px-2 py-1 rounded bg-amber-950/90 border border-amber-500/40 text-[10px] text-amber-200">
+            {chromaError}
+          </div>
         )}
       </div>
     );
   }
 
-  return (
-    <div
-      className="relative inline-flex items-end justify-center max-w-full max-h-full"
-      style={{
-        transformOrigin: 'bottom center',
-        transform:
-          renderState.bodyScaleY !== 1
-            ? `scaleY(${renderState.bodyScaleY})`
-            : undefined,
-      }}
-    >
-      {/* Previous expression sprite during single-shot 180ms crossfade */}
-      {renderState.prevTexture && renderState.crossfadeAlpha < 1 && (
-        <img
-          src={renderState.prevTexture}
-          alt={alt}
-          draggable={false}
-          className={`${className} absolute inset-0 pointer-events-none`}
-          style={{
-            ...style,
-            opacity: Math.max(0, 1 - renderState.crossfadeAlpha),
-            transformOrigin: 'bottom center',
-          }}
-        />
-      )}
-
-      {/* Primary body/expression sprite layer */}
-      <img
-        src={renderState.currTexture || mediaUrl}
-        alt={alt}
-        draggable={false}
-        className={className}
+  // L1 Layered Avatar Rendering when `layerTextures` are configured
+  if (hasL1Layers && layerTextures) {
+    const avatar = avatarRef.current;
+    const layers = avatar?.getAllLayers();
+    return (
+      <div
+        ref={bodyContainerRef}
+        className={`relative inline-flex items-end justify-center select-none ${className}`}
         style={{
           ...style,
-          opacity:
-            style?.opacity !== undefined
-              ? Number(style.opacity) * renderState.crossfadeAlpha
-              : renderState.crossfadeAlpha,
           transformOrigin: 'bottom center',
         }}
-      />
+        data-avatar-level="L1_LAYERED"
+        data-eyes-closed={l1FacialState.eyesClosed ? 'true' : 'false'}
+        data-mouth-frame={l1FacialState.mouthFrame}
+      >
+        {ALL_AVATAR_LAYER_IDS.map((layerId) => {
+          const layer = layers?.[layerId];
+          const tex = layer?.texture || layerTextures[layerId];
+          if (!tex || (layer && !layer.visible)) return null;
+          return (
+            <img
+              key={layerId}
+              src={tex}
+              alt={`${alt}-${layerId}`}
+              draggable={false}
+              style={{ zIndex: layer?.zOrder ?? 20 }}
+              className="w-full h-full object-contain pointer-events-none select-none absolute inset-0"
+            />
+          );
+        })}
+      </div>
+    );
+  }
 
-      {/* Lip-sync & blink state data attributes for engine inspection */}
-      <span
-        data-avatar-blink={renderState.eyesClosed ? 'closed' : 'open'}
-        data-avatar-mouth={renderState.mouthFrame}
-        className="sr-only"
+  // Default L0 Static Portrait (with optional subtle bottom-anchored body breathing when explicitly enabled)
+  return (
+    <div
+      ref={bodyContainerRef}
+      className={`relative inline-flex items-end justify-center select-none ${className}`}
+      style={{
+        ...style,
+        transformOrigin: 'bottom center',
+      }}
+      data-avatar-level="L0_STATIC"
+    >
+      {crossfade.prevUrl && crossfade.fading && (
+        <img
+          src={crossfade.prevUrl}
+          alt={alt}
+          draggable={false}
+          className="w-full h-full object-contain pointer-events-none select-none absolute inset-0 opacity-0 transition-opacity duration-180"
+        />
+      )}
+      <img
+        src={crossfade.currUrl}
+        alt={alt}
+        draggable={false}
+        className="w-full h-full object-contain pointer-events-none select-none transition-opacity duration-180"
       />
     </div>
   );
 };
-
-export default CharacterMediaRenderer;

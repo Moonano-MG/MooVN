@@ -1,4 +1,4 @@
-import { VNProject } from '../types';
+import type { VNProject } from '../types.ts';
 
 /**
  * MooVN Studio 默认空白起始项目 (内部测试模板已独立提取为本地 .mpvn 文件，不对外部内置分发)
@@ -56,7 +56,7 @@ export const DEFAULT_PROJECT: VNProject = {
       backgroundId: 'bg-classroom-day',
       showHeroCharacter: false,
       heroCharacterSpriteId: 'char-yukina-1',
-      subtitleText: 'POWERED BY MOOVN STUDIO',
+      subtitleText: '',
     },
   },
   chapters: [

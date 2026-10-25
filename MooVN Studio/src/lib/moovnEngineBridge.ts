@@ -1,10 +1,13 @@
 /**
- * MooVN Script IR Bridge (`moovnEngineBridge.ts`)
+ * MooVN Script API Formatter & IR Bridge (`moovnEngineBridge.ts`)
  *
- * Normalizes script API calls into canonical `EngineIRInstruction` records
- * and formats instructions using the unified `moovn.*` namespace (`moovn.save:create(NAME)`).
- * Legacy `moobn.sava` input is accepted one-way during parsing for backward compatibility
- * and is never generated.
+ * Parses and formats `moovn.*` API calls into syntactically valid target-language calls:
+ * - JavaScript / TypeScript: `moovn.save.create("Slot_01");`
+ * - C#:                      `Moovn.Save.Create("Slot_01");`
+ * - C++ / Rust:              `moovn::save::create("Slot_01");`
+ *
+ * Non-API lines (comments, imports, control flow, host declarations) are never silently
+ * dropped during conversion; they are preserved and reported in `TranslationReport`.
  */
 
 import type { SceneNode, VNProject } from '../types';
@@ -35,11 +38,37 @@ export interface EngineIRInstruction {
   rawLine: string;
 }
 
+export interface TranslationReport {
+  output: string;
+  code: string;
+  convertedCount: number;
+  preservedCount: number;
+  unrecognizedLines: Array<{ line: number; content: string }>;
+  warnings: string[];
+}
+
+function toPascalCase(snake: string): string {
+  return snake
+    .split(/[_-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join('');
+}
+
+function toCamelCase(snake: string): string {
+  const pascal = toPascalCase(snake);
+  return pascal ? pascal.charAt(0).toLowerCase() + pascal.slice(1) : '';
+}
+
+function toSnakeCase(ident: string): string {
+  return ident
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .replace(/[-\s]+/g, '_')
+    .toLowerCase();
+}
+
 /**
- * Parses a script API call line into a canonical `EngineIRInstruction`.
- * Canonical syntax:
- * - JS/TS/C#: `moovn.save:create("Slot_01")`
- * - C++/Rust: `moovn::save::create("Slot_01")`
+ * Parses a single `moovn.*` / `Moovn.*` / `moovn::*` API call line into a canonical `EngineIRInstruction`.
  */
 export function parsePolyglotFastApiLine(line: string): EngineIRInstruction | null {
   const clean = line.trim().replace(/;+$/, '').trim();
@@ -72,11 +101,10 @@ export function parsePolyglotFastApiLine(line: string): EngineIRInstruction | nu
   if (parts.length < 2) return null;
 
   const root = parts[0].toLowerCase();
-  // Accept legacy typo `moobn` only during parsing; never emit it
-  if (root !== 'moovn' && root !== 'moobn') return null;
+  if (root !== 'moovn') return null;
 
   let rawMod = parts.length >= 3 ? parts[1].toLowerCase() : 'core';
-  let rawAct = parts.length >= 3 ? parts[2].toLowerCase() : parts[1];
+  let rawAct = parts.length >= 3 ? toSnakeCase(parts[2]) : parts[1];
 
   if (parts.length === 2) {
     const legacyMap: Record<string, [string, string]> = {
@@ -89,6 +117,7 @@ export function parsePolyglotFastApiLine(line: string): EngineIRInstruction | nu
       moveChar: ['char', 'move'],
       addAffection: ['char', 'affection'],
       dialogue: ['text', 'say'],
+      say: ['text', 'say'],
       narration: ['text', 'narrate'],
       playBgm: ['audio', 'bgm_play'],
       stopBgm: ['audio', 'bgm_stop'],
@@ -103,12 +132,13 @@ export function parsePolyglotFastApiLine(line: string): EngineIRInstruction | nu
     };
     if (legacyMap[rawAct]) {
       [rawMod, rawAct] = legacyMap[rawAct];
+    } else {
+      rawAct = toSnakeCase(rawAct);
     }
   }
 
   const modAliases: Record<string, EngineIRInstruction['module']> = {
     save: 'save',
-    sava: 'save', // one-way legacy compatibility only
     saves: 'save',
     scene: 'scene',
     chapter: 'scene',
@@ -138,15 +168,27 @@ export function parsePolyglotFastApiLine(line: string): EngineIRInstruction | nu
     render: 'renderer',
   };
 
-  const normMod = modAliases[rawMod] || 'scene';
+  const normMod = modAliases[rawMod];
+  if (!normMod) return null;
   const normAct = rawAct.toLowerCase();
 
   const args: string[] = [];
   let cur = '';
   let inQ = false;
   let qChar = '"';
+  let escaped = false;
+
   for (let i = 0; i < argsRaw.length; i++) {
     const ch = argsRaw[i];
+    if (escaped) {
+      cur += ch;
+      escaped = false;
+      continue;
+    }
+    if (ch === '\\') {
+      escaped = true;
+      continue;
+    }
     if (!inQ && (ch === '"' || ch === "'")) {
       inQ = true;
       qChar = ch;
@@ -174,9 +216,10 @@ export function parsePolyglotFastApiLine(line: string): EngineIRInstruction | nu
 }
 
 /**
- * Formats an `EngineIRInstruction` into the canonical `moovn.*` API syntax:
- * - JS/TS/C#: `moovn.save:create("Slot_01");`
- * - C++/Rust: `moovn::save::create("Slot_01");`
+ * Formats an `EngineIRInstruction` into syntactically valid code for the target language:
+ * - JS/TS:   `moovn.save.create("Slot_01");`
+ * - C#:      `Moovn.Save.Create("Slot_01");`
+ * - C++/Rust:`moovn::save::create("Slot_01");`
  */
 export function formatIRInstructionForLanguage(
   inst: EngineIRInstruction,
@@ -191,31 +234,87 @@ export function formatIRInstructionForLanguage(
     })
     .join(', ');
 
-  if (target === 'javascript' || target === 'typescript' || target === 'csharp') {
-    return `moovn.${inst.module}:${inst.action}(${formattedArgs});`;
+  if (target === 'javascript' || target === 'typescript') {
+    const method = inst.action.includes('_') ? toCamelCase(inst.action) : inst.action;
+    return `moovn.${inst.module}.${method}(${formattedArgs});`;
   }
-  return `moovn::${inst.module}::${inst.action}(${formattedArgs});`;
+  if (target === 'csharp') {
+    return `Moovn.${toPascalCase(inst.module)}.${toPascalCase(inst.action)}(${formattedArgs});`;
+  }
+  return `moovn::${inst.module}::${toSnakeCase(inst.action)}(${formattedArgs});`;
 }
 
 /**
- * Normalizes a multi-line script into the target syntax (`moovn.*`).
+ * Converts `moovn.*` API calls in a multi-line script into the target language syntax
+ * WITHOUT silently dropping comments, imports, or unrecognized host statements.
  */
+export function translatePolyglotScriptWithReport(
+  source: string,
+  target: EnginePolyglotLanguage
+): TranslationReport {
+  const outLines: string[] = [];
+  const unrecognizedLines: Array<{ line: number; content: string }> = [];
+  const warnings: string[] = [];
+  let convertedCount = 0;
+  let preservedCount = 0;
+
+  const lines = source.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i];
+    const trimmed = raw.trim();
+    const indent = raw.match(/^\s*/)?.[0] ?? '';
+
+    if (!trimmed) {
+      outLines.push('');
+      continue;
+    }
+
+    if (
+      trimmed.startsWith('//') ||
+      trimmed.startsWith('#') ||
+      trimmed.startsWith('--') ||
+      trimmed.startsWith('/*') ||
+      trimmed.startsWith('*')
+    ) {
+      const commentBody = trimmed.replace(/^(\/\/|#|--)\s?/, '');
+      outLines.push(`${indent}// ${commentBody}`);
+      preservedCount++;
+      continue;
+    }
+
+    const parsed = parsePolyglotFastApiLine(trimmed);
+    if (parsed) {
+      outLines.push(`${indent}${formatIRInstructionForLanguage(parsed, target)}`);
+      convertedCount++;
+    } else {
+      // Never silently discard non-API lines; preserve and report them
+      outLines.push(raw);
+      preservedCount++;
+      unrecognizedLines.push({ line: i + 1, content: trimmed });
+      warnings.push(`第 ${i + 1} 行非 moovn.* 调用，已原样保留：${trimmed}`);
+    }
+  }
+
+  const joined = outLines.join('\n');
+  return {
+    output: joined,
+    code: joined,
+    convertedCount,
+    preservedCount,
+    unrecognizedLines,
+    warnings,
+  };
+}
+
 export function translatePolyglotScript(
   source: string,
   target: EnginePolyglotLanguage
 ): string {
-  const outLines: string[] = [];
-  for (const line of source.split('\n')) {
-    const parsed = parsePolyglotFastApiLine(line);
-    if (parsed) {
-      outLines.push(formatIRInstructionForLanguage(parsed, target));
-    }
-  }
-  return outLines.join('\n');
+  return translatePolyglotScriptWithReport(source, target).output;
 }
 
 /**
- * Generates clean node script code without promotional comments.
+ * Generates node script calls for the selected target language.
  */
 export function generateNodeEngineFastScript(
   node: SceneNode,
@@ -284,9 +383,6 @@ export function generateNodeEngineFastScript(
   return insts.map((i) => formatIRInstructionForLanguage(i, target)).join('\n');
 }
 
-/**
- * Generates a full project script in the selected language.
- */
 export function generateProjectEnginePolyglotScript(
   project: VNProject,
   target: EnginePolyglotLanguage
@@ -305,21 +401,42 @@ export function evalPolyglotScriptInEngine(
   lang: EnginePolyglotLanguage
 ): {
   instructions: EngineIRInstruction[];
+  unrecognizedLines: Array<{ line: number; content: string }>;
   logs: string[];
 } {
   const instructions: EngineIRInstruction[] = [];
+  const unrecognizedLines: Array<{ line: number; content: string }> = [];
+  const lines = source.split('\n');
   const logs: string[] = [
-    `[${lang}] 解析脚本 (${source.split('\n').length} 行)`,
+    `[静态 API 指令检查 (${lang})] 共扫描 ${lines.length} 行源码`,
   ];
-  for (const line of source.split('\n')) {
-    const parsed = parsePolyglotFastApiLine(line);
+
+  for (let idx = 0; idx < lines.length; idx++) {
+    const trimmed = lines[idx].trim();
+    if (
+      !trimmed ||
+      trimmed.startsWith('//') ||
+      trimmed.startsWith('#') ||
+      trimmed.startsWith('--') ||
+      trimmed.startsWith('/*') ||
+      trimmed.startsWith('*')
+    ) {
+      continue;
+    }
+    const parsed = parsePolyglotFastApiLine(trimmed);
     if (parsed) {
       instructions.push(parsed);
       logs.push(
-        `  -> ${parsed.module}:${parsed.action}(${parsed.args.join(', ')})`
+        `  [第 ${idx + 1} 行] 识别指令 -> ${parsed.module}.${parsed.action}(${parsed.args.join(', ')})`
       );
+    } else {
+      unrecognizedLines.push({ line: idx + 1, content: trimmed });
+      logs.push(`  [第 ${idx + 1} 行] 宿主语句 (非 moovn.* 调用): ${trimmed}`);
     }
   }
-  logs.push(`共解析 ${instructions.length} 条指令`);
-  return { instructions, logs };
+
+  logs.push(
+    `检查完成：共识别 ${instructions.length} 条 moovn.* 指令，${unrecognizedLines.length} 行宿主语句。`
+  );
+  return { instructions, unrecognizedLines, logs };
 }

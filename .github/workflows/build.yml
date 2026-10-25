@@ -55,8 +55,10 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Build MooVN Engine (Rust + FFI)
-        run: cargo build --release
+      - name: Build and Test MooVN Engine (Rust + FFI)
+        run: |
+          cargo build --release
+          cargo test
 
       - name: Compile C++20 Renderer Bridge
         run: g++ -std=c++20 -Wall -Wextra -Icpp/include -c cpp/src/moovn_renderer_bridge.cpp -o moovn_renderer_bridge.o
@@ -80,8 +82,13 @@ jobs:
         with:
           node-version: 22
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Install dependencies (Studio & Web)
+        run: |
+          cd "../MooVN Studio" && npm ci
+          cd "../MooVN Web" && npm ci
+
+      - name: Run Unit Test Suite
+        run: npm test
 
       - name: Build Web bundle (PC & Mobile)
         run: npm run build

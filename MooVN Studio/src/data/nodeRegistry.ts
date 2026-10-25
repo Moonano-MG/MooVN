@@ -1,4 +1,4 @@
-import { NodeCategory, NodeTypeMeta, WorkflowNodeType } from '../types';
+import type { NodeCategory, NodeTypeMeta, WorkflowNodeType } from '../types.ts';
 
 export const NODE_CATEGORIES: {
   id: NodeCategory;

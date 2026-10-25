@@ -225,17 +225,30 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
           <div className="flex-1 overflow-y-auto p-2 space-y-1">
             {showRootTree && (
               <div className="mb-2 pb-2 border-b border-[#27272c] space-y-0.5 text-[11px] font-mono text-zinc-400">
-                <div className="px-2 py-0.5 text-zinc-300">/</div>
-                <div className="pl-4 space-y-0.5">
-                  <div className="px-2 py-0.5">package.json</div>
-                  <div className="px-2 py-0.5">MOOVN_AI_SPEC.md</div>
+                <div className="px-2 py-0.5 text-zinc-300 font-semibold">
+                  工程文件索引 ({chapters.length} 章节 / {nodes.length} 节点)
+                </div>
+                <div className="pl-3 space-y-0.5">
+                  {chapters.map((ch) => (
+                    <div
+                      key={ch.id}
+                      onClick={() => {
+                        onSelectChapter(ch.id);
+                        onOpenYamlTab(ch.id);
+                      }}
+                      className="px-2 py-0.5 text-zinc-300 hover:bg-[#27272c] rounded cursor-pointer truncate"
+                      title="点击在脚本编辑器中查看章节 YAML"
+                    >
+                      scenes/{ch.yamlFileName || `${ch.id}.yaml`}
+                    </div>
+                  ))}
                   <div
                     onClick={onOpenTsTab}
-                    className="px-2 py-0.5 text-zinc-200 hover:bg-[#27272c] rounded cursor-pointer"
+                    className="px-2 py-0.5 text-sky-300 hover:bg-[#27272c] rounded cursor-pointer truncate"
+                    title="点击打开多语言脚本视图"
                   >
-                    src/runtime/storyEngine.ts
+                    scripts/scene_runtime.ts
                   </div>
-                  <div className="px-2 py-0.5">.github/workflows/build.yml</div>
                 </div>
               </div>
             )}

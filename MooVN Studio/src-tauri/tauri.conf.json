@@ -12,17 +12,18 @@
   "app": {
     "windows": [
       {
-        "title": "MooVN Studio — 视觉小说创作与多语言编译工作台",
-        "width": 1440,
-        "height": 900,
-        "minWidth": 1024,
-        "minHeight": 640,
+        "title": "MooVN Studio",
+        "width": 1280,
+        "height": 780,
+        "minWidth": 900,
+        "minHeight": 560,
+        "center": true,
         "resizable": true,
         "fullscreen": false
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; img-src 'self' data: blob:; media-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' https://api.openai.com https://api.deepseek.com https://api.anthropic.com https://generativelanguage.googleapis.com http://127.0.0.1:11434; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
     }
   },
   "bundle": {

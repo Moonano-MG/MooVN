@@ -3,10 +3,7 @@ export type ScriptLanguage =
   | 'javascript'
   | 'csharp'
   | 'cpp'
-  | 'rust'
-  | 'lua'
-  | 'teal'
-  | 'python';
+  | 'rust';
 
 export type NodeCategory =
   | 'control'
@@ -110,10 +107,27 @@ export type CharacterMediaType =
   | 'image'
   | 'static'
   | 'video'
-  | 'animated_image'
-  | 'live_motion';
+  | 'animated_image';
 
 export type CharacterIdleMotion = 'none' | 'breathe';
+
+export type AvatarLayerTextureMap = Partial<
+  Record<
+    | 'hair_back'
+    | 'body'
+    | 'eyes_open'
+    | 'eyes_closed'
+    | 'mouth_neutral'
+    | 'mouth_talk_a'
+    | 'mouth_talk_b'
+    | 'brow_neutral'
+    | 'brow_angry'
+    | 'brow_sad'
+    | 'blush'
+    | 'hair_front',
+    string
+  >
+>;
 
 export interface CharacterExpressionVariant {
   id: string;
@@ -135,6 +149,7 @@ export interface CharacterProfile {
   spriteId: string;
   mediaType?: CharacterMediaType;
   mediaUrl?: string;
+  layerTextures?: AvatarLayerTextureMap;
   videoLoop?: boolean;
   videoPlaybackRate?: number;
   chromaKeyColor?: string;
@@ -154,6 +169,7 @@ export interface CharacterPlacement {
   expressionLabel?: string;
   mediaType?: CharacterMediaType;
   mediaUrl?: string;
+  layerTextures?: AvatarLayerTextureMap;
   videoLoop?: boolean;
   videoPlaybackRate?: number;
   chromaKeyColor?: string;
@@ -164,7 +180,7 @@ export interface CharacterPlacement {
   opacity?: number; // 0-1
   flipX?: boolean;
   highlight?: boolean;
-  enterAnimation?: 'none' | 'fade' | 'slide-left' | 'slide-right' | 'bounce' | 'shake' | 'nod' | 'jump';
+  enterAnimation?: 'none' | 'fade' | 'slide-left' | 'slide-right' | 'shake' | 'nod';
   tweenDurationMs?: number;
 }
 
@@ -176,7 +192,7 @@ export interface DialogueLine {
   text: string;
   expressionSpriteId?: string;
   voiceAudioId?: string;
-  charAction?: 'none' | 'bounce' | 'shake' | 'nod' | 'slide-in';
+  charAction?: 'none' | 'shake' | 'nod' | 'slide-in';
 }
 
 export interface ChoiceOption {
@@ -664,6 +680,7 @@ export interface MooVNSystemSettings {
     autoPlayDelayMs: number;
     bgmVolume: number;
     sfxVolume: number;
+    motionLevel?: 'off' | 'subtle' | 'full';
   };
   performanceConfig: GamePerformanceConfig;
 }
