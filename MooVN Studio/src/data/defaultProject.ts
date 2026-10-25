@@ -1,7 +1,10 @@
 import type { VNProject } from '../types.ts';
 
 /**
- * MooVN Studio 默认空白起始项目 (内部测试模板已独立提取为本地 .mpvn 文件，不对外部内置分发)
+ * MooVN Studio 真正的默认空白起始项目 (`GPT-18 / CL-18`):
+ * - `characters: []` (0 预置角色)
+ * - `nodes.length === 1` (1 个空白起始节点，无预置 BGM/天气/立绘)
+ * - 无宣传副标题
  */
 export const DEFAULT_PROJECT: VNProject = {
   id: 'moovn-blank-project',
@@ -55,7 +58,7 @@ export const DEFAULT_PROJECT: VNProject = {
       titleColor: '#ffffff',
       backgroundId: 'bg-classroom-day',
       showHeroCharacter: false,
-      heroCharacterSpriteId: 'char-yukina-1',
+      heroCharacterSpriteId: '',
       subtitleText: '',
     },
   },
@@ -68,31 +71,10 @@ export const DEFAULT_PROJECT: VNProject = {
       yamlFileName: 'chapter_01.yaml',
       description: '新建章节（可在左侧章节面板新增章节或导入 .mpvn 项目文件）',
       isBaseRequired: true,
-      minCharacterAffection: {
-        protagonist: 0,
-      },
+      minCharacterAffection: {},
     },
   ],
-  characters: [
-    {
-      id: 'protagonist',
-      name: '默认角色',
-      titleRole: '主角',
-      color: '#38bdf8',
-      spriteId: 'char-yukina-1',
-      initialAffection: 0,
-      maxAffection: 100,
-      bio: '可在角色检查器中修改姓名、立绘差分与自定义属性，或导入 .mpvn 项目。',
-      customAttributes: [],
-      expressions: [
-        {
-          id: 'expr-default',
-          label: '默认',
-          spriteId: 'char-yukina-1',
-        },
-      ],
-    },
-  ],
+  characters: [],
   variables: [
     {
       key: 'chapterIndex',
@@ -109,7 +91,7 @@ export const DEFAULT_PROJECT: VNProject = {
       title: '初始场景 01',
       position: { x: 120, y: 140 },
       backgroundId: 'bg-classroom-day',
-      bgmId: 'bgm-spring-breeze',
+      bgmId: '',
       transition: 'fade',
       weatherEffect: 'none',
       colorFilter: 'none',
@@ -120,7 +102,109 @@ export const DEFAULT_PROJECT: VNProject = {
           speakerId: 'narrator',
           speakerName: '旁白',
           speakerColor: '#94a3b8',
-          text: '欢迎使用 MooVN Studio。请在此编辑你的章节与场景节点，或点击顶部「工程 / 导入 .mpvn」载入已有项目。',
+          text: '请在此输入第一句台词，或在右侧检查器中添加登场角色与背景。',
+        },
+      ],
+      choices: [],
+      visualBlocks: [],
+      childrenNodes: [],
+      nextNodeId: null,
+    },
+  ],
+};
+
+export const BLANK_PROJECT: VNProject = DEFAULT_PROJECT;
+
+/**
+ * 独立于空白工程之外的入门示例项目 (`SAMPLE_PROJECT`, `GPT-18 / CL-18`)，
+ * 仅在启动器点击「打开入门示例工程」时按需创建，绝不混入默认空白项目。
+ */
+export const SAMPLE_PROJECT: VNProject = {
+  ...JSON.parse(JSON.stringify(DEFAULT_PROJECT)),
+  id: 'moovn-sample-project',
+  title: '入门示例工程：放学后的教室',
+  isTemplatePreset: true,
+  characters: [
+    {
+      id: 'char-sample-1',
+      name: '示例角色',
+      titleRole: '主角',
+      color: '#38bdf8',
+      spriteId: 'char-yukina-1',
+      initialAffection: 50,
+      maxAffection: 100,
+      bio: '用于演示角色立绘差分与好感度分支的示例角色。',
+      customAttributes: [],
+      expressions: [
+        { id: 'expr-default', label: '微笑', spriteId: 'char-yukina-1' },
+        { id: 'expr-shy', label: '害羞', spriteId: 'char-yukina-2' },
+      ],
+    },
+  ],
+  nodes: [
+    {
+      id: 'scene-start-01',
+      chapterId: 'chapter-1',
+      type: 'dialogue',
+      title: '序幕：夕阳教室',
+      position: { x: 120, y: 140 },
+      backgroundId: 'bg-classroom-day',
+      bgmId: 'bgm-spring-breeze',
+      transition: 'fade',
+      weatherEffect: 'none',
+      colorFilter: 'none',
+      characters: [
+        {
+          id: 'place-sample-1',
+          characterId: 'char-sample-1',
+          name: '示例角色',
+          spriteId: 'char-yukina-1',
+          expressionLabel: '微笑',
+          x: 50,
+          y: 88,
+          scale: 1,
+          enterAnimation: 'fade',
+        },
+      ],
+      dialogues: [
+        {
+          id: 'line-sample-1',
+          speakerId: 'char-sample-1',
+          speakerName: '示例角色',
+          speakerColor: '#38bdf8',
+          text: '这是一个入门示例工程，演示如何布置场景立绘、对白与分支选项。',
+        },
+      ],
+      choices: [
+        {
+          id: 'choice-sample-1',
+          text: '继续前进',
+          targetNodeId: 'scene-start-02',
+        },
+      ],
+      visualBlocks: [],
+      childrenNodes: [],
+      nextNodeId: 'scene-start-02',
+    },
+    {
+      id: 'scene-start-02',
+      chapterId: 'chapter-1',
+      type: 'ending',
+      title: '尾声：放学铃声',
+      position: { x: 460, y: 140 },
+      backgroundId: 'bg-classroom-sunset',
+      bgmId: 'bgm-spring-breeze',
+      transition: 'fade',
+      weatherEffect: 'none',
+      colorFilter: 'sunset',
+      characters: [],
+      dialogues: [
+        {
+          id: 'line-sample-2',
+          speakerId: 'narrator',
+          speakerName: '旁白',
+          speakerColor: '#94a3b8',
+          text: '演示章节到此结束。',
         },
       ],
       choices: [],

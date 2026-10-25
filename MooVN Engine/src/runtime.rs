@@ -104,6 +104,13 @@ impl MooVNEngineRuntime {
         }
     }
 
+    /// Creates a `MooVNEngineRuntime` whose `SaveManager` persists slots atomically to `dir` (`GPT-60`).
+    pub fn with_save_dir(dir: impl Into<std::path::PathBuf>) -> Result<Self, String> {
+        let mut rt = Self::new();
+        rt.saves = SaveManager::with_storage_dir(dir)?;
+        Ok(rt)
+    }
+
     /// Evaluates a boolean condition expression against current variables and character affection.
     /// Supports `&&`, `||`, `>=`, `<=`, `==`, `!=`, `>`, `<`.
     pub fn eval_condition(&self, expr: &str) -> bool {

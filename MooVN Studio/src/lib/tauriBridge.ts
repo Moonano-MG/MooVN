@@ -126,3 +126,26 @@ export async function exportSceneYamlViaTauri(
     yamlContent,
   });
 }
+
+export async function writeWorkspaceFileViaTauri(
+  subDir: 'Projects' | 'Exports' | 'Cache' | 'Assets',
+  fileName: string,
+  content: string
+): Promise<TauriOperationResult<string>> {
+  return invokeTauriCommand<string>('write_workspace_file', {
+    subDir,
+    fileName,
+    content,
+  });
+}
+
+export async function readWorkspaceFileViaTauri(
+  subDir: 'Projects' | 'Exports' | 'Cache' | 'Assets',
+  fileName: string
+): Promise<TauriOperationResult<string>> {
+  return invokeTauriCommand<string>('read_workspace_file', {
+    subDir,
+    fileName,
+  });
+}
+

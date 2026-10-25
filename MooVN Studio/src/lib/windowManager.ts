@@ -39,8 +39,26 @@ export interface PersistedLayoutState {
   floatingWindows: ManagedFloatingWindow[];
 }
 
+import { Z_INDEX_TOKENS } from './featureFlags.ts';
+
 export const LAYOUT_STORAGE_KEY = 'moovn_layout_state_v2';
-export const BASE_FLOATING_Z_INDEX = 40;
+export const BASE_FLOATING_Z_INDEX = Z_INDEX_TOKENS.floatingBase;
+export const MAX_FLOATING_Z_INDEX = Z_INDEX_TOKENS.floatingMax;
+
+export type ResponsiveLayoutBreakpoint = 'three-column' | 'two-column' | 'single-column';
+
+/**
+ * Resolves the responsive workspace layout mode (`GPT-26 / CL-26`, Section 8):
+ * - `>= 1100px`: `'three-column'` (Left Outline | Center Canvas/Stage/Script | Right Inspector)
+ * - `768px .. 1099px`: `'two-column'` (Left Outline auto-collapses into drawer; Center + Right visible)
+ * - `< 768px`: `'single-column'` (Single active pane + bottom tab bar)
+ */
+export function getResponsiveLayoutMode(viewportWidth: number): ResponsiveLayoutBreakpoint {
+  const vw = Number.isFinite(viewportWidth) ? viewportWidth : 1280;
+  if (vw >= 1100) return 'three-column';
+  if (vw >= 768) return 'two-column';
+  return 'single-column';
+}
 
 /**
  * Clamps a floating window rectangle so its title bar and borders remain strictly
@@ -114,7 +132,7 @@ export function normalizeWindowZIndices<T extends ManagedFloatingWindow>(
 
   const zMap = new Map<string, number>();
   sorted.forEach((w, idx) => {
-    zMap.set(w.id, BASE_FLOATING_Z_INDEX + idx);
+    zMap.set(w.id, Math.min(MAX_FLOATING_Z_INDEX, BASE_FLOATING_Z_INDEX + idx));
   });
 
   return windows.map((w) => ({

@@ -20,6 +20,7 @@ import {
 import {
   IS_WEB_EDITION,
   createBlankVNProject,
+  createSampleVNProject,
   deleteSavedProject,
   exportSettingsFileJson,
   getPlatformDefaultPaths,
@@ -391,13 +392,23 @@ export const ProjectLauncher: React.FC<ProjectLauncherProps> = ({
                   </div>
                 </div>
 
-                <button
-                  onClick={handleCreateProject}
-                  className="w-full py-2.5 rounded-lg bg-zinc-200 hover:bg-white text-zinc-950 font-semibold text-xs flex items-center justify-center gap-1.5"
-                >
-                  <Plus className="w-3.5 h-3.5" strokeWidth={1.8} />
-                  {t('launcher.createBtn')}
-                </button>
+                <div className="flex flex-col gap-2">
+                  <button
+                    onClick={handleCreateProject}
+                    className="w-full py-2.5 rounded-lg bg-zinc-200 hover:bg-white text-zinc-950 font-semibold text-xs flex items-center justify-center gap-1.5"
+                  >
+                    <Plus className="w-3.5 h-3.5" strokeWidth={1.8} />
+                    {t('launcher.createBtn')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onOpenProject(createSampleVNProject())}
+                    className="w-full py-2 rounded-lg bg-[#222229] hover:bg-[#2b2b34] border border-[#32323d] text-zinc-200 font-medium text-xs flex items-center justify-center gap-1.5"
+                  >
+                    <Play className="w-3 h-3 text-sky-400" strokeWidth={1.8} />
+                    <span>打开入门示例工程</span>
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -410,13 +421,22 @@ export const ProjectLauncher: React.FC<ProjectLauncherProps> = ({
               <div className="text-xs text-zinc-400">
                 当前工作目录：<span className="font-mono text-zinc-200">{settings.projectsDirectoryPath}</span>
               </div>
-              <button
-                onClick={() => setTab('create')}
-                className="px-3 py-1.5 rounded bg-zinc-200 hover:bg-white text-zinc-950 text-xs font-medium flex items-center gap-1.5"
-              >
-                <Plus className="w-3.5 h-3.5" strokeWidth={1.8} />
-                新建空白项目
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => onOpenProject(createSampleVNProject())}
+                  className="px-3 py-1.5 rounded bg-[#222229] hover:bg-[#2b2b34] border border-[#32323d] text-zinc-200 text-xs font-medium flex items-center gap-1.5"
+                >
+                  <Play className="w-3.5 h-3.5 text-sky-400" strokeWidth={1.8} />
+                  打开入门示例工程
+                </button>
+                <button
+                  onClick={() => setTab('create')}
+                  className="px-3 py-1.5 rounded bg-zinc-200 hover:bg-white text-zinc-950 text-xs font-medium flex items-center gap-1.5"
+                >
+                  <Plus className="w-3.5 h-3.5" strokeWidth={1.8} />
+                  新建空白项目
+                </button>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 gap-2.5">

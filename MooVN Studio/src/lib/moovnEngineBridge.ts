@@ -10,7 +10,8 @@
  * dropped during conversion; they are preserved and reported in `TranslationReport`.
  */
 
-import type { SceneNode, VNProject } from '../types';
+import type { SceneNode, VNProject } from '../types.ts';
+import { evalScriptViaTauriEngine, isTauriEnvironment } from './tauriBridge.ts';
 
 export type EnginePolyglotLanguage =
   | 'javascript'
@@ -440,3 +441,44 @@ export function evalPolyglotScriptInEngine(
   );
   return { instructions, unrecognizedLines, logs };
 }
+
+/**
+ * Evaluates a script in the native Tauri Rust engine (`invoke('eval_engine_script')`)
+ * when running in Desktop mode (`GPT-07 / CL-07`), and falls back to explicit static
+ * API inspection (`[Web 静态检查]`) when running in browser Web mode.
+ */
+export async function evalPolyglotScriptInEngineAsync(
+  source: string,
+  lang: EnginePolyglotLanguage
+): Promise<{
+  mode: 'tauri_native' | 'web_static';
+  instructions: EngineIRInstruction[];
+  unrecognizedLines: Array<{ line: number; content: string }>;
+  logs: string[];
+}> {
+  const staticRes = evalPolyglotScriptInEngine(source, lang);
+  if (isTauriEnvironment()) {
+    const tauriRes = await evalScriptViaTauriEngine(source, lang);
+    if (tauriRes.ok && Array.isArray(tauriRes.data)) {
+      return {
+        mode: 'tauri_native',
+        instructions: staticRes.instructions,
+        unrecognizedLines: staticRes.unrecognizedLines,
+        logs: [
+          `[Tauri 原生引擎执行 (${lang})] 已执行 ${tauriRes.data.length} 条指令`,
+          ...tauriRes.data,
+        ],
+      };
+    }
+  }
+  return {
+    mode: 'web_static',
+    instructions: staticRes.instructions,
+    unrecognizedLines: staticRes.unrecognizedLines,
+    logs: [
+      `[静态检查 (${lang})] Web 模式执行静态 API 校验（共识别 ${staticRes.instructions.length} 条 moovn.* 指令）`,
+      ...staticRes.logs.slice(1),
+    ],
+  };
+}
+

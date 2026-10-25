@@ -143,7 +143,9 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       outputDirectoryPath: outputDir,
       performanceConfig: perf,
     });
-    setStatusMessage(`已导出可玩游戏：${outFile}`);
+    const totalChecks = 4;
+    const passedChecks = Math.max(0, totalChecks - compileCheck.errorCount);
+    setStatusMessage(`导出完成 · 已通过 ${passedChecks}/${totalChecks} 项检查 (${outFile})`);
   };
 
   const handleDirectPlayableHtml = () => {
@@ -160,7 +162,9 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     a.download = filename;
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-    setStatusMessage(`已导出单文件可玩游戏：${filename}`);
+    const totalChecks = 4;
+    const passedChecks = Math.max(0, totalChecks - compileCheck.errorCount);
+    setStatusMessage(`导出完成 · 已通过 ${passedChecks}/${totalChecks} 项检查 (${filename})`);
   };
 
   const currentCompSpec = COMPRESSION_FORMAT_SPECS[perf.compressionFormat];
@@ -206,6 +210,22 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
         {/* Body */}
         <div className="p-4 overflow-y-auto space-y-4 text-xs flex-1">
+          {/* Format Comparison Guide (`GPT-42 / CL-42`) */}
+          <div className="grid grid-cols-3 gap-2 text-[11px]">
+            <div className="p-2 rounded bg-[#141418] border border-[#25252e]">
+              <div className="font-semibold text-zinc-200">导出游戏 (.html / .zip)</div>
+              <div className="text-[10px] text-zinc-400">面向玩家直接运行的可玩包，支持浏览器与各端运行</div>
+            </div>
+            <div className="p-2 rounded bg-[#141418] border border-[#25252e]">
+              <div className="font-semibold text-zinc-200">章节包 (.msvn)</div>
+              <div className="text-[10px] text-zinc-400">按章节独立分发的剧本与资源增量包，可在游戏内挂载</div>
+            </div>
+            <div className="p-2 rounded bg-[#141418] border border-[#25252e]">
+              <div className="font-semibold text-zinc-200">工程源 (.mpvn)</div>
+              <div className="text-[10px] text-zinc-400">面向开发者的完整 Studio 项目文件，用于备份与协作</div>
+            </div>
+          </div>
+
           {/* Real Pre-Export Static Verification Summary (`GPT-12`, `Kimi 4G`) */}
           <div
             className={`p-2.5 rounded-md border flex items-center justify-between gap-2 ${

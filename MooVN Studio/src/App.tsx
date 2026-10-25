@@ -54,8 +54,15 @@ import { clampSplitRatio } from './lib/vnRuntimeCore';
 import {
   clampAllFloatingWindows,
   clampFloatingRect,
+  getResponsiveLayoutMode,
   normalizeWindowZIndices,
+  type ResponsiveLayoutBreakpoint,
 } from './lib/windowManager';
+import {
+  getFeatureFlags,
+  setFeatureFlag,
+  Z_INDEX_TOKENS,
+} from './lib/featureFlags';
 import type { WorkflowNodeType } from './types';
 
 const PANEL_TITLES: Record<PanelId, string> = {
@@ -397,6 +404,7 @@ export function App({
     addVisualBlock,
     updateVisualBlock,
     removeVisualBlock,
+    storageWarning,
   } = useEditor();
 
   // Dark / Light 2 UI Themes (`开发方案 2: 界面风格有黑和白2种风格`)
@@ -422,16 +430,22 @@ export function App({
     return 'portal';
   });
 
-  // 严格仅针对真实手机窄屏开启移动端工作台（绝不影响任何桌面电脑、触屏笔记本或桌面小窗口）
+  // 响应式三档断点 (`>=1100` 三栏 / `768~1099` 双栏 / `<768` 单栏, `GPT-26 / CL-26`, Section 8)
   const checkIsPhone = () => {
     if (typeof window === 'undefined') return false;
-    const ua = navigator.userAgent || '';
-    const isPhoneUA = /Android.*Mobile|iPhone|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
-    return window.innerWidth < 640 || (isPhoneUA && window.innerWidth < 768);
+    return getResponsiveLayoutMode(window.innerWidth) === 'single-column';
   };
 
   const { tPanel } = useUILanguage();
   const [isMobile, setIsMobile] = useState<boolean>(checkIsPhone);
+  const [responsiveBreakpoint, setResponsiveBreakpoint] = useState<ResponsiveLayoutBreakpoint>(() =>
+    typeof window !== 'undefined' ? getResponsiveLayoutMode(window.innerWidth) : 'three-column'
+  );
+  const [featureFlags, setFeatureFlagsState] = useState(() => getFeatureFlags());
+  const [isWindowOverviewOpen, setIsWindowOverviewOpen] = useState(false);
+  const lastSavedSnapshotRef = useRef<string>(JSON.stringify(project));
+  const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
+  const isDirty = JSON.stringify(project) !== lastSavedSnapshotRef.current;
   const [mobileActivePanel, setMobileActivePanel] = useState<PanelId>('canvas');
   const [mobilePinStage, setMobilePinStage] = useState<boolean>(false);
 
@@ -514,10 +528,40 @@ export function App({
   useEffect(() => {
     const onResize = () => {
       setIsMobile(checkIsPhone());
+      setResponsiveBreakpoint(getResponsiveLayoutMode(window.innerWidth));
     };
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, []);
+
+  // Warn before closing tab/window when project has unsaved changes (`GPT-31 / CL-31`)
+  useEffect(() => {
+    if (!isDirty) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [isDirty]);
+
+  // Global keyboard shortcuts: Ctrl+Shift+W for Window Overview (`GPT-25`, Section 8), Ctrl+S to save
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'w') {
+        e.preventDefault();
+        setIsWindowOverviewOpen((v) => !v);
+      } else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        saveProjectToWorkspace(project).then(() => {
+          lastSavedSnapshotRef.current = JSON.stringify(project);
+          setLastSavedAt(new Date().toLocaleTimeString().slice(0, 8));
+        });
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [project]);
 
   const updateProjectMeta = (patch: Partial<typeof project>) => {
     setProject((prev) => ({ ...prev, ...patch }));
@@ -1439,7 +1483,7 @@ export function App({
                       };
                     }
                   }}
-                  title="点击切换标签 · 拖拽可调整标签顺序 · 向外拖拽(>24px)脱离为悬浮窗并自由停靠到任意位置"
+                  title="切换 / 拖拽重排"
                   className={`group flex items-center gap-1.5 px-2.5 py-1 rounded-t text-[11px] cursor-grab active:cursor-grabbing transition shrink-0 ${
                     isActive
                       ? 'bg-[#141417] text-zinc-100 font-medium border-t-2 border-t-sky-400 border-x border-x-[#2b2b33]'
@@ -2085,7 +2129,158 @@ export function App({
       )}
 
       {/* Bottom Status Bar (Desktop) */}
-      {!isMobile && <StatusBar project={project} selectedNode={selectedNode} />}
+      {!isMobile && (
+        <StatusBar
+          project={project}
+          selectedNode={selectedNode}
+          isDirty={isDirty}
+          lastSavedAt={lastSavedAt}
+          storageWarning={storageWarning}
+          onOpenWindowOverview={() => setIsWindowOverviewOpen(true)}
+        />
+      )}
+
+      {/* Window Overview Modal (`Ctrl+Shift+W`, `GPT-25`, Section 8) */}
+      {isWindowOverviewOpen && (
+        <div
+          style={{ zIndex: Z_INDEX_TOKENS.modal }}
+          className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setIsWindowOverviewOpen(false)}
+        >
+          <div
+            className="w-full max-w-xl rounded-xl bg-[#16161b] border border-[#2c2c36] shadow-2xl overflow-hidden text-xs text-zinc-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-4 py-3 bg-[#1d1d24] border-b border-[#2c2c36] flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="font-semibold text-sm text-white">
+                  窗口总览 (Window Overview)
+                </span>
+                <span className="px-1.5 py-0.5 rounded bg-[#272732] text-zinc-400 font-mono text-[10px]">
+                  Ctrl+Shift+W
+                </span>
+                <span className="px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-300 font-mono text-[10px]">
+                  {responsiveBreakpoint === 'three-column'
+                    ? '>=1100 三栏模式'
+                    : responsiveBreakpoint === 'two-column'
+                    ? '768~1099 双栏模式'
+                    : '<768 单栏模式'}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsFocusMode(false);
+                    setSplitRoot(createDefaultSplitTree());
+                    setFloatingWindows([]);
+                  }}
+                  className="px-2.5 py-1 rounded bg-sky-500 hover:bg-sky-400 text-zinc-950 font-semibold"
+                >
+                  重置全部为默认三栏
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsWindowOverviewOpen(false)}
+                  className="icon-btn"
+                  title="关闭"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            <div className="px-4 py-2.5 bg-[#191920] border-b border-[#272730] flex items-center justify-between">
+              <div>
+                <div className="font-medium text-zinc-200">
+                  实验功能：自由悬浮窗 (Experimental Floating Windows)
+                </div>
+                <div className="text-[11px] text-zinc-400">
+                  默认推荐单树分屏布局；开启后可将面板拖出为独立悬浮窗
+                </div>
+              </div>
+              <input
+                type="checkbox"
+                checked={featureFlags.floatingWindowsExperimental}
+                onChange={(e) => {
+                  const next = setFeatureFlag(
+                    'floatingWindowsExperimental',
+                    e.target.checked
+                  );
+                  setFeatureFlagsState(next);
+                  if (!e.target.checked && floatingWindows.length > 0) {
+                    setFloatingWindows([]);
+                    setSplitRoot(createDefaultSplitTree());
+                  }
+                }}
+                className="w-4 h-4 accent-sky-400 cursor-pointer"
+              />
+            </div>
+
+            <div className="max-h-[380px] overflow-y-auto divide-y divide-[#23232c]">
+              {panelDescriptors.map((p) => {
+                const fw = floatingWindows.find((w) => w.id === p.id);
+                return (
+                  <div
+                    key={p.id}
+                    className="px-4 py-2.5 flex items-center justify-between gap-3 hover:bg-[#1c1c24]"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="font-medium text-zinc-100 truncate">
+                        {p.title}
+                      </div>
+                      <div className="text-[11px] text-zinc-500 font-mono">
+                        {p.floating && fw
+                          ? `浮动中 · (${fw.x}, ${fw.y}) ${fw.width}×${fw.height} · z=${fw.zIndex}`
+                          : p.docked
+                          ? '已停靠于分屏树'
+                          : '已关闭'}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleOpenOrFocusWindow(p.id, 'dock');
+                          setIsWindowOverviewOpen(false);
+                        }}
+                        className="px-2 py-1 rounded bg-[#252530] hover:bg-[#30303e] text-zinc-200"
+                      >
+                        聚焦 / 停靠
+                      </button>
+                      {p.floating && (
+                        <button
+                          type="button"
+                          onClick={() => handleToggleDockFloat(p.id)}
+                          className="px-2 py-1 rounded bg-sky-500/20 text-sky-300 border border-sky-500/40"
+                        >
+                          归位分屏
+                        </button>
+                      )}
+                      {(p.docked || p.floating) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFloatingWindows((prev) =>
+                              prev.filter((w) => w.id !== p.id)
+                            );
+                            setSplitRoot((prev) =>
+                              removePanelFromSplitTree(prev, p.id)
+                            );
+                          }}
+                          className="px-2 py-1 rounded bg-rose-500/15 text-rose-300 hover:bg-rose-500/25"
+                        >
+                          关闭
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modals */}
       {isPlayingPreview && (

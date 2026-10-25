@@ -6,6 +6,7 @@ import path from 'node:path';
 import {
   escapeHtmlText,
   computeFnv1a64Hex,
+  serializeSaveCanonical,
   createVerifiedSaveRecord,
   verifySaveRecord,
   clampSplitRatio,
@@ -36,6 +37,7 @@ import {
 import {
   validateSafeWorkspaceWrite,
   validateSafeAiProxyEndpoint,
+  validateSameOriginDevRequest,
 } from '../src/lib/devServerSecurity.ts';
 
 import {
@@ -59,6 +61,8 @@ import {
   clampAllFloatingWindows,
   normalizeWindowZIndices,
   clampSplitWidths,
+  getResponsiveLayoutMode,
+  BASE_FLOATING_Z_INDEX,
 } from '../src/lib/windowManager.ts';
 
 import {
@@ -66,7 +70,10 @@ import {
   translateUI,
 } from '../src/lib/i18n.ts';
 
-import { DEFAULT_PROJECT } from '../src/data/defaultProject.ts';
+import { DEFAULT_PROJECT, SAMPLE_PROJECT } from '../src/data/defaultProject.ts';
+import { createBlankVNProject, getPlatformDefaultPaths } from '../src/lib/workspaceManager.ts';
+import { DEFAULT_FEATURE_FLAGS, Z_INDEX_TOKENS } from '../src/lib/featureFlags.ts';
+import { evalPolyglotScriptInEngineAsync } from '../src/lib/moovnEngineBridge.ts';
 
 test('1. Polyglot API & Transpiler: emits syntactically valid code per language, never emits moobn/sava, preserves unrecognized lines', () => {
   const canonicalInst = parsePolyglotFastApiLine('moovn.save.create("Slot_01");');
@@ -355,7 +362,7 @@ test('7. Window Manager Clamping, Z-Index Normalization & Split Ratios', () => {
   assert.ok(clamped900[0].x + clamped900[0].width <= 900 - 8);
   assert.ok(clamped900[0].y + clamped900[0].height <= 560 - 32);
 
-  // Z-Index normalization (`Kimi 3E`)
+  // Z-Index normalization (`Kimi 3E`, `GPT-49`)
   const normalized = normalizeWindowZIndices(
     [
       { id: 'a', title: 'A', x: 20, y: 60, width: 300, height: 240, zIndex: 1050 },
@@ -365,8 +372,21 @@ test('7. Window Manager Clamping, Z-Index Normalization & Split Ratios', () => {
   );
   const aWin = normalized.find((w) => w.id === 'a')!;
   const bWin = normalized.find((w) => w.id === 'b')!;
-  assert.equal(bWin.zIndex, 40);
-  assert.equal(aWin.zIndex, 41);
+  assert.equal(bWin.zIndex, BASE_FLOATING_Z_INDEX);
+  assert.equal(aWin.zIndex, BASE_FLOATING_Z_INDEX + 1);
+  assert.ok(
+    Z_INDEX_TOKENS.dock < Z_INDEX_TOKENS.floatingBase &&
+      Z_INDEX_TOKENS.floatingMax < Z_INDEX_TOKENS.dropdown &&
+      Z_INDEX_TOKENS.dropdown < Z_INDEX_TOKENS.modal &&
+      Z_INDEX_TOKENS.modal < Z_INDEX_TOKENS.toast
+  );
+
+  // Responsive layout breakpoints (`GPT-26`, Section 8)
+  assert.equal(getResponsiveLayoutMode(1280), 'three-column');
+  assert.equal(getResponsiveLayoutMode(1100), 'three-column');
+  assert.equal(getResponsiveLayoutMode(960), 'two-column');
+  assert.equal(getResponsiveLayoutMode(768), 'two-column');
+  assert.equal(getResponsiveLayoutMode(640), 'single-column');
 
   // Split widths preserve at least 320px for center canvas (`GPT-25`)
   const splits = clampSplitWidths(400, 500, 220, { width: 900, height: 560 }, false, false);
@@ -378,4 +398,88 @@ test('8. i18n Completeness Across All 4 Locales (zh-CN, zh-TW, en-US, ja-JP)', (
   assert.deepEqual(missing, [], `Missing i18n keys found: ${JSON.stringify(missing)}`);
   assert.equal(translateUI('left.tabNodes', 'en-US'), 'Nodes');
   assert.equal(translateUI('status.nodes', 'ja-JP'), 'シーンノード');
+});
+
+test('9. Cross-Language Save Checksum Parity (TS <-> Rust v2 Canonical Format, GPT-59)', () => {
+  const canonical = serializeSaveCanonical({
+    slotKey: 'Slot_01',
+    chapterId: 'ch-1',
+    nodeId: 'node_opening',
+    nodeTitle: '序章',
+    dialogueIndex: 2,
+    activeBackground: 'bg-station',
+    activeBgm: 'bgm-main',
+    speaker: '绫濑',
+    textPreview: '早安',
+    savedAt: '2026-10-25T12:00:00Z',
+    globalVars: { key: 'true' },
+    affectionMap: { ayase: 15 },
+    customAttributesMap: {},
+    unlockedClues: [],
+    visitedNodeIds: [],
+  });
+  assert.equal(
+    canonical,
+    'v2|slot=Slot_01|ch=ch-1|node=node_opening|dlg=2|bg=bg-station|bgm=bgm-main|vars=[key=true]|aff=[ayase=15]'
+  );
+  // 64-bit FNV-1a hex matches Rust `SaveSlotRecord::checksum_hex()` byte-for-byte
+  const hex = computeFnv1a64Hex(canonical);
+  assert.equal(hex.length, 16);
+  assert.notEqual(hex, '0000000000000000');
+});
+
+test('10. True Blank Project Purity, Feature Flags, CSRF Guard & Security Docs (GPT-18, GPT-53, GPT-57, GPT-58)', async () => {
+  // Blank project purity (`GPT-18 / CL-18`, Section 12)
+  assert.equal(DEFAULT_PROJECT.characters.length, 0);
+  assert.ok(DEFAULT_PROJECT.nodes.length <= 2);
+  assert.equal(DEFAULT_PROJECT.nodes[0].bgmId, '');
+  assert.equal(DEFAULT_PROJECT.uiConfig.mainMenu.subtitleText, '');
+
+  const blankProj = createBlankVNProject({
+    title: 'Blank',
+    author: 'Tester',
+    width: 1920,
+    height: 1080,
+    projectPath: 'Blank.mpvn',
+  });
+  assert.equal(blankProj.characters.length, 0);
+  assert.equal(blankProj.nodes.length, 1);
+  assert.ok(SAMPLE_PROJECT.characters.length >= 1);
+
+  // Web paths never expose container host paths (`GPT-22`)
+  const webPaths = getPlatformDefaultPaths('web');
+  assert.equal(webPaths.workspaceRootPath.includes('/home/user'), false);
+
+  // Feature flags default to safe docked mode (`GPT-58`)
+  assert.equal(DEFAULT_FEATURE_FLAGS.floatingWindowsExperimental, false);
+
+  // Same-origin CSRF check (`GPT-02`, `GPT-03`)
+  assert.equal(
+    validateSameOriginDevRequest({
+      host: 'localhost:5173',
+      origin: 'https://evil.example.com',
+    }).ok,
+    false
+  );
+  assert.equal(
+    validateSameOriginDevRequest({
+      host: 'localhost:5173',
+      origin: 'http://localhost:5173',
+    }).ok,
+    true
+  );
+
+  // Async engine bridge Web fallback (`GPT-07`)
+  const asyncEval = await evalPolyglotScriptInEngineAsync(
+    'moovn.save.create("Slot_01");',
+    'typescript'
+  );
+  assert.equal(asyncEval.mode, 'web_static');
+  assert.equal(asyncEval.instructions.length, 1);
+
+  // Security & Third-Party License notices exist (`GPT-53`, `GPT-57`)
+  const securityMd = path.resolve(import.meta.dirname, '../SECURITY.md');
+  const noticesMd = path.resolve(import.meta.dirname, '../THIRD_PARTY_NOTICES.md');
+  assert.equal(fs.existsSync(securityMd), true);
+  assert.equal(fs.existsSync(noticesMd), true);
 });

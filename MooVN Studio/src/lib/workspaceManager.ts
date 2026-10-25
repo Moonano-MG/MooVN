@@ -3,8 +3,13 @@ import type {
   SavedProjectMeta,
   VNProject,
 } from '../types.ts';
-import { DEFAULT_PROJECT } from '../data/defaultProject.ts';
+import { DEFAULT_PROJECT, SAMPLE_PROJECT } from '../data/defaultProject.ts';
 import { DEFAULT_PERFORMANCE_CONFIG } from './assetCompressionEngine.ts';
+import {
+  isTauriEnvironment,
+  saveProjectToTauriDetailed,
+  writeWorkspaceFileViaTauri,
+} from './tauriBridge.ts';
 
 const SETTINGS_STORAGE_KEY = 'moovn_studio_settings_v3';
 const PROJECTS_STORAGE_KEY = 'moovn_studio_projects_v3';
@@ -47,6 +52,15 @@ export function getPlatformDefaultPaths(platform: MooVNSystemSettings['platform'
   cacheDirectoryPath: string;
   settingsFilePath: string;
 } {
+  if (IS_WEB_EDITION || platform === 'web') {
+    return {
+      workspaceRootPath: 'browser://MooVN_Workspace',
+      projectsDirectoryPath: 'browser://MooVN_Workspace/Projects',
+      exportOutputDirectoryPath: 'browser://MooVN_Workspace/Exports',
+      cacheDirectoryPath: 'browser://MooVN_Workspace/Cache',
+      settingsFilePath: 'browser://MooVN_Workspace/settings.moovn.json',
+    };
+  }
   switch (platform) {
     case 'windows':
       return {
@@ -77,21 +91,13 @@ export function getPlatformDefaultPaths(platform: MooVNSystemSettings['platform'
         settingsFilePath: 'On My iPhone/MooVN/settings.moovn.json',
       };
     case 'macos':
+    default:
       return {
         workspaceRootPath: '~/Documents/MooVN',
         projectsDirectoryPath: '~/Documents/MooVN/Projects',
         exportOutputDirectoryPath: '~/Documents/MooVN/Exports',
         cacheDirectoryPath: '~/Documents/MooVN/Cache',
         settingsFilePath: '~/Documents/MooVN/settings.moovn.json',
-      };
-    case 'web':
-    default:
-      return {
-        workspaceRootPath: '/home/user/MooVN/MooVN_Workspace',
-        projectsDirectoryPath: '/home/user/MooVN/MooVN_Workspace/Projects',
-        exportOutputDirectoryPath: '/home/user/MooVN/MooVN_Workspace/Exports',
-        cacheDirectoryPath: '/home/user/MooVN/MooVN_Workspace/Cache',
-        settingsFilePath: '/home/user/MooVN/MooVN_Workspace/settings.moovn.json',
       };
   }
 }
@@ -102,6 +108,19 @@ export async function syncWriteToRealWorkspaceDisk(
   content: string,
   customDir?: string
 ): Promise<string | null> {
+  // Prefer native Tauri IPC in desktop builds so production binaries never depend on Vite dev middleware (`GPT-21 / CL-21`)
+  if (isTauriEnvironment()) {
+    const mappedSubDir: 'Projects' | 'Exports' | 'Cache' | 'Assets' =
+      subFolder === 'Exports'
+        ? 'Exports'
+        : subFolder === 'Cache'
+        ? 'Cache'
+        : 'Projects';
+    const tauriRes = await writeWorkspaceFileViaTauri(mappedSubDir, fileName, content);
+    if (tauriRes.ok && tauriRes.data) {
+      return tauriRes.data;
+    }
+  }
   try {
     const resp = await fetch('/api/moovn-fs/write', {
       method: 'POST',
@@ -320,7 +339,7 @@ export async function writeFileToMountedMooVNFolder(
 }
 
 /**
- * 创建全新空白视觉小说项目
+ * 创建全新纯净空白视觉小说项目 (`GPT-18 / CL-18`: 0 角色、1 章节、1 空节点、无预置 BGM/天气)
  */
 export function createBlankVNProject(params: {
   title: string;
@@ -330,7 +349,7 @@ export function createBlankVNProject(params: {
   projectPath: string;
 }): VNProject {
   const id = `proj-${Date.now()}`;
-  const startNodeId = 'node-ch1-start';
+  const startNodeId = 'scene-start-01';
   return {
     id,
     title: params.title || '未命名视觉小说工程',
@@ -343,66 +362,42 @@ export function createBlankVNProject(params: {
     startNodeId,
     performanceConfig: { ...DEFAULT_PERFORMANCE_CONFIG },
     uiConfig: JSON.parse(JSON.stringify(DEFAULT_PROJECT.uiConfig)),
-    characters: [
-      {
-        id: 'heroine-1',
-        name: '星野 雪奈',
-        titleRole: '女主角',
-        color: '#38bdf8',
-        spriteId: 'char-yukina-1',
-        initialAffection: 50,
-        maxAffection: 100,
-        bio: '登场角色设定',
-        customAttributes: [],
-      },
-    ],
+    characters: [],
     variables: [
-      { key: 'day_count', label: '当前天数', type: 'number', value: 1 },
+      { key: 'chapterIndex', label: '当前章节序号', type: 'number', value: 1 },
     ],
     chapters: [
       {
-        id: 'ch-1',
+        id: 'chapter-1',
         index: 1,
-        title: '第一章：序幕',
+        title: '第一章：序章',
         subtitle: 'Chapter 01',
         yamlFileName: 'chapter_01.yaml',
-        description: '故事开篇章节（必装基础包）',
+        description: '新建章节',
         isBaseRequired: true,
-        minCharacterAffection: { 'heroine-1': 50 },
+        minCharacterAffection: {},
       },
     ],
     nodes: [
       {
         id: startNodeId,
         type: 'dialogue',
-        title: '开场对白',
-        chapterId: 'ch-1',
+        title: '初始场景 01',
+        chapterId: 'chapter-1',
         position: { x: 140, y: 160 },
-        backgroundId: 'bg-sheet1-r1-c1',
-        bgmId: 'bgm-morning-breeze',
+        backgroundId: 'bg-classroom-day',
+        bgmId: '',
         transition: 'fade',
-        weatherEffect: 'sakura',
+        weatherEffect: 'none',
         colorFilter: 'none',
-        characters: [
-          {
-            id: 'place-init-1',
-            characterId: 'heroine-1',
-            name: '星野 雪奈',
-            spriteId: 'char-yukina-1',
-            expressionLabel: '温柔微笑',
-            x: 50,
-            y: 55,
-            scale: 1,
-            enterAnimation: 'fade',
-          },
-        ],
+        characters: [],
         dialogues: [
           {
             id: 'dlg-init-1',
-            speakerId: 'heroine-1',
-            speakerName: '星野 雪奈',
-            speakerColor: '#38bdf8',
-            text: '欢迎来到全新的视觉小说工程！你可以在左侧添加节点、布置舞台立绘或导出多平台游戏。',
+            speakerId: 'narrator',
+            speakerName: '旁白',
+            speakerColor: '#94a3b8',
+            text: '请在此输入第一句台词，或在右侧检查器中添加登场角色与背景。',
           },
         ],
         choices: [],
@@ -411,6 +406,19 @@ export function createBlankVNProject(params: {
       },
     ],
   };
+}
+
+/**
+ * 创建独立于空白工程之外的入门示例项目 (`SAMPLE_PROJECT`, `GPT-18 / CL-18`)
+ */
+export function createSampleVNProject(projectPath?: string): VNProject {
+  const cloned = JSON.parse(JSON.stringify(SAMPLE_PROJECT)) as VNProject;
+  cloned.id = `sample-${Date.now()}`;
+  cloned.projectPath =
+    projectPath ||
+    `${loadSystemSettings().projectsDirectoryPath}/Sample_Classroom.mpvn`;
+  cloned.performanceConfig = { ...DEFAULT_PERFORMANCE_CONFIG };
+  return cloned;
 }
 
 /**
@@ -508,6 +516,11 @@ export async function saveProjectToWorkspace(
     exportedAt: new Date().toISOString(),
     project: updatedProject,
   };
+
+  // 若运行在 Tauri 桌面端，同步调用原子级 save_project_json (`GPT-01`, `GPT-21`)
+  if (isTauriEnvironment()) {
+    await saveProjectToTauriDetailed(updatedProject);
+  }
 
   // 同步写入磁盘 MooVN_Workspace/Projects/ 目录及已挂载设备本地文件夹 (.mpvn 格式)
   await writeFileToMountedMooVNFolder(

@@ -4,8 +4,10 @@
  * Unifies:
  * 1. HTML Escaping (`escapeHtmlText`) to eliminate XSS in exported HTML packages.
  * 2. 64-bit FNV-1a Checksum (`computeFnv1a64Hex`) matching `MooVN Engine/src/save.rs`.
- * 3. Save Slot integrity creation & verification (`createVerifiedSaveRecord`, `verifySaveRecord`).
- * 4. Split-pane ratio clamping (`clampSplitRatio`) to guarantee minimum pane dimensions.
+ * 3. Cross-language canonical save payload (`serializeSaveCanonical`) matching
+ *    `SaveSlotRecord::compute_canonical_payload` in `MooVN Engine/src/save.rs` byte-for-byte (`GPT-59`).
+ * 4. Save Slot integrity creation & verification (`createVerifiedSaveRecord`, `verifySaveRecord`).
+ * 5. Split-pane ratio clamping (`clampSplitRatio`) to guarantee minimum pane dimensions.
  */
 
 export function escapeHtmlText(raw: unknown): string {
@@ -39,9 +41,12 @@ export function computeFnv1a64Hex(payload: string): string {
 export interface VerifiedSaveRecord {
   schemaVersion?: number;
   slotKey: string;
+  chapterId?: string;
   nodeId: string;
   nodeTitle: string;
   dialogueIndex: number;
+  activeBackground?: string;
+  activeBgm?: string;
   speaker: string;
   textPreview: string;
   savedAt: string;
@@ -53,18 +58,56 @@ export interface VerifiedSaveRecord {
   checksumFnv64: string;
 }
 
+function bytewiseCompare(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/**
+ * Serializes a save record into the exact cross-language canonical v2 format shared with
+ * `SaveSlotRecord::compute_canonical_payload` in `MooVN Engine/src/save.rs` (`GPT-59`):
+ *
+ * `v2|slot={slotKey}|ch={chapterId}|node={nodeId}|dlg={dialogueIndex}|bg={activeBackground}|bgm={activeBgm}|vars=[{k}={v},...]|aff=[{k}={v},...]`
+ *
+ * Custom attributes and unlocked clues (if present) are folded into `vars` with deterministic
+ * `__attr.{charId}.{key}` and `__clue.{idx}` keys so tampering with any field invalidates the hash.
+ */
 export function serializeSaveCanonical(
   record: Omit<VerifiedSaveRecord, 'checksumFnv64'>
 ): string {
-  return JSON.stringify({
-    slotKey: record.slotKey,
-    nodeId: record.nodeId,
-    dialogueIndex: record.dialogueIndex,
-    affectionMap: record.affectionMap,
-    customAttributesMap: record.customAttributesMap,
-    globalVars: record.globalVars,
-    unlockedClues: record.unlockedClues,
-  });
+  const mergedVars: Record<string, string> = {};
+  if (record.globalVars && typeof record.globalVars === 'object') {
+    for (const [k, v] of Object.entries(record.globalVars)) {
+      mergedVars[k] = String(v);
+    }
+  }
+  if (record.customAttributesMap && typeof record.customAttributesMap === 'object') {
+    for (const charId of Object.keys(record.customAttributesMap).sort(bytewiseCompare)) {
+      const attrs = record.customAttributesMap[charId];
+      if (attrs && typeof attrs === 'object') {
+        for (const attrKey of Object.keys(attrs).sort(bytewiseCompare)) {
+          mergedVars[`__attr.${charId}.${attrKey}`] = String(attrs[attrKey]);
+        }
+      }
+    }
+  }
+  if (Array.isArray(record.unlockedClues) && record.unlockedClues.length > 0) {
+    record.unlockedClues.forEach((clue, idx) => {
+      mergedVars[`__clue.${idx}`] = String(clue);
+    });
+  }
+
+  const varsSerialized = Object.keys(mergedVars)
+    .sort(bytewiseCompare)
+    .map((k) => `${k}=${mergedVars[k]}`)
+    .join(',');
+
+  const affMap = record.affectionMap || {};
+  const affSerialized = Object.keys(affMap)
+    .sort(bytewiseCompare)
+    .map((k) => `${k}=${Math.trunc(Number(affMap[k]) || 0)}`)
+    .join(',');
+
+  return `v2|slot=${record.slotKey}|ch=${record.chapterId ?? ''}|node=${record.nodeId}|dlg=${record.dialogueIndex}|bg=${record.activeBackground ?? ''}|bgm=${record.activeBgm ?? ''}|vars=[${varsSerialized}]|aff=[${affSerialized}]`;
 }
 
 export function createVerifiedSaveRecord(
@@ -80,7 +123,7 @@ export function createVerifiedSaveRecord(
 }
 
 /**
- * Strictly verifies a save record's 64-bit FNV-1a checksum (`GPT-09`).
+ * Strictly verifies a save record's 64-bit FNV-1a checksum (`GPT-09`, `GPT-59`).
  * Missing or empty `checksumFnv64` is rejected (`false`).
  * Legacy unverified saves must be checked separately via `isLegacyUnverifiedSave`.
  */
