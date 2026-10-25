@@ -597,33 +597,8 @@ export interface AiModelCard {
   providerType: AiCardProviderType;
   endpointUrl: string;
   modelName: string;
-  /**
-   * 支持填入多个 API Key 轮流调用同一个模型（Round-Robin 负载均衡与故障自动切换）
-   */
-  apiKeys: string[];
-  activeKeyCursor: number;
   totalCalls: number;
   enabled: boolean;
-  // 本地模型专属字段
-  hubSource?: ModelHubSource;
-  hubRepoId?: string;
-  localFileName?: string;
-  fileSizeMb?: number;
-  quantization?: string;
-  downloaded?: boolean;
-  downloadProgress?: number;
-}
-
-export interface ModelHubItem {
-  id: string;
-  repoId: string;
-  name: string;
-  source: 'modelscope_cn' | 'modelscope_intl' | 'huggingface';
-  sizeMb: number;
-  quantization: string;
-  tags: string[];
-  description: string;
-  downloadUrl: string;
 }
 
 export interface AiProviderConfig {

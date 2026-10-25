@@ -21,7 +21,7 @@ import {
 } from '../lib/nodeCodeCompiler';
 import {
   EnginePolyglotLanguage,
-  evalPolyglotScriptInEngine,
+  evalPolyglotScriptInEngineAsync,
   generateNodeEngineFastScript,
   generateProjectEnginePolyglotScript,
   translatePolyglotScriptWithReport,
@@ -591,7 +591,7 @@ export const ScriptView: React.FC<ScriptViewProps> = ({
       setCompileReport(report);
     }
     if (extMeta.engineLang !== 'yaml' && extMeta.engineLang !== 'json') {
-      const res = await evalPolyglotScriptInEngine(
+      const res = await evalPolyglotScriptInEngineAsync(
         activeFile.content,
         extMeta.engineLang
       );
@@ -600,6 +600,21 @@ export const ScriptView: React.FC<ScriptViewProps> = ({
       );
       setTimeout(() => setStatusNotice(null), 3000);
     }
+  };
+
+  const handleExperimentalConvertScript = () => {
+    if (!activeFile || extMeta.engineLang === 'yaml' || extMeta.engineLang === 'json') {
+      return;
+    }
+    const report = translatePolyglotScriptWithReport(
+      activeFile.content,
+      extMeta.engineLang
+    );
+    handleCodeChange(report.code);
+    setStatusNotice(
+      `转换脚本（实验）：已转换 ${report.convertedCount} 条指令，保留 ${report.unrecognizedLines.length} 行宿主语句`
+    );
+    setTimeout(() => setStatusNotice(null), 3200);
   };
 
   const handleDownloadFile = () => {
@@ -756,11 +771,22 @@ export const ScriptView: React.FC<ScriptViewProps> = ({
             </span>
           )}
 
+          {extMeta.engineLang !== 'yaml' && extMeta.engineLang !== 'json' && (
+            <button
+              type="button"
+              onClick={handleExperimentalConvertScript}
+              className="px-2 py-1 rounded bg-[#1d1d24] hover:bg-[#272730] text-amber-300 text-[11px] flex items-center gap-1 border border-amber-500/30"
+              title="实验转换脚本：仅转换 moovn.* 指令，非 API 宿主语句将以注释保留"
+            >
+              <span>转换脚本（实验）</span>
+            </button>
+          )}
+
           <button
             type="button"
             onClick={handleRunScript}
             className="px-2 py-1 rounded bg-[#222229] hover:bg-[#2c2c35] text-zinc-200 text-[11px] flex items-center gap-1 border border-[#2f2f38]"
-            title="运行并校验当前脚本文件"
+            title="运行并校验当前脚本文件（桌面版调用 Tauri 引擎，Web 版执行静态检查）"
           >
             <Play className="w-3 h-3 text-emerald-400" strokeWidth={1.8} />
             <span>运行</span>

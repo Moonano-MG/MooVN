@@ -6,6 +6,7 @@ import path from 'node:path';
 import {
   validateSafeWorkspaceWrite,
   validateSafeAiProxyEndpoint,
+  validateSameOriginDevRequest,
 } from '../MooVN Studio/src/lib/devServerSecurity';
 
 const WORKSPACE_ROOT = path.resolve(process.cwd(), 'MooVN_Workspace');
@@ -59,11 +60,7 @@ function ensureWorkspaceDirs() {
 }
 
 function isSameOriginOrLocalRequest(req: any): boolean {
-  const secFetchSite = req.headers?.['sec-fetch-site'];
-  if (secFetchSite && secFetchSite !== 'same-origin' && secFetchSite !== 'none') {
-    return false;
-  }
-  return true;
+  return validateSameOriginDevRequest(req?.headers).ok;
 }
 
 export default defineConfig({

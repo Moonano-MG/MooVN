@@ -287,8 +287,40 @@ fn eval_engine_script(source_code: String, lang: String) -> Result<Vec<String>, 
     let mut guard = ENGINE_RUNTIME
         .lock()
         .map_err(|_| "ERR_ENGINE_LOCK_POISONED".to_string())?;
-    let rt = guard.get_or_insert_with(MooVNEngineRuntime::new);
+    if guard.is_none() {
+        let save_dir = ensure_workspace_root()
+            .map(|r| r.join("Cache").join("Saves"))
+            .unwrap_or_else(|_| std::env::temp_dir().join("MooVN_Saves"));
+        let rt = MooVNEngineRuntime::with_save_dir(save_dir).unwrap_or_else(|_| MooVNEngineRuntime::new());
+        *guard = Some(rt);
+    }
+    let rt = guard.as_mut().expect("initialized");
     Ok(rt.eval_polyglot_script(&source_code, SourceLanguage::from_tag(&lang)))
+}
+
+#[tauri::command]
+fn write_workspace_file(
+    sub_dir: String,
+    file_name: String,
+    content: String,
+) -> Result<String, String> {
+    let target = resolve_safe_workspace_file(
+        &sub_dir,
+        &file_name,
+        &["mpvn", "msvn", "json", "yaml", "yml", "ts", "js", "cs", "cpp", "rs", "html", "txt", "png"],
+    )?;
+    atomic_write_file(&target, content.as_bytes())?;
+    Ok(target.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+fn read_workspace_file(sub_dir: String, file_name: String) -> Result<String, String> {
+    let target = resolve_safe_workspace_file(
+        &sub_dir,
+        &file_name,
+        &["mpvn", "msvn", "json", "yaml", "yml", "ts", "js", "cs", "cpp", "rs", "html", "txt"],
+    )?;
+    fs::read_to_string(&target).map_err(|e| format!("ERR_WORKSPACE_READ: {}", e))
 }
 
 #[tauri::command]
@@ -313,6 +345,8 @@ pub fn run() {
             load_project_json,
             translate_polyglot_script,
             eval_engine_script,
+            write_workspace_file,
+            read_workspace_file,
             export_scene_yaml,
             import_scene_yaml
         ])
