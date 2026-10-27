@@ -7,6 +7,7 @@ import type { VNProject } from '../types.ts';
  * - 无宣传副标题
  */
 export const DEFAULT_PROJECT: VNProject = {
+  schemaVersion: '1.1.0',
   id: 'moovn-blank-project',
   title: '未命名视觉小说项目',
   author: 'MooVN Studio Developer',

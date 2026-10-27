@@ -24,6 +24,7 @@ import {
   BACKGROUND_ASSETS,
 } from '../data/assets';
 import { CharacterMediaRenderer, isVideoMediaSource } from './CharacterMediaRenderer';
+import { characterPlacementStyle, draggedPlacement, placementGrabOffset, pointerPercent } from '../lib/characterPlacement';
 
 interface SceneStageViewProps {
   node: SceneNode;
@@ -37,6 +38,7 @@ interface SceneStageViewProps {
   onAddCharacter: (charId: string) => void;
   onUpdateCharacter: (placementId: string, patch: Partial<CharacterPlacement>) => void;
   onRemoveCharacter: (placementId: string) => void;
+  motionLevel?: 'off' | 'subtle' | 'full';
   compactMobile?: boolean;
 }
 
@@ -52,12 +54,22 @@ export const SceneStageView: React.FC<SceneStageViewProps> = ({
   onAddCharacter,
   onUpdateCharacter,
   onRemoveCharacter,
+  motionLevel = 'subtle',
   compactMobile = false,
 }) => {
   const stageRef = useRef<HTMLDivElement>(null);
   const mediaInputRef = useRef<HTMLInputElement>(null);
   const [draggingCharId, setDraggingCharId] = useState<string | null>(null);
   const [draggingScreenText, setDraggingScreenText] = useState(false);
+  const characterGrabOffset = useRef({ x: 0, y: 0 });
+
+  const beginCharacterDrag = (placement: CharacterPlacement, clientX: number, clientY: number) => {
+    const rect = stageRef.current?.getBoundingClientRect();
+    if (!rect || rect.width <= 0 || rect.height <= 0) return;
+    characterGrabOffset.current = placementGrabOffset(placement, pointerPercent(clientX, clientY, rect));
+    onSelectCharacterPlacement(placement.id);
+    setDraggingCharId(placement.id);
+  };
 
   const bg = getBackgroundById(node.backgroundId);
   const currentDialogue = node.dialogues[selectedDialogueIndex] || node.dialogues[0];
@@ -66,12 +78,12 @@ export const SceneStageView: React.FC<SceneStageViewProps> = ({
     if (!stageRef.current) return;
     const rect = stageRef.current.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return;
-    const x = Math.min(95, Math.max(5, Math.round(((clientX - rect.left) / rect.width) * 100)));
-    const y = Math.min(92, Math.max(8, Math.round(((clientY - rect.top) / rect.height) * 100)));
-
+    const point = pointerPercent(clientX, clientY, rect);
     if (draggingCharId) {
-      onUpdateCharacter(draggingCharId, { x, y });
+      onUpdateCharacter(draggingCharId, draggedPlacement(point, characterGrabOffset.current));
     } else if (draggingScreenText && node.screenTextConfig) {
+      const x = Math.min(95, Math.max(5, Math.round(point.x)));
+      const y = Math.min(92, Math.max(8, Math.round(point.y)));
       onUpdateNode((prev) => ({
         ...prev,
         screenTextConfig: {
@@ -372,9 +384,9 @@ export const SceneStageView: React.FC<SceneStageViewProps> = ({
       <div className="sm:flex-1 flex flex-col items-center justify-center p-2.5 sm:p-4 overflow-hidden shrink-0">
         <div
           ref={stageRef}
+          data-scene-viewport="editor"
           onMouseMove={handleStageMouseMove}
           onMouseUp={handleStageMouseUp}
-          onMouseLeave={handleStageMouseUp}
           onTouchMove={handleStageTouchMove}
           onTouchEnd={handleStageMouseUp}
           onClick={() => onSelectCharacterPlacement(null)}
@@ -420,37 +432,19 @@ export const SceneStageView: React.FC<SceneStageViewProps> = ({
             return (
               <div
                 key={pl.id}
+                data-character-placement={pl.id}
                 onMouseDown={(e) => {
+                  if (e.button !== 0) return;
                   e.stopPropagation();
-                  onSelectCharacterPlacement(pl.id);
-                  setDraggingCharId(pl.id);
+                  beginCharacterDrag(pl, e.clientX, e.clientY);
                 }}
                 onTouchStart={(e) => {
                   e.stopPropagation();
-                  onSelectCharacterPlacement(pl.id);
-                  setDraggingCharId(pl.id);
+                  const touch = e.touches[0];
+                  if (touch) beginCharacterDrag(pl, touch.clientX, touch.clientY);
                 }}
                 onClick={(e) => e.stopPropagation()}
-                style={{
-                  left: `${pl.x}%`,
-                  ...(pl.y > 70
-                    ? {
-                        bottom: `${Math.max(0, 100 - pl.y)}%`,
-                        transformOrigin: 'bottom center',
-                        transform: `translate(-50%, 0) scale(${pl.scale}) ${
-                          pl.flipX ? 'scaleX(-1)' : ''
-                        }`,
-                      }
-                    : {
-                        top: `${pl.y}%`,
-                        transformOrigin: 'center center',
-                        transform: `translate(-50%, -50%) scale(${pl.scale}) ${
-                          pl.flipX ? 'scaleX(-1)' : ''
-                        }`,
-                      }),
-                  height: '78%',
-                  opacity: pl.opacity ?? 1,
-                }}
+                style={characterPlacementStyle(pl)}
                 className={`absolute cursor-move ${
                   isSelected ? 'z-20 ring-2 ring-sky-400 rounded' : 'z-10'
                 }`}
@@ -468,8 +462,9 @@ export const SceneStageView: React.FC<SceneStageViewProps> = ({
                   videoPlaybackRate={pl.videoPlaybackRate ?? charProfile?.videoPlaybackRate ?? 1}
                   chromaKeyColor={chromaKeyColor}
                   idleMotion={idleMotion === 'breathe' ? 'breathe' : 'none'}
+                  motionLevel={motionLevel}
                   isTalking={isSpeaking}
-                  className="h-full w-auto object-contain pointer-events-none select-none drop-shadow-[0_14px_28px_rgba(0,0,0,0.68)]"
+                  className="w-full h-auto pointer-events-none select-none drop-shadow-[0_14px_28px_rgba(0,0,0,0.68)]"
                 />
               </div>
             );

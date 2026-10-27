@@ -165,6 +165,7 @@ const performance = z.object({
   decompressTarget: z.enum(['memory', 'cache_file']).optional(), workerCpuBudgetPercent: num.optional(), modularMsvnEnabled: z.boolean().optional(),
 }).strict();
 const projectSchema = z.object({
+  schemaVersion: z.enum(['1.0', '1.0.0', '1.1', '1.1.0']).optional(),
   id, title: smallText, author: smallText, version: smallText, projectPath: smallText.optional(), isTemplatePreset: z.boolean().optional(),
   resolution: z.object({ width: num.positive().max(16384), height: num.positive().max(16384) }).strict(),
   defaultLanguage: scriptLanguage, startNodeId: id,

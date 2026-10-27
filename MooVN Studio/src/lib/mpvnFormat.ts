@@ -3,11 +3,57 @@ import { validateVNProjectShape } from './projectSchema.ts';
 
 export const MAX_MPVN_PROJECT_BYTES = 16 * 1024 * 1024; // 16 MiB limit
 export const MAX_MPVN_NODES_COUNT = 5000;
+export const CURRENT_PROJECT_SCHEMA_VERSION = '1.1.0' as const;
+
+type CoordinateVersion = '1.0.0' | '1.1.0';
+
+function normalizeSchemaVersion(version: unknown): CoordinateVersion | undefined {
+  if (version === undefined) return undefined;
+  if (version === '1.0' || version === '1.0.0') return '1.0.0';
+  if (version === '1.1' || version === '1.1.0') return '1.1.0';
+  throw new Error(`ERR_SCHEMA_VERSION: 不支持的工程版本 ${String(version)}`);
+}
+
+/**
+ * A 1.0 placement at y <= 70 used the center of a 78%-high portrait;
+ * lower placements already used the bottom. The specified migration is an
+ * approximation for that historic 78% convention, not a per-asset repair.
+ * Never mutate the source; snapshots and exported packages both retain a 1.1
+ * marker so reopening or saving them cannot apply the offset a second time.
+ */
+export function upgradeProjectCoordinates(project: VNProject, envelopeVersion?: unknown): {
+  project: VNProject;
+  migrated: boolean;
+  migratedPlacements: number;
+} {
+  const inside = normalizeSchemaVersion(project.schemaVersion);
+  const outside = normalizeSchemaVersion(envelopeVersion);
+  if (inside && outside && inside !== outside) {
+    throw new Error('ERR_SCHEMA_VERSION: 工程内容与文件封套版本不一致');
+  }
+  const legacy = (inside || outside || '1.0.0') === '1.0.0';
+  let migratedPlacements = 0;
+  const nodes = legacy ? project.nodes.map((node) => ({
+    ...node,
+    characters: node.characters.map((placement) => {
+      if (placement.y > 70) return placement;
+      migratedPlacements += 1;
+      return { ...placement, y: Math.min(100, placement.y + 39) };
+    }),
+  })) : project.nodes;
+  return {
+    project: project.schemaVersion === CURRENT_PROJECT_SCHEMA_VERSION && !legacy
+      ? project
+      : { ...project, schemaVersion: CURRENT_PROJECT_SCHEMA_VERSION, nodes },
+    migrated: legacy,
+    migratedPlacements,
+  };
+}
 
 export interface MpvnProjectPackage {
   magic: 'MPVN_STUDIO_PROJECT';
   format: 'mpvn';
-  schemaVersion: '1.0.0';
+  schemaVersion: typeof CURRENT_PROJECT_SCHEMA_VERSION;
   studioName: 'MooVN Studio';
   exportedAt: string;
   projectMeta: {
@@ -44,22 +90,23 @@ function hasDangerousKeys(obj: unknown, depth = 0): boolean {
  * 将 MooVN Studio 项目序列化为 .mpvn 格式文本
  */
 export function serializeMpvnProject(project: VNProject): string {
+  const currentProject = upgradeProjectCoordinates(project).project;
   const pkg: MpvnProjectPackage = {
     magic: 'MPVN_STUDIO_PROJECT',
     format: 'mpvn',
-    schemaVersion: '1.0.0',
+    schemaVersion: CURRENT_PROJECT_SCHEMA_VERSION,
     studioName: 'MooVN Studio',
     exportedAt: new Date().toISOString(),
     projectMeta: {
-      id: project.id,
-      title: project.title,
-      author: project.author,
-      version: project.version,
-      chaptersCount: project.chapters.length,
-      nodesCount: project.nodes.length,
-      charactersCount: project.characters.length,
+      id: currentProject.id,
+      title: currentProject.title,
+      author: currentProject.author,
+      version: currentProject.version,
+      chaptersCount: currentProject.chapters.length,
+      nodesCount: currentProject.nodes.length,
+      charactersCount: currentProject.characters.length,
     },
-    project,
+    project: currentProject,
   };
   return JSON.stringify(pkg, null, 2);
 }
@@ -71,6 +118,8 @@ export function parseMpvnProject(rawText: string): {
   ok: boolean;
   project?: VNProject;
   error?: string;
+  migrated?: boolean;
+  migratedPlacements?: number;
 } {
   if (typeof rawText !== 'string' || !rawText.trim()) {
     return { ok: false, error: 'ERR_EMPTY_FILE: .mpvn 文件内容为空' };
@@ -114,19 +163,25 @@ export function parseMpvnProject(rawText: string): {
       if (parsed.format && parsed.format !== 'mpvn') {
         return { ok: false, error: 'ERR_UNSUPPORTED_FORMAT: 不支持的工程格式' };
       }
-      if (parsed.schemaVersion && !['1.0', '1.0.0'].includes(String(parsed.schemaVersion))) {
-        return { ok: false, error: `ERR_SCHEMA_VERSION: 不支持的工程版本 ${String(parsed.schemaVersion)}` };
-      }
-      return validateVNProjectShape(parsed.project);
+      // Check the envelope version before schema validation so unknown versions
+      // are not accidentally interpreted as legacy coordinates.
+      normalizeSchemaVersion(parsed.schemaVersion);
+      const validation = validateVNProjectShape(parsed.project);
+      if (!validation.ok) return validation;
+      return { ok: true, ...upgradeProjectCoordinates(validation.project, parsed.schemaVersion) };
     }
-    // Legacy bare project objects are validated as-is; no implicit repair occurs.
-    return validateVNProjectShape(parsed);
+    // Browser snapshots and older files are bare projects, not envelopes.
+    normalizeSchemaVersion(parsed.schemaVersion);
+    const validation = validateVNProjectShape(parsed);
+    if (!validation.ok) return validation;
+    return { ok: true, ...upgradeProjectCoordinates(validation.project) };
   } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
     return {
       ok: false,
-      error: `ERR_JSON_SYNTAX: 解析 .mpvn 项目文件失败: ${
-        err instanceof Error ? err.message : String(err)
-      }`,
+      error: message.startsWith('ERR_SCHEMA_VERSION:')
+        ? message
+        : `ERR_JSON_SYNTAX: 解析 .mpvn 项目文件失败: ${message}`,
     };
   }
 }

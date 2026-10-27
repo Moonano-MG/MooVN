@@ -15,10 +15,12 @@ import { VNProject, SaveTabId, SaveSlotData } from '../types';
 import { getBackgroundById, getCharacterById, getAudioById } from '../data/assets';
 import { soundEngine } from '../lib/soundEngine';
 import { CharacterMediaRenderer } from './CharacterMediaRenderer';
+import { characterPlacementStyle } from '../lib/characterPlacement';
 
 interface PreviewPlayerProps {
   project: VNProject;
   initialNodeId?: string;
+  motionLevel?: 'off' | 'subtle' | 'full';
   onClose: () => void;
 }
 
@@ -40,6 +42,7 @@ const SAVE_TABS: { id: SaveTabId; label: string }[] = [
 export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
   project,
   initialNodeId,
+  motionLevel = 'subtle',
   onClose,
 }) => {
   const [screenMode, setScreenMode] = useState<'main_menu' | 'playing'>(
@@ -558,6 +561,7 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
 
       {/* Main Viewport */}
       <div
+        data-scene-viewport="player"
         onClick={() => {
           if (isUiHidden) {
             setIsUiHidden(false);
@@ -771,25 +775,8 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
                 return (
                   <div
                     key={pl.id}
-                    style={{
-                      left: `${pl.x}%`,
-                      ...(pl.y > 70
-                        ? {
-                            bottom: `${Math.max(0, 100 - pl.y)}%`,
-                            transformOrigin: 'bottom center',
-                            transform: `translate(-50%, 0) scale(${
-                              pl.scale
-                            }) ${pl.flipX ? 'scaleX(-1)' : ''}`,
-                          }
-                        : {
-                            top: `${pl.y}%`,
-                            transformOrigin: 'center center',
-                            transform: `translate(-50%, -50%) scale(${
-                              pl.scale
-                            }) ${pl.flipX ? 'scaleX(-1)' : ''}`,
-                          }),
-                      opacity: pl.opacity ?? 1,
-                    }}
+                    data-character-placement={pl.id}
+                    style={characterPlacementStyle(pl)}
                     className={`absolute transition-all duration-300 ${
                       isSpeaking ? 'brightness-105 z-20' : 'brightness-90 z-10'
                     }`}
@@ -809,8 +796,9 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
                       }
                       chromaKeyColor={chromaKeyColor}
                       idleMotion={idleMotion === 'breathe' ? 'breathe' : 'none'}
+                      motionLevel={motionLevel}
                       isTalking={isSpeaking && isTyping}
-                      className="h-[76vh] w-auto object-contain drop-shadow-[0_20px_40px_rgba(0,0,0,0.72)]"
+                      className="w-full h-auto drop-shadow-[0_20px_40px_rgba(0,0,0,0.72)]"
                     />
                   </div>
                 );

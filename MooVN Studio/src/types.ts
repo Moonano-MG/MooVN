@@ -174,8 +174,8 @@ export interface CharacterPlacement {
   videoPlaybackRate?: number;
   chromaKeyColor?: string;
   idleMotion?: CharacterIdleMotion;
-  x: number; // 0-100 stage percentage
-  y: number; // 0-100 stage percentage
+  x: number; // 0-100 stage percentage, horizontal center of the portrait
+  y: number; // 0-100 stage percentage, bottom-center (feet) anchor
   scale: number; // 0.5-2.0
   opacity?: number; // 0-1
   flipX?: boolean;
@@ -491,6 +491,8 @@ export interface ProjectScriptFile {
 }
 
 export interface VNProject {
+  /** Coordinate semantics of this project, independent of the game's display version. */
+  schemaVersion?: '1.0' | '1.0.0' | '1.1' | '1.1.0';
   id: string;
   title: string;
   author: string;
