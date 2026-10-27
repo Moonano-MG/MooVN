@@ -56,7 +56,7 @@ export const DEFAULT_PROJECT: VNProject = {
       panelColor: '#040c1f',
       accentColor: '#38bdf8',
       titleColor: '#ffffff',
-      backgroundId: 'bg-classroom-day',
+      backgroundId: '',
       showHeroCharacter: false,
       heroCharacterSpriteId: '',
       subtitleText: '',
@@ -70,7 +70,6 @@ export const DEFAULT_PROJECT: VNProject = {
       subtitle: 'Chapter 01',
       yamlFileName: 'chapter_01.yaml',
       description: '新建章节（可在左侧章节面板新增章节或导入 .mpvn 项目文件）',
-      isBaseRequired: true,
       minCharacterAffection: {},
     },
   ],
@@ -90,7 +89,7 @@ export const DEFAULT_PROJECT: VNProject = {
       type: 'dialogue',
       title: '初始场景 01',
       position: { x: 120, y: 140 },
-      backgroundId: 'bg-classroom-day',
+      backgroundId: '',
       bgmId: '',
       transition: 'fade',
       weatherEffect: 'none',
@@ -120,7 +119,7 @@ export const BLANK_PROJECT: VNProject = DEFAULT_PROJECT;
  * 仅在启动器点击「打开入门示例工程」时按需创建，绝不混入默认空白项目。
  */
 export const SAMPLE_PROJECT: VNProject = {
-  ...JSON.parse(JSON.stringify(DEFAULT_PROJECT)),
+  ...DEFAULT_PROJECT,
   id: 'moovn-sample-project',
   title: '入门示例工程：放学后的教室',
   isTemplatePreset: true,
@@ -189,14 +188,14 @@ export const SAMPLE_PROJECT: VNProject = {
     {
       id: 'scene-start-02',
       chapterId: 'chapter-1',
-      type: 'ending',
+      type: 'end',
       title: '尾声：放学铃声',
       position: { x: 460, y: 140 },
       backgroundId: 'bg-classroom-sunset',
       bgmId: 'bgm-spring-breeze',
       transition: 'fade',
       weatherEffect: 'none',
-      colorFilter: 'sunset',
+      colorFilter: 'none',
       characters: [],
       dialogues: [
         {

@@ -1,0 +1,85 @@
+name: Quality checks
+
+on:
+  push:
+    branches: [v0.1.0-dev, 'arena/**']
+  pull_request:
+    branches: [v0.1.0-dev]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend tests and builds
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            MooVN Studio/package-lock.json
+            MooVN Web/package-lock.json
+      - name: Install Studio dependencies
+        working-directory: MooVN Studio
+        run: npm ci
+      - name: Install Web dependencies
+        working-directory: MooVN Web
+        run: npm ci
+      - name: Test and build Studio
+        working-directory: MooVN Studio
+        run: |
+          npm test
+          npm run build
+      - name: Test and build Web
+        working-directory: MooVN Web
+        run: |
+          npm test
+          npm run build
+
+  engine:
+    name: Engine and workspace I/O tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Rust engine tests
+        working-directory: MooVN Engine
+        run: cargo test
+      - name: C++ bridge compile
+        working-directory: MooVN Engine
+        run: g++ -std=c++20 -Wall -Wextra -Icpp/include -c cpp/src/moovn_renderer_bridge.cpp -o /tmp/moovn_renderer_bridge.o
+      - name: Workspace and asset I/O unit tests
+        working-directory: MooVN Studio
+        run: |
+          rustc --edition=2021 --test tests/workspace-io-harness.rs -o /tmp/workspace-io-tests
+          /tmp/workspace-io-tests
+
+  windows-tauri:
+    name: Windows Tauri compile and Rust tests
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: MooVN Studio/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ./MooVN Studio/src-tauri -> target
+      - name: Install and build frontend
+        working-directory: MooVN Studio
+        run: |
+          npm ci
+          npm run build
+      - name: Compile Tauri and run native tests
+        working-directory: MooVN Studio/src-tauri
+        run: cargo test

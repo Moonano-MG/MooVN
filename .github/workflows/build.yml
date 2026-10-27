@@ -43,7 +43,7 @@ jobs:
   # ============================================================================
   build-engine:
     name: Build MooVN Engine (Rust + C++20 Bridge)
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_target == 'all' || inputs.build_target == 'engine' }}
+    if: ${{ github.ref == 'refs/heads/v0.1.0-dev' && (inputs.build_target == 'all' || inputs.build_target == 'engine') }}
     runs-on: ubuntu-24.04
     defaults:
       run:
@@ -68,7 +68,7 @@ jobs:
   # ============================================================================
   build-web:
     name: Build MooVN Web (PC & Mobile)
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_target == 'all' || inputs.build_target == 'web' }}
+    if: ${{ github.ref == 'refs/heads/v0.1.0-dev' && (inputs.build_target == 'all' || inputs.build_target == 'web') }}
     runs-on: ubuntu-24.04
     defaults:
       run:
@@ -105,7 +105,7 @@ jobs:
   # ============================================================================
   build-windows:
     name: Build Windows (MSI & NSIS .exe)
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_target == 'all' || inputs.build_target == 'windows' }}
+    if: ${{ github.ref == 'refs/heads/v0.1.0-dev' && (inputs.build_target == 'all' || inputs.build_target == 'windows') }}
     runs-on: windows-latest
     steps:
       - name: Checkout repository
@@ -116,6 +116,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
+          cache-dependency-path: MooVN Studio/package-lock.json
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -125,7 +126,7 @@ jobs:
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
-          workspaces: "./src-tauri -> target"
+          workspaces: "./MooVN Studio/src-tauri -> target"
 
       - name: Install frontend dependencies
         run: npm ci
@@ -141,16 +142,16 @@ jobs:
         with:
           name: MooVN-Windows-x64
           path: |
-            src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
-            src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
-            src-tauri/target/x86_64-pc-windows-msvc/release/moovn.exe
+            MooVN Studio/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
+            MooVN Studio/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+            MooVN Studio/src-tauri/target/x86_64-pc-windows-msvc/release/moovn.exe
 
   # ============================================================================
   # 3. macOS 编译器构建 (.dmg & .app)
   # ============================================================================
   build-macos:
     name: Build macOS (.dmg & .app)
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_target == 'all' || inputs.build_target == 'macos' }}
+    if: ${{ github.ref == 'refs/heads/v0.1.0-dev' && (inputs.build_target == 'all' || inputs.build_target == 'macos') }}
     runs-on: macos-14
     steps:
       - name: Checkout repository
@@ -161,6 +162,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
+          cache-dependency-path: MooVN Studio/package-lock.json
 
       - name: Install Rust stable (Apple Silicon + Intel)
         uses: dtolnay/rust-toolchain@stable
@@ -170,7 +172,7 @@ jobs:
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
-          workspaces: "./src-tauri -> target"
+          workspaces: "./MooVN Studio/src-tauri -> target"
 
       - name: Install frontend dependencies
         run: npm ci
@@ -193,14 +195,14 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: MooVN-macOS-Universal
-          path: release/macos/*
+          path: MooVN Studio/release/macos/*
 
   # ============================================================================
   # 4. Android 编译器构建 (APK)
   # ============================================================================
   build-android:
     name: Build Android (APK)
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_target == 'all' || inputs.build_target == 'android' }}
+    if: ${{ github.ref == 'refs/heads/v0.1.0-dev' && (inputs.build_target == 'all' || inputs.build_target == 'android') }}
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout repository
@@ -211,6 +213,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
+          cache-dependency-path: MooVN Studio/package-lock.json
 
       - name: Setup Java 17
         uses: actions/setup-java@v4
@@ -246,7 +249,7 @@ jobs:
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
-          workspaces: "./src-tauri -> target"
+          workspaces: "./MooVN Studio/src-tauri -> target"
 
       - name: Install frontend dependencies
         run: npm ci
@@ -255,11 +258,11 @@ jobs:
         run: npx tauri icon public/icon.png
 
       - name: Initialize Tauri Android project
-        working-directory: src-tauri
+        working-directory: "MooVN Studio/src-tauri"
         run: npx tauri android init
 
       - name: Build Android APK (Debug signed for CI)
-        working-directory: src-tauri
+        working-directory: "MooVN Studio/src-tauri"
         run: npx tauri android build --apk --debug
 
       - name: Upload Android APK Artifact
@@ -267,14 +270,14 @@ jobs:
         with:
           name: MooVN-Android-APK
           path: |
-            src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+            MooVN Studio/src-tauri/gen/android/app/build/outputs/apk/**/*.apk
 
   # ============================================================================
   # 5. iOS 编译器构建 (Xcode App / IPA & Project Bundle)
   # ============================================================================
   build-ios:
     name: Build iOS (App / IPA)
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_target == 'all' || inputs.build_target == 'ios' }}
+    if: ${{ github.ref == 'refs/heads/v0.1.0-dev' && (inputs.build_target == 'all' || inputs.build_target == 'ios') }}
     runs-on: macos-14
     steps:
       - name: Checkout repository
@@ -285,6 +288,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
+          cache-dependency-path: MooVN Studio/package-lock.json
 
       - name: Install Rust & iOS targets
         uses: dtolnay/rust-toolchain@stable
@@ -294,7 +298,7 @@ jobs:
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
-          workspaces: "./src-tauri -> target"
+          workspaces: "./MooVN Studio/src-tauri -> target"
 
       - name: Install frontend dependencies
         run: npm ci
@@ -306,12 +310,11 @@ jobs:
         run: npm run build
 
       - name: Initialize Tauri iOS project
-        working-directory: src-tauri
+        working-directory: "MooVN Studio/src-tauri"
         run: npx tauri ios init
 
       - name: Build iOS App (unsigned CI build + Xcode project archive)
-        continue-on-error: true
-        working-directory: src-tauri
+        working-directory: "MooVN Studio/src-tauri"
         run: npx tauri ios build --export-method development --ci
 
       - name: Package iOS Artifacts
@@ -329,4 +332,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: MooVN-iOS-Build
-          path: release/ios/*
+          path: MooVN Studio/release/ios/*

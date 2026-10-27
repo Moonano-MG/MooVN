@@ -7,29 +7,33 @@ import { DEFAULT_PROJECT, SAMPLE_PROJECT } from '../data/defaultProject.ts';
 import { DEFAULT_PERFORMANCE_CONFIG } from './assetCompressionEngine.ts';
 import {
   isTauriEnvironment,
+  getWorkspacePathsFromTauri,
+  loadProjectFromTauri,
   saveProjectToTauriDetailed,
   writeWorkspaceFileViaTauri,
+  type WorkspacePaths,
 } from './tauriBridge.ts';
+import { getProjectSnapshot, putProjectSnapshot } from './projectStorage.ts';
+import { newId } from './ids.ts';
+import { validateVNProjectShape } from './projectSchema.ts';
+import { migrateEmbeddedProjectMedia, verifyProjectAssets } from './assetStore.ts';
 
 const SETTINGS_STORAGE_KEY = 'moovn_studio_settings_v3';
 const PROJECTS_STORAGE_KEY = 'moovn_studio_projects_v3';
 
-/**
- * 标识当前是否为 Web 版工作台 (`MooVN Web`)：
- * - Web 版 (`IS_WEB_EDITION === true`)：类似 Web 版 VS Code，无本地保存列表与本地路径设置，
- *   用户通过「导入本地 .mpvn 文件」或「重新创建一个新项目」进入工作台。
- * - 本地版 (`IS_WEB_EDITION === false`，即 `MooVN Studio` Tauri 桌面/移动版)：包含完整的本地工作区路径与磁盘保存管理。
- */
-export const IS_WEB_EDITION: boolean =
-  typeof import.meta !== 'undefined' &&
-  (import.meta as any).env?.VITE_EDITION === 'studio'
-    ? false
-    : typeof import.meta !== 'undefined' &&
-      (import.meta as any).env?.VITE_EDITION === 'web'
-    ? true
-    : typeof window === 'undefined'
-    ? true
-    : !('__TAURI_INTERNALS__' in window || '__TAURI__' in window);
+/** Browser previews do not have desktop filesystem privileges, even in a Studio build. */
+export const IS_WEB_EDITION = !isTauriEnvironment();
+let resolvedDesktopPaths: WorkspacePaths | null = null;
+
+export async function refreshWorkspacePaths(): Promise<WorkspacePaths> {
+  if (!isTauriEnvironment()) return getPlatformDefaultPaths('web');
+  const result = await getWorkspacePathsFromTauri();
+  if (!result.ok || !result.data) {
+    throw new Error(result.error || 'ERR_WORKSPACE_PATH: 无法读取工作区路径');
+  }
+  resolvedDesktopPaths = result.data;
+  return result.data;
+}
 
 export function detectRuntimePlatform(): MooVNSystemSettings['platform'] {
   if (typeof navigator === 'undefined') return 'windows';
@@ -45,14 +49,8 @@ export function detectRuntimePlatform(): MooVNSystemSettings['platform'] {
   return 'windows';
 }
 
-export function getPlatformDefaultPaths(platform: MooVNSystemSettings['platform']): {
-  workspaceRootPath: string;
-  projectsDirectoryPath: string;
-  exportOutputDirectoryPath: string;
-  cacheDirectoryPath: string;
-  settingsFilePath: string;
-} {
-  if (IS_WEB_EDITION || platform === 'web') {
+export function getPlatformDefaultPaths(platform: MooVNSystemSettings['platform']): WorkspacePaths {
+  if (platform === 'web' || !isTauriEnvironment()) {
     return {
       workspaceRootPath: 'browser://MooVN_Workspace',
       projectsDirectoryPath: 'browser://MooVN_Workspace/Projects',
@@ -61,45 +59,13 @@ export function getPlatformDefaultPaths(platform: MooVNSystemSettings['platform'
       settingsFilePath: 'browser://MooVN_Workspace/settings.moovn.json',
     };
   }
-  switch (platform) {
-    case 'windows':
-      return {
-        workspaceRootPath: 'C:\\Users\\Public\\Documents\\MooVN',
-        projectsDirectoryPath: 'C:\\Users\\Public\\Documents\\MooVN\\Projects',
-        exportOutputDirectoryPath: 'C:\\Users\\Public\\Documents\\MooVN\\Exports',
-        cacheDirectoryPath: 'C:\\Users\\Public\\Documents\\MooVN\\Cache',
-        settingsFilePath: 'C:\\Users\\Public\\Documents\\MooVN\\settings.moovn.json',
-      };
-    case 'android':
-      return {
-        workspaceRootPath: '/storage/emulated/0/Android/data/com.moovn.editor/files/MooVN',
-        projectsDirectoryPath:
-          '/storage/emulated/0/Android/data/com.moovn.editor/files/MooVN/Projects',
-        exportOutputDirectoryPath:
-          '/storage/emulated/0/Android/data/com.moovn.editor/files/MooVN/Exports',
-        cacheDirectoryPath:
-          '/storage/emulated/0/Android/data/com.moovn.editor/files/MooVN/Cache',
-        settingsFilePath:
-          '/storage/emulated/0/Android/data/com.moovn.editor/files/MooVN/settings.moovn.json',
-      };
-    case 'ios':
-      return {
-        workspaceRootPath: 'On My iPhone/MooVN',
-        projectsDirectoryPath: 'On My iPhone/MooVN/Projects',
-        exportOutputDirectoryPath: 'On My iPhone/MooVN/Exports',
-        cacheDirectoryPath: 'On My iPhone/MooVN/Cache',
-        settingsFilePath: 'On My iPhone/MooVN/settings.moovn.json',
-      };
-    case 'macos':
-    default:
-      return {
-        workspaceRootPath: '~/Documents/MooVN',
-        projectsDirectoryPath: '~/Documents/MooVN/Projects',
-        exportOutputDirectoryPath: '~/Documents/MooVN/Exports',
-        cacheDirectoryPath: '~/Documents/MooVN/Cache',
-        settingsFilePath: '~/Documents/MooVN/settings.moovn.json',
-      };
-  }
+  return resolvedDesktopPaths || {
+    workspaceRootPath: '正在读取桌面工作区…',
+    projectsDirectoryPath: '正在读取桌面工作区…',
+    exportOutputDirectoryPath: '正在读取桌面工作区…',
+    cacheDirectoryPath: '正在读取桌面工作区…',
+    settingsFilePath: '正在读取桌面工作区…',
+  };
 }
 
 export async function syncWriteToRealWorkspaceDisk(
@@ -108,52 +74,15 @@ export async function syncWriteToRealWorkspaceDisk(
   content: string,
   customDir?: string
 ): Promise<string | null> {
-  // Prefer native Tauri IPC in desktop builds so production binaries never depend on Vite dev middleware (`GPT-21 / CL-21`)
-  if (isTauriEnvironment()) {
-    const mappedSubDir: 'Projects' | 'Exports' | 'Cache' | 'Assets' =
-      subFolder === 'Exports'
-        ? 'Exports'
-        : subFolder === 'Cache'
-        ? 'Cache'
-        : 'Projects';
-    const tauriRes = await writeWorkspaceFileViaTauri(mappedSubDir, fileName, content);
-    if (tauriRes.ok && tauriRes.data) {
-      return tauriRes.data;
-    }
-  }
-  try {
-    const resp = await fetch('/api/moovn-fs/write', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ subFolder, fileName, content, customDir }),
-    });
-    if (!resp.ok) return null;
-    const data = await resp.json();
-    return data.savedPath || null;
-  } catch {
-    return null;
-  }
+  // The desktop backend confines writes to its actual workspace. Never fall back to a dev server.
+  if (!isTauriEnvironment() || customDir) return null;
+  const mappedSubDir = subFolder === 'Exports' ? 'Exports' : subFolder === 'Cache' || subFolder === '' ? 'Cache' : 'Projects';
+  const result = await writeWorkspaceFileViaTauri(mappedSubDir, fileName, content);
+  return result.ok && result.data ? result.data : null;
 }
 
-export async function fetchWorkspaceDiskStatus(): Promise<{
-  ok: boolean;
-  workspaceRoot: string;
-  projectsDir: string;
-  exportsDir: string;
-  cacheDir: string;
-  modelsDir: string;
-  settingsFile: string;
-  projectFiles: { name: string; path: string; size: number; mtime: string }[];
-  exportFiles: { name: string; path: string; size: number; mtime: string }[];
-  modelFiles: { name: string; path: string; size: number; mtime: string }[];
-} | null> {
-  try {
-    const resp = await fetch('/api/moovn-fs/status');
-    if (!resp.ok) return null;
-    return await resp.json();
-  } catch {
-    return null;
-  }
+export async function fetchWorkspaceDiskStatus(): Promise<null> {
+  return null;
 }
 
 export function loadSystemSettings(): MooVNSystemSettings {
@@ -166,7 +95,6 @@ export function loadSystemSettings(): MooVNSystemSettings {
     editorConfig: {
       autoSaveIntervalSec: 15,
       coloredNodeCategories: true,
-      showStreamMonitorInPreview: true,
       defaultScriptLang: 'typescript',
     },
     defaultGameSettings: {
@@ -185,6 +113,7 @@ export function loadSystemSettings(): MooVNSystemSettings {
     return {
       ...fallback,
       ...parsed,
+      ...defaults,
       editorConfig: { ...fallback.editorConfig, ...(parsed.editorConfig || {}) },
       defaultGameSettings: {
         ...fallback.defaultGameSettings,
@@ -200,14 +129,13 @@ export function loadSystemSettings(): MooVNSystemSettings {
   }
 }
 
-export function saveSystemSettings(settings: MooVNSystemSettings): void {
-  const payload = JSON.stringify(settings, null, 2);
+export function saveSystemSettings(settings: MooVNSystemSettings): boolean {
   try {
-    localStorage.setItem(SETTINGS_STORAGE_KEY, payload);
+    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+    return true;
   } catch {
-    // ignore storage quota errors
+    return false;
   }
-  syncWriteToRealWorkspaceDisk('', 'settings.moovn.json', payload);
 }
 
 export function resetSystemSettings(): MooVNSystemSettings {
@@ -243,9 +171,11 @@ export function exportSettingsFileJson(settings: MooVNSystemSettings): void {
 /**
  * Web 端支持选择设备上一个已经保存的 MooVN 文件夹（通过 File System Access API 或 webkitdirectory）
  */
-let activeWebDirHandle: any = null;
+type BrowsableDirectory = FileSystemDirectoryHandle & { values(): AsyncIterable<FileSystemHandle> };
+type DirectoryPickerWindow = Window & { showDirectoryPicker?: (options: { mode: 'readwrite' }) => Promise<BrowsableDirectory> };
+let activeWebDirHandle: FileSystemDirectoryHandle | null = null;
 
-export function getActiveWebDirHandle(): any {
+export function getActiveWebDirHandle(): FileSystemDirectoryHandle | null {
   return activeWebDirHandle;
 }
 
@@ -254,66 +184,32 @@ export async function pickDeviceMooVNFolder(): Promise<{
   loadedSettings?: MooVNSystemSettings;
   loadedProjects: VNProject[];
 } | null> {
-  if (typeof window !== 'undefined' && 'showDirectoryPicker' in window) {
-    try {
-      const dirHandle = await (window as any).showDirectoryPicker({
-        mode: 'readwrite',
-      });
-      activeWebDirHandle = dirHandle;
-      const folderName = dirHandle.name || 'MooVN';
-      const loadedProjects: VNProject[] = [];
-      let loadedSettings: MooVNSystemSettings | undefined;
-
-      for await (const entry of dirHandle.values()) {
-        if (entry.kind === 'file') {
-          const name = entry.name as string;
-          if (name === 'settings.moovn.json') {
-            const file = await entry.getFile();
-            const text = await file.text();
-            loadedSettings = JSON.parse(text) as MooVNSystemSettings;
-          } else if (
-            name.endsWith('.mpvn') ||
-            name.endsWith('.moovn.json') ||
-            name.endsWith('.vnproject.json')
-          ) {
-            const file = await entry.getFile();
-            const text = await file.text();
-            const rawObj = JSON.parse(text);
-            const proj = (rawObj?.project || rawObj) as VNProject;
-            if (proj && proj.id && Array.isArray(proj.nodes)) {
-              loadedProjects.push(proj);
-            }
-          }
-        }
-      }
-
-      // 将当前 settings.moovn.json 写入所选文件夹
-      const currentSettings = loadedSettings || loadSystemSettings();
-      currentSettings.webMountedFolderName = folderName;
-      currentSettings.workspaceRootPath = `设备文件夹://${folderName}`;
-      currentSettings.projectsDirectoryPath = `设备文件夹://${folderName}/Projects`;
-      currentSettings.exportOutputDirectoryPath = `设备文件夹://${folderName}/Exports`;
-      currentSettings.cacheDirectoryPath = `设备文件夹://${folderName}/Cache`;
-      currentSettings.settingsFilePath = `设备文件夹://${folderName}/settings.moovn.json`;
-      saveSystemSettings(currentSettings);
-
-      try {
-        const settingsFileHandle = await dirHandle.getFileHandle('settings.moovn.json', {
-          create: true,
-        });
-        const writable = await settingsFileHandle.createWritable();
-        await writable.write(JSON.stringify(currentSettings, null, 2));
-        await writable.close();
-      } catch {
-        // read-only fallback
-      }
-
-      return { folderName, loadedSettings: currentSettings, loadedProjects };
-    } catch {
-      return null;
+  if (typeof window === 'undefined') return null;
+  const picker = (window as DirectoryPickerWindow).showDirectoryPicker;
+  if (!picker) return null;
+  try {
+    const dirHandle = await picker.call(window, { mode: 'readwrite' });
+    const loadedProjects: VNProject[] = [];
+    const { parseMpvnProject } = await import('./mpvnFormat.ts');
+    for await (const entry of dirHandle.values()) {
+      if (entry.kind !== 'file') continue;
+      const name = entry.name;
+      if (!name.endsWith('.mpvn') && !name.endsWith('.moovn.json') && !name.endsWith('.vnproject.json')) continue;
+      const file = await (entry as FileSystemFileHandle).getFile();
+      if (file.size > 16 * 1024 * 1024) throw new Error(`ERR_FILE_TOO_LARGE: ${name}`);
+      const validation = parseMpvnProject(await file.text());
+      if (!validation.ok || !validation.project) throw new Error(`${name}: ${validation.error || 'ERR_PROJECT_VALIDATION'}`);
+      loadedProjects.push(validation.project);
     }
+    const folderName = dirHandle.name || 'MooVN';
+    const currentSettings = { ...loadSystemSettings(), webMountedFolderName: folderName };
+    if (!saveSystemSettings(currentSettings)) throw new Error('ERR_SETTINGS_WRITE: 无法保存文件夹设置');
+    activeWebDirHandle = dirHandle;
+    return { folderName, loadedSettings: currentSettings, loadedProjects };
+  } catch (error: unknown) {
+    if (error instanceof DOMException && error.name === 'AbortError') return null;
+    throw error;
   }
-  return null;
 }
 
 /**
@@ -325,16 +221,24 @@ export async function writeFileToMountedMooVNFolder(
   subFolder: 'Projects' | 'Exports' | 'Cache' | 'Models' = 'Exports',
   customDir?: string
 ): Promise<boolean> {
-  await syncWriteToRealWorkspaceDisk(subFolder, filename, content, customDir);
-  if (!activeWebDirHandle) return true;
+  if (isTauriEnvironment()) {
+    return Boolean(await syncWriteToRealWorkspaceDisk(subFolder, filename, content, customDir));
+  }
+  if (!activeWebDirHandle || customDir) return false;
   try {
-    const fileHandle = await activeWebDirHandle.getFileHandle(filename, { create: true });
+    const dir = await activeWebDirHandle.getDirectoryHandle(subFolder, { create: true });
+    const fileHandle = await dir.getFileHandle(filename, { create: true });
     const writable = await fileHandle.createWritable();
-    await writable.write(content);
-    await writable.close();
+    try {
+      await writable.write(content);
+      await writable.close();
+    } catch (err) {
+      await writable.abort?.();
+      throw err;
+    }
     return true;
   } catch {
-    return true;
+    return false;
   }
 }
 
@@ -348,8 +252,9 @@ export function createBlankVNProject(params: {
   height: number;
   projectPath: string;
 }): VNProject {
-  const id = `proj-${Date.now()}`;
-  const startNodeId = 'scene-start-01';
+  const id = newId('proj');
+  const startNodeId = newId('scene');
+  const chapterId = newId('chapter');
   return {
     id,
     title: params.title || '未命名视觉小说工程',
@@ -361,21 +266,20 @@ export function createBlankVNProject(params: {
     defaultLanguage: 'typescript',
     startNodeId,
     performanceConfig: { ...DEFAULT_PERFORMANCE_CONFIG },
-    uiConfig: JSON.parse(JSON.stringify(DEFAULT_PROJECT.uiConfig)),
+    uiConfig: structuredClone(DEFAULT_PROJECT.uiConfig),
     characters: [],
     variables: [
       { key: 'chapterIndex', label: '当前章节序号', type: 'number', value: 1 },
     ],
     chapters: [
       {
-        id: 'chapter-1',
+        id: chapterId,
         index: 1,
         title: '第一章：序章',
         subtitle: 'Chapter 01',
         yamlFileName: 'chapter_01.yaml',
         description: '新建章节',
-        isBaseRequired: true,
-        minCharacterAffection: {},
+          minCharacterAffection: {},
       },
     ],
     nodes: [
@@ -383,9 +287,9 @@ export function createBlankVNProject(params: {
         id: startNodeId,
         type: 'dialogue',
         title: '初始场景 01',
-        chapterId: 'chapter-1',
+        chapterId,
         position: { x: 140, y: 160 },
-        backgroundId: 'bg-classroom-day',
+        backgroundId: '',
         bgmId: '',
         transition: 'fade',
         weatherEffect: 'none',
@@ -393,7 +297,7 @@ export function createBlankVNProject(params: {
         characters: [],
         dialogues: [
           {
-            id: 'dlg-init-1',
+            id: newId('dlg'),
             speakerId: 'narrator',
             speakerName: '旁白',
             speakerColor: '#94a3b8',
@@ -412,8 +316,8 @@ export function createBlankVNProject(params: {
  * 创建独立于空白工程之外的入门示例项目 (`SAMPLE_PROJECT`, `GPT-18 / CL-18`)
  */
 export function createSampleVNProject(projectPath?: string): VNProject {
-  const cloned = JSON.parse(JSON.stringify(SAMPLE_PROJECT)) as VNProject;
-  cloned.id = `sample-${Date.now()}`;
+  const cloned = structuredClone(SAMPLE_PROJECT);
+  cloned.id = newId('sample');
   cloned.projectPath =
     projectPath ||
     `${loadSystemSettings().projectsDirectoryPath}/Sample_Classroom.mpvn`;
@@ -425,7 +329,7 @@ export function createSampleVNProject(projectPath?: string): VNProject {
  * 构建 MooVN Studio 空白基础项目实例（内部测试用游戏模板已独立剥离为本地 .mpvn 文件，不内置于公开版）
  */
 export function createPresetTemplateProject(customTitle?: string, projectPath?: string): VNProject {
-  const cloned = JSON.parse(JSON.stringify(DEFAULT_PROJECT)) as VNProject;
+  const cloned = structuredClone(DEFAULT_PROJECT);
   if (customTitle) cloned.title = customTitle;
   cloned.isTemplatePreset = false;
   cloned.projectPath =
@@ -436,100 +340,157 @@ export function createPresetTemplateProject(customTitle?: string, projectPath?: 
 }
 
 export function loadSavedProjectsList(): SavedProjectMeta[] {
-  const settings = loadSystemSettings();
-  const starterProj = createPresetTemplateProject();
-  const defaultStarterMeta: SavedProjectMeta = {
-    id: starterProj.id,
-    title: starterProj.title,
-    author: starterProj.author,
-    version: starterProj.version,
-    path: `${settings.projectsDirectoryPath}/Untitled_Project.mpvn`,
-    updatedAt: '默认空白工程 (.mpvn)',
-    chaptersCount: starterProj.chapters.length,
-    nodesCount: starterProj.nodes.length,
-    isTemplatePreset: false,
-    projectData: starterProj,
-  };
-
   try {
-    const raw = localStorage.getItem(PROJECTS_STORAGE_KEY);
-    if (!raw) return [defaultStarterMeta];
-    const parsed = JSON.parse(raw) as SavedProjectMeta[];
-    if (!Array.isArray(parsed) || parsed.length === 0) return [defaultStarterMeta];
-    return parsed;
+    const parsed: unknown = JSON.parse(localStorage.getItem(PROJECTS_STORAGE_KEY) || '[]');
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((item): item is SavedProjectMeta =>
+      Boolean(item && typeof item.id === 'string' && typeof item.path === 'string')
+    );
   } catch {
-    return [defaultStarterMeta];
+    return [];
   }
 }
 
-export async function saveProjectToWorkspace(
-  project: VNProject,
-  customPath?: string
-): Promise<SavedProjectMeta> {
-  const settings = loadSystemSettings();
-  const safeName = (project.title || project.id).replace(/[\\/:*?"<>|\s]+/g, '_');
-  const fileName = safeName.endsWith('.mpvn') ? safeName : `${safeName}.mpvn`;
-  const resolvedPath = IS_WEB_EDITION
-    ? fileName
-    : customPath ||
-      project.projectPath ||
-      `${settings.projectsDirectoryPath}/${fileName}`;
+export type WorkspaceSaveResult =
+  | { ok: true; path: string; storage: 'file' | 'browser'; project: VNProject; savedAt: number }
+  | { ok: false; code: string; error: string; path?: string };
 
-  const updatedProject: VNProject = {
-    ...project,
-    projectPath: resolvedPath,
-  };
-
-  const meta: SavedProjectMeta = {
-    id: updatedProject.id,
-    title: updatedProject.title,
-    author: updatedProject.author,
-    version: updatedProject.version,
-    path: resolvedPath,
-    updatedAt: new Date().toLocaleString(),
-    chaptersCount: updatedProject.chapters.length,
-    nodesCount: updatedProject.nodes.length,
-    isTemplatePreset: updatedProject.isTemplatePreset,
-    projectData: updatedProject,
-  };
-
-  if (IS_WEB_EDITION) {
-    return meta;
+function projectFileName(project: Pick<VNProject, 'id' | 'projectPath'>, path?: string): string {
+  const candidate = (path || project.projectPath || `${project.id}.mpvn`).split(/[\\/]/).pop() || '';
+  if (!candidate || candidate.startsWith('.') || candidate.includes('..') ||
+      /[\\/:*?"<>|\x00-\x1f]/.test(candidate) || !candidate.toLowerCase().endsWith('.mpvn')) {
+    throw new Error('ERR_INVALID_PROJECT_PATH: 工程文件名无效，须为 .mpvn 文件');
   }
+  return candidate;
+}
 
-  const list = loadSavedProjectsList();
-  const idx = list.findIndex((item) => item.id === meta.id);
-  const nextList =
-    idx >= 0 ? list.map((item, i) => (i === idx ? meta : item)) : [meta, ...list];
+let saveQueue: Promise<void> = Promise.resolve();
 
+/** Serialize saves so an older, slower write cannot replace a newer revision. */
+export function saveProjectToWorkspace(project: VNProject, customPath?: string): Promise<WorkspaceSaveResult> {
+  const operation = saveQueue.then(() => performProjectSave(project, customPath));
+  saveQueue = operation.then(() => undefined, () => undefined);
+  return operation;
+}
+
+async function performProjectSave(project: VNProject, customPath?: string): Promise<WorkspaceSaveResult> {
+  let path: string | undefined;
   try {
-    localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(nextList));
-  } catch {
-    // ignore quota error
-  }
+    const fileName = projectFileName(project, customPath);
+    const { serializeMpvnProject, MAX_MPVN_PROJECT_BYTES } = await import('./mpvnFormat.ts');
+    const preparedProject = await migrateEmbeddedProjectMedia(project);
+    if (isTauriEnvironment()) {
+      const paths = await refreshWorkspacePaths();
+      const separator = paths.projectsDirectoryPath.includes('\\') ? '\\' : '/';
+      path = `${paths.projectsDirectoryPath.replace(/[\\/]+$/, '')}${separator}${fileName}`;
+      const updatedProject = { ...preparedProject, projectPath: path };
+      const payload = serializeMpvnProject(updatedProject);
+      if (new TextEncoder().encode(payload).byteLength > MAX_MPVN_PROJECT_BYTES) {
+        return { ok: false, code: 'ERR_PAYLOAD_TOO_LARGE', error: '工程超过 16 MiB 上限，请先减少内嵌媒体。', path };
+      }
+      const validation = validateVNProjectShape(updatedProject);
+      if (!validation.ok) return { ok: false, code: validation.error.match(/ERR_[A-Z0-9_]+/)?.[0] || 'ERR_SCHEMA_INVALID', error: validation.error, path };
+      await verifyProjectAssets(updatedProject);
+      const result = await saveProjectToTauriDetailed(fileName, payload);
+      if (!result.ok || !result.path) {
+        return { ok: false, code: result.code || 'ERR_SAVE_FAILED', error: result.error || '保存失败', path };
+      }
+      path = result.path;
+      const saved = { ...updatedProject, projectPath: path };
+      await persistRecentProject(saved, path);
+      return { ok: true, path, storage: 'file', project: saved, savedAt: result.data?.saved_at_epoch_ms || Date.now() };
+    }
 
-  const mpvnPayload = {
-    magic: 'MPVN_STUDIO_PROJECT',
-    format: 'mpvn',
-    schemaVersion: '1.0.0',
-    studioName: 'MooVN Studio',
-    exportedAt: new Date().toISOString(),
-    project: updatedProject,
+    path = `browser://MooVN_Workspace/Projects/${fileName}`;
+    const saved = { ...preparedProject, projectPath: path };
+    const payload = serializeMpvnProject(saved);
+    if (new TextEncoder().encode(payload).byteLength > MAX_MPVN_PROJECT_BYTES) {
+      return { ok: false, code: 'ERR_PAYLOAD_TOO_LARGE', error: '工程超过 16 MiB 上限，请先减少内嵌媒体。', path };
+    }
+    const validation = validateVNProjectShape(saved);
+    if (!validation.ok) return { ok: false, code: validation.error.match(/ERR_[A-Z0-9_]+/)?.[0] || 'ERR_SCHEMA_INVALID', error: validation.error, path };
+    await verifyProjectAssets(saved);
+    await putProjectSnapshot(`saved:${project.id}`, saved);
+    await persistRecentProject(saved, path);
+    return { ok: true, path, storage: 'browser', project: saved, savedAt: Date.now() };
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    const code = message.match(/ERR_[A-Z0-9_]+/)?.[0] || 'ERR_SAVE_FAILED';
+    return { ok: false, code, error: message, path };
+  }
+}
+
+async function persistRecentProject(project: VNProject, path: string): Promise<void> {
+  const meta: SavedProjectMeta = {
+    id: project.id,
+    title: project.title,
+    author: project.author,
+    version: project.version,
+    path,
+    updatedAt: new Date().toLocaleString(),
+    chaptersCount: project.chapters.length,
+    nodesCount: project.nodes.length,
+    isTemplatePreset: project.isTemplatePreset,
   };
-
-  // 若运行在 Tauri 桌面端，同步调用原子级 save_project_json (`GPT-01`, `GPT-21`)
-  if (isTauriEnvironment()) {
-    await saveProjectToTauriDetailed(updatedProject);
+  const list = loadSavedProjectsList().filter((item) => item.id !== meta.id);
+  const metadata = await migrateLegacyRecentEntries(list);
+  try {
+    localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify([meta, ...metadata]));
+  } catch (error) {
+    throw new Error(`ERR_RECENT_PROJECTS_WRITE: 工程已写入 ${path}，但更新最近工程列表失败：${error instanceof Error ? error.message : String(error)}`);
   }
+}
 
-  // 同步写入磁盘 MooVN_Workspace/Projects/ 目录及已挂载设备本地文件夹 (.mpvn 格式)
-  await writeFileToMountedMooVNFolder(
-    fileName,
-    JSON.stringify(mpvnPayload, null, 2),
-    'Projects'
-  );
+async function migrateLegacyRecentEntries(list: SavedProjectMeta[]): Promise<SavedProjectMeta[]> {
+  const metadata: SavedProjectMeta[] = [];
+  for (const item of list) {
+    const { projectData, ...entry } = item;
+    if (projectData) {
+      const validation = validateVNProjectShape(projectData);
+      if (!validation.ok) throw new Error(`ERR_LEGACY_PROJECT_MIGRATION: ${item.title}: ${validation.error}`);
+      await putProjectSnapshot(`legacy:${item.id}`, projectData);
+    }
+    metadata.push(entry);
+  }
+  return metadata;
+}
 
-  return meta;
+/** Move legacy recent-list project bodies to IndexedDB before removing them from localStorage. */
+export async function migrateLegacyRecentProjects(): Promise<SavedProjectMeta[]> {
+  const list = loadSavedProjectsList();
+  if (!list.some((item) => item.projectData)) return list;
+  const metadata = await migrateLegacyRecentEntries(list);
+  localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(metadata));
+  return metadata;
+}
+
+export async function openSavedProject(meta: SavedProjectMeta): Promise<{
+  ok: boolean; project?: VNProject; error?: string; recoveredFromBackup?: boolean;
+}> {
+  let nativeError: string | undefined;
+  if (isTauriEnvironment()) {
+    const result = await loadProjectFromTauri(projectFileName({ id: meta.id, projectPath: meta.path }));
+    if (result.ok && result.data) {
+      return { ok: true, project: result.data, recoveredFromBackup: result.recoveredFromBackup };
+    }
+    nativeError = result.error || '工程文件读取失败';
+  }
+  try {
+    const snapshot = await getProjectSnapshot(`${isTauriEnvironment() ? 'legacy' : 'saved'}:${meta.id}`)
+      || (!isTauriEnvironment() ? await getProjectSnapshot(`legacy:${meta.id}`) : undefined);
+    const candidate = snapshot?.project || meta.projectData;
+    if (candidate) {
+      const { parseMpvnProject } = await import('./mpvnFormat.ts');
+      const validation = parseMpvnProject(JSON.stringify(candidate));
+      return validation.ok ? { ok: true, project: validation.project, recoveredFromBackup: isTauriEnvironment() || snapshot?.key.startsWith('legacy:') } : { ok: false, error: validation.error };
+    }
+  } catch (error) {
+    if (!meta.projectData) return { ok: false, error: nativeError || (error instanceof Error ? error.message : String(error)) };
+    const validation = validateVNProjectShape(meta.projectData);
+    return validation.ok ? { ok: true, project: validation.project, recoveredFromBackup: true } : { ok: false, error: validation.error };
+  }
+  if (nativeError) return { ok: false, error: nativeError };
+  return { ok: false, error: 'ERR_PROJECT_NOT_FOUND: 找不到此工程，请重新导入' };
 }
 
 export function deleteSavedProject(projectId: string): SavedProjectMeta[] {

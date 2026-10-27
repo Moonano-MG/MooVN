@@ -1,15 +1,21 @@
 use moovn_engine::{MooVNEngineRuntime, PolyglotTranslator, SourceLanguage};
 use serde::{Deserialize, Serialize};
-use std::fs::{self, File};
-use std::io::Write;
-use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::path::PathBuf;
+use tauri::Manager;
+
+mod workspace_io;
+mod asset_io;
+use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 static ENGINE_RUNTIME: Mutex<Option<MooVNEngineRuntime>> = Mutex::new(None);
+static ASSET_UPLOADS: OnceLock<Mutex<asset_io::AssetUploads>> = OnceLock::new();
 
-const ALLOWED_WORKSPACE_SUBDIRS: &[&str] = &["Projects", "Exports", "Cache", "Assets"];
-const MAX_PAYLOAD_BYTES: usize = 16 * 1024 * 1024; // 16 MiB limit
+fn asset_uploads() -> &'static Mutex<asset_io::AssetUploads> {
+    ASSET_UPLOADS.get_or_init(|| Mutex::new(asset_io::AssetUploads::default()))
+}
+
+const MAX_PAYLOAD_BYTES: usize = workspace_io::MAX_PROJECT_BYTES;
 
 #[derive(Serialize, Deserialize)]
 pub struct PlatformInfo {
@@ -42,132 +48,43 @@ fn current_epoch_ms() -> u64 {
         .unwrap_or(0)
 }
 
-fn ensure_workspace_root() -> Result<PathBuf, String> {
-    let base = std::env::current_dir()
-        .map_err(|e| format!("ERR_WORKSPACE_CWD: {}", e))?
+fn ensure_workspace_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let base = app.path().app_data_dir()
+        .map_err(|e| format!("ERR_WORKSPACE_PATH: {e}"))?
         .join("MooVN_Workspace");
-    fs::create_dir_all(&base).map_err(|e| format!("ERR_WORKSPACE_INIT: {}", e))?;
-    for sub in ALLOWED_WORKSPACE_SUBDIRS {
-        let p = base.join(sub);
-        fs::create_dir_all(&p).map_err(|e| format!("ERR_WORKSPACE_SUBDIR: {}", e))?;
-    }
-    base.canonicalize()
-        .map_err(|e| format!("ERR_WORKSPACE_CANONICALIZE: {}", e))
+    workspace_io::ensure_root(&base)
 }
 
-/// Validates and resolves a file path strictly inside `MooVN_Workspace/<subdir>/<file_name>`.
-/// Rejects path traversal (`..`), path separators, null bytes, and unapproved file extensions.
-pub fn resolve_safe_workspace_file(
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkspacePaths {
+    workspace_root_path: String,
+    projects_directory_path: String,
+    export_output_directory_path: String,
+    cache_directory_path: String,
+    settings_file_path: String,
+}
+
+#[tauri::command]
+fn get_workspace_paths(app: tauri::AppHandle) -> Result<WorkspacePaths, String> {
+    let root = ensure_workspace_root(&app)?;
+    let as_string = |path: PathBuf| path.to_string_lossy().to_string();
+    Ok(WorkspacePaths {
+        workspace_root_path: as_string(root.clone()),
+        projects_directory_path: as_string(root.join("Projects")),
+        export_output_directory_path: as_string(root.join("Exports")),
+        cache_directory_path: as_string(root.join("Cache")),
+        settings_file_path: as_string(root.join("Cache").join("settings.moovn.json")),
+    })
+}
+
+fn resolve_safe_workspace_file(
+    app: &tauri::AppHandle,
     subdir: &str,
-    raw_file_name: &str,
-    allowed_exts: &[&str],
+    name: &str,
+    extensions: &[&str],
 ) -> Result<PathBuf, String> {
-    if !ALLOWED_WORKSPACE_SUBDIRS.contains(&subdir) {
-        return Err(format!(
-            "ERR_INVALID_SUBDIR: '{}' is not an allowed workspace directory",
-            subdir
-        ));
-    }
-
-    let trimmed = raw_file_name.trim();
-    if trimmed.is_empty()
-        || trimmed.contains("..")
-        || trimmed.contains('/')
-        || trimmed.contains('\\')
-        || trimmed.contains(':')
-        || trimmed.contains('\0')
-    {
-        return Err("ERR_PATH_TRAVERSAL_REJECTED: file name must be a single relative basename within the workspace".to_string());
-    }
-
-    let has_valid_ext = allowed_exts.iter().any(|ext| {
-        trimmed
-            .to_ascii_lowercase()
-            .ends_with(&format!(".{}", ext.to_ascii_lowercase()))
-    });
-    if !has_valid_ext {
-        return Err(format!(
-            "ERR_EXTENSION_NOT_ALLOWED: '{}' must end with one of {:?}",
-            trimmed, allowed_exts
-        ));
-    }
-
-    let root = ensure_workspace_root()?;
-    let target_dir = root
-        .join(subdir)
-        .canonicalize()
-        .map_err(|e| format!("ERR_SUBDIR_CANONICALIZE: {}", e))?;
-
-    if !target_dir.starts_with(&root) {
-        return Err("ERR_WORKSPACE_ESCAPE: target directory escaped workspace root".to_string());
-    }
-
-    let full_path = target_dir.join(trimmed);
-    if full_path.parent() != Some(target_dir.as_path()) {
-        return Err("ERR_WORKSPACE_ESCAPE: resolved file parent mismatch".to_string());
-    }
-
-    Ok(full_path)
-}
-
-/// Performs an atomic file write (`temp -> flush & sync_all -> rename`) so crashes or power loss
-/// never leave a truncated or corrupted project file on disk.
-pub fn atomic_write_file(target: &Path, content: &[u8]) -> Result<(), String> {
-    if content.len() > MAX_PAYLOAD_BYTES {
-        return Err(format!(
-            "ERR_PAYLOAD_TOO_LARGE: payload ({} bytes) exceeds limit ({} bytes)",
-            content.len(),
-            MAX_PAYLOAD_BYTES
-        ));
-    }
-
-    let parent = target
-        .parent()
-        .ok_or_else(|| "ERR_NO_PARENT_DIR: target path has no parent directory".to_string())?;
-    fs::create_dir_all(parent).map_err(|e| format!("ERR_CREATE_DIR: {}", e))?;
-
-    let file_name = target
-        .file_name()
-        .and_then(|s| s.to_str())
-        .ok_or_else(|| "ERR_INVALID_FILENAME".to_string())?;
-    let tmp_path = parent.join(format!(".{}.tmp.{}", file_name, std::process::id()));
-
-    {
-        let mut tmp_file =
-            File::create(&tmp_path).map_err(|e| format!("ERR_TEMP_CREATE: {}", e))?;
-        tmp_file
-            .write_all(content)
-            .map_err(|e| format!("ERR_TEMP_WRITE: {}", e))?;
-        tmp_file
-            .sync_all()
-            .map_err(|e| format!("ERR_TEMP_FSYNC: {}", e))?;
-    }
-
-    fs::rename(&tmp_path, target).map_err(|e| {
-        let _ = fs::remove_file(&tmp_path);
-        format!("ERR_ATOMIC_RENAME: {}", e)
-    })?;
-
-    Ok(())
-}
-
-fn sanitize_project_slug(raw: &str) -> String {
-    let cleaned: String = raw
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect();
-    let trimmed = cleaned.trim_matches('_');
-    if trimmed.is_empty() {
-        "moovn_project".to_string()
-    } else {
-        trimmed.chars().take(64).collect()
-    }
+    workspace_io::resolve_file(&ensure_workspace_root(app)?, subdir, name, extensions)
 }
 
 #[tauri::command]
@@ -189,78 +106,72 @@ fn get_platform_info() -> PlatformInfo {
 
 #[tauri::command]
 fn save_project_json(
-    project_id: Option<String>,
+    app: tauri::AppHandle,
+    file_name: String,
     payload: String,
+    retain_backup: Option<bool>,
 ) -> Result<SaveProjectResult, String> {
     if payload.trim().is_empty() {
-        return Err("ERR_EMPTY_PAYLOAD: project JSON cannot be empty".to_string());
+        return Err("ERR_EMPTY_PAYLOAD: project JSON cannot be empty".into());
     }
-    // Validate JSON syntax before touching disk
+    if payload.len() > MAX_PAYLOAD_BYTES {
+        return Err("ERR_PAYLOAD_TOO_LARGE: project exceeds 16 MiB".into());
+    }
     let parsed: serde_json::Value = serde_json::from_str(&payload)
-        .map_err(|e| format!("ERR_INVALID_JSON: project payload is not valid JSON ({})", e))?;
-
-    let inferred_id = project_id
-        .or_else(|| {
-            parsed
-                .get("id")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string())
-        })
-        .unwrap_or_else(|| "moovn_project".to_string());
-
-    let slug = sanitize_project_slug(&inferred_id);
-    let primary_name = format!("{}.mpvn", slug);
-    let backup_name = format!("{}.bak.mpvn", slug);
-
-    let primary_path = resolve_safe_workspace_file("Projects", &primary_name, &["mpvn", "json"])?;
-    let backup_path = resolve_safe_workspace_file("Projects", &backup_name, &["mpvn", "json"])?;
-
-    // If a primary file already exists, copy it to `.bak.mpvn` before overwriting
-    if primary_path.exists() {
-        if let Ok(existing_bytes) = fs::read(&primary_path) {
-            let _ = atomic_write_file(&backup_path, &existing_bytes);
-        }
+        .map_err(|e| format!("ERR_INVALID_JSON: {e}"))?;
+    if !parsed.is_object() {
+        return Err("ERR_INVALID_JSON: project must be an object".into());
     }
-
-    let bytes = payload.as_bytes();
-    atomic_write_file(&primary_path, bytes)?;
-
+    let root = ensure_workspace_root(&app)?;
+    let (primary, backup) = workspace_io::save_project(&root, &file_name, payload.as_bytes(), retain_backup.unwrap_or(false))?;
     Ok(SaveProjectResult {
         ok: true,
-        path: primary_path.to_string_lossy().to_string(),
-        backup_path: backup_path.to_string_lossy().to_string(),
-        bytes_written: bytes.len(),
+        path: primary.to_string_lossy().into_owned(),
+        backup_path: backup.to_string_lossy().into_owned(),
+        bytes_written: payload.len(),
         saved_at_epoch_ms: current_epoch_ms(),
     })
 }
 
+#[derive(Serialize)]
+struct LoadProjectResult {
+    payload: String,
+    path: String,
+    recovered_from_backup: bool,
+}
+
 #[tauri::command]
-fn load_project_json(project_id: String) -> Result<String, String> {
-    let slug = sanitize_project_slug(&project_id);
-    let primary_name = format!("{}.mpvn", slug);
-    let backup_name = format!("{}.bak.mpvn", slug);
-
-    let primary_path = resolve_safe_workspace_file("Projects", &primary_name, &["mpvn", "json"])?;
-    let backup_path = resolve_safe_workspace_file("Projects", &backup_name, &["mpvn", "json"])?;
-
-    if primary_path.exists() {
-        match fs::read_to_string(&primary_path) {
-            Ok(content) if serde_json::from_str::<serde_json::Value>(&content).is_ok() => {
-                return Ok(content);
-            }
-            _ => {}
-        }
+fn load_project_json(app: tauri::AppHandle, file_name: String, prefer_backup: Option<bool>) -> Result<LoadProjectResult, String> {
+    let primary = resolve_safe_workspace_file(&app, "Projects", &file_name, &["mpvn"])?;
+    let backup = primary.with_file_name(format!("{file_name}.bak"));
+    let load = |path: &std::path::Path| -> Result<String, String> {
+        let content = workspace_io::read_bounded(path, MAX_PAYLOAD_BYTES)?;
+        let _: serde_json::Value = serde_json::from_str(&content)
+            .map_err(|e| format!("ERR_INVALID_JSON: {e}"))?;
+        Ok(content)
+    };
+    if prefer_backup.unwrap_or(false) {
+        return Ok(LoadProjectResult {
+            payload: load(&backup)?,
+            path: primary.to_string_lossy().into_owned(),
+            recovered_from_backup: true,
+        });
     }
-
-    if backup_path.exists() {
-        let backup_content = fs::read_to_string(&backup_path)
-            .map_err(|e| format!("ERR_READ_BACKUP: {}", e))?;
-        let _: serde_json::Value = serde_json::from_str(&backup_content)
-            .map_err(|e| format!("ERR_CORRUPT_BACKUP: {}", e))?;
-        return Ok(backup_content);
+    match load(&primary) {
+        Ok(payload) => Ok(LoadProjectResult {
+            payload,
+            path: primary.to_string_lossy().into_owned(),
+            recovered_from_backup: false,
+        }),
+        Err(primary_error) => match load(&backup) {
+            Ok(payload) => Ok(LoadProjectResult {
+                payload,
+                path: primary.to_string_lossy().into_owned(),
+                recovered_from_backup: true,
+            }),
+            Err(_) => Err(primary_error),
+        },
     }
-
-    Err(format!("ERR_PROJECT_NOT_FOUND: no saved project found for '{}'", slug))
 }
 
 #[tauri::command]
@@ -280,7 +191,7 @@ fn translate_polyglot_script(
 }
 
 #[tauri::command]
-fn eval_engine_script(source_code: String, lang: String) -> Result<Vec<String>, String> {
+fn eval_engine_script(app: tauri::AppHandle, source_code: String, lang: String) -> Result<Vec<String>, String> {
     if source_code.len() > MAX_PAYLOAD_BYTES {
         return Err("ERR_SCRIPT_TOO_LARGE".to_string());
     }
@@ -288,10 +199,9 @@ fn eval_engine_script(source_code: String, lang: String) -> Result<Vec<String>, 
         .lock()
         .map_err(|_| "ERR_ENGINE_LOCK_POISONED".to_string())?;
     if guard.is_none() {
-        let save_dir = ensure_workspace_root()
-            .map(|r| r.join("Cache").join("Saves"))
-            .unwrap_or_else(|_| std::env::temp_dir().join("MooVN_Saves"));
-        let rt = MooVNEngineRuntime::with_save_dir(save_dir).unwrap_or_else(|_| MooVNEngineRuntime::new());
+        let save_dir = ensure_workspace_root(&app)?.join("Cache").join("Saves");
+        let rt = MooVNEngineRuntime::with_save_dir(save_dir)
+            .map_err(|e| format!("ERR_ENGINE_SAVE_DIR: {e}"))?;
         *guard = Some(rt);
     }
     let rt = guard.as_mut().expect("initialized");
@@ -300,40 +210,73 @@ fn eval_engine_script(source_code: String, lang: String) -> Result<Vec<String>, 
 
 #[tauri::command]
 fn write_workspace_file(
+    app: tauri::AppHandle,
     sub_dir: String,
     file_name: String,
     content: String,
 ) -> Result<String, String> {
     let target = resolve_safe_workspace_file(
-        &sub_dir,
-        &file_name,
-        &["mpvn", "msvn", "json", "yaml", "yml", "ts", "js", "cs", "cpp", "rs", "html", "txt", "png"],
-    )?;
-    atomic_write_file(&target, content.as_bytes())?;
-    Ok(target.to_string_lossy().to_string())
-}
-
-#[tauri::command]
-fn read_workspace_file(sub_dir: String, file_name: String) -> Result<String, String> {
-    let target = resolve_safe_workspace_file(
+        &app,
         &sub_dir,
         &file_name,
         &["mpvn", "msvn", "json", "yaml", "yml", "ts", "js", "cs", "cpp", "rs", "html", "txt"],
     )?;
-    fs::read_to_string(&target).map_err(|e| format!("ERR_WORKSPACE_READ: {}", e))
-}
-
-#[tauri::command]
-fn export_scene_yaml(file_name: String, yaml_content: String) -> Result<String, String> {
-    let target = resolve_safe_workspace_file("Projects", &file_name, &["yaml", "yml"])?;
-    atomic_write_file(&target, yaml_content.as_bytes())?;
+    workspace_io::atomic_write_file(&target, content.as_bytes(), MAX_PAYLOAD_BYTES)?;
     Ok(target.to_string_lossy().to_string())
 }
 
 #[tauri::command]
-fn import_scene_yaml(file_name: String) -> Result<String, String> {
-    let target = resolve_safe_workspace_file("Projects", &file_name, &["yaml", "yml"])?;
-    fs::read_to_string(&target).map_err(|e| format!("ERR_YAML_READ: {}", e))
+fn read_workspace_file(app: tauri::AppHandle, sub_dir: String, file_name: String) -> Result<String, String> {
+    let target = resolve_safe_workspace_file(
+        &app,
+        &sub_dir,
+        &file_name,
+        &["mpvn", "msvn", "json", "yaml", "yml", "ts", "js", "cs", "cpp", "rs", "html", "txt"],
+    )?;
+    workspace_io::read_bounded(&target, MAX_PAYLOAD_BYTES)
+}
+
+#[tauri::command]
+fn export_scene_yaml(app: tauri::AppHandle, file_name: String, yaml_content: String) -> Result<String, String> {
+    let target = resolve_safe_workspace_file(&app, "Projects", &file_name, &["yaml", "yml"])?;
+    workspace_io::atomic_write_file(&target, yaml_content.as_bytes(), MAX_PAYLOAD_BYTES)?;
+    Ok(target.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+fn import_scene_yaml(app: tauri::AppHandle, file_name: String) -> Result<String, String> {
+    let target = resolve_safe_workspace_file(&app, "Projects", &file_name, &["yaml", "yml"])?;
+    workspace_io::read_bounded(&target, MAX_PAYLOAD_BYTES)
+}
+
+#[tauri::command]
+fn begin_asset_upload(app: tauri::AppHandle, file_name: String, size: u64) -> Result<String, String> {
+    asset_uploads().lock().map_err(|_| "ERR_ASSET_LOCK")?.begin(&ensure_workspace_root(&app)?, &file_name, size)
+}
+
+#[tauri::command]
+fn append_asset_upload(token: String, bytes: Vec<u8>) -> Result<(), String> {
+    asset_uploads().lock().map_err(|_| "ERR_ASSET_LOCK")?.append(&token, &bytes)
+}
+
+#[tauri::command]
+fn finish_asset_upload(token: String) -> Result<String, String> {
+    asset_uploads().lock().map_err(|_| "ERR_ASSET_LOCK")?.finish(&token)
+}
+
+#[tauri::command]
+fn abort_asset_upload(token: String) -> Result<(), String> {
+    asset_uploads().lock().map_err(|_| "ERR_ASSET_LOCK")?.abort(&token);
+    Ok(())
+}
+
+#[derive(Serialize)]
+struct AssetChunk { bytes: Vec<u8>, total_bytes: u64 }
+
+#[tauri::command]
+fn read_asset_chunk(app: tauri::AppHandle, file_name: String, offset: u64, length: usize) -> Result<AssetChunk, String> {
+    let (bytes, total_bytes) = asset_io::read_chunk(&ensure_workspace_root(&app)?, &file_name, offset, length)?;
+    Ok(AssetChunk { bytes, total_bytes })
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -341,6 +284,12 @@ pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             get_platform_info,
+            get_workspace_paths,
+            begin_asset_upload,
+            append_asset_upload,
+            finish_asset_upload,
+            abort_asset_upload,
+            read_asset_chunk,
             save_project_json,
             load_project_json,
             translate_polyglot_script,

@@ -130,7 +130,7 @@ export const NODE_REGISTRY: NodeTypeMeta[] = [
     category: 'control',
     categoryLabel: '控制',
     title: '流式预载',
-    description: '提前流式解压 1~20 场景并释放旧内存',
+    description: '未实现：不会预载或卸载场景。',
     ...CAT_STYLE.control,
   },
   {
@@ -138,7 +138,7 @@ export const NODE_REGISTRY: NodeTypeMeta[] = [
     category: 'control',
     categoryLabel: '控制',
     title: '章节加载',
-    description: '挂载 .msvn 章节包并校准保底好感',
+    description: '未实现：不能在运行时加载章节包。',
     ...CAT_STYLE.control,
   },
   {
@@ -554,4 +554,9 @@ export function getNodeMeta(type: WorkflowNodeType): NodeTypeMeta {
       ...CAT_STYLE.narrative,
     }
   );
+}
+
+/** Kept in the registry so old projects can be inspected, but not added as working nodes. */
+export function isUnsupportedNode(type: WorkflowNodeType): boolean {
+  return type === 'stream_preload_hint' || type === 'msvn_chapter_load';
 }

@@ -59,52 +59,108 @@ export interface SaveProjectTauriResponse {
  * Atomically saves a project via the Tauri backend (`save_project_json`: temp -> fsync -> rename)
  * and returns a structured result with explicit error codes instead of silently failing.
  */
-export async function saveProjectToTauriDetailed(
-  project: VNProject
-): Promise<TauriOperationResult<SaveProjectTauriResponse>> {
-  const payload = JSON.stringify(project, null, 2);
-  const res = await invokeTauriCommand<SaveProjectTauriResponse>('save_project_json', {
-    projectId: project.id || 'moovn_project',
-    payload,
-  });
-  if (res.ok && res.data) {
-    return {
-      ok: true,
-      data: res.data,
-      path: res.data.path,
-    };
-  }
-  return res;
+export interface WorkspacePaths {
+  workspaceRootPath: string;
+  projectsDirectoryPath: string;
+  exportOutputDirectoryPath: string;
+  cacheDirectoryPath: string;
+  settingsFilePath: string;
 }
 
-export async function saveProjectToTauri(project: VNProject): Promise<boolean> {
-  const res = await saveProjectToTauriDetailed(project);
-  return res.ok;
+export function getWorkspacePathsFromTauri(): Promise<TauriOperationResult<WorkspacePaths>> {
+  return invokeTauriCommand<WorkspacePaths>('get_workspace_paths');
+}
+
+const recoveredProjectFiles = new Set<string>();
+
+export async function saveProjectToTauriDetailed(
+  fileName: string,
+  payload: string
+): Promise<TauriOperationResult<SaveProjectTauriResponse>> {
+  const res = await invokeTauriCommand<SaveProjectTauriResponse>('save_project_json', {
+    fileName,
+    payload,
+    retainBackup: recoveredProjectFiles.has(fileName),
+  });
+  if (!res.ok) return res;
+  if (!res.data?.ok || !res.data.path) {
+    return { ok: false, code: 'ERR_INVALID_SAVE_RESPONSE', error: '保存命令未返回有效的文件路径。' };
+  }
+  recoveredProjectFiles.delete(fileName);
+  return { ok: true, data: res.data, path: res.data.path };
 }
 
 export async function loadProjectFromTauri(
-  projectId: string
-): Promise<TauriOperationResult<VNProject>> {
-  const res = await invokeTauriCommand<string>('load_project_json', {
-    projectId,
-  });
-  if (!res.ok || !res.data) {
-    return {
-      ok: false,
-      code: res.code || 'ERR_LOAD_FAILED',
-      error: res.error || '未能读取本地工程文件',
-    };
+  fileName: string
+): Promise<TauriOperationResult<VNProject> & { recoveredFromBackup?: boolean }> {
+  type LoadResult = { payload: string; path: string; recovered_from_backup: boolean };
+  let result = await invokeTauriCommand<LoadResult>('load_project_json', { fileName, preferBackup: false });
+  if (!result.ok || !result.data) {
+    return { ok: false, code: result.code || 'ERR_LOAD_FAILED', error: result.error || '未能读取本地工程文件' };
   }
+  const { parseMpvnProject } = await import('./mpvnFormat.ts');
+  let parsed = parseMpvnProject(result.data.payload);
+  if ((!parsed.ok || !parsed.project) && !result.data.recovered_from_backup) {
+    const primaryError = parsed.error || '主工程校验失败';
+    result = await invokeTauriCommand<LoadResult>('load_project_json', { fileName, preferBackup: true });
+    if (!result.ok || !result.data) {
+      return { ok: false, code: 'ERR_PROJECT_VALIDATION', error: `${primaryError}；备份读取失败：${result.error || '未知错误'}` };
+    }
+    parsed = parseMpvnProject(result.data.payload);
+  }
+  if (!parsed.ok || !parsed.project) {
+    return { ok: false, code: 'ERR_PROJECT_VALIDATION', error: parsed.error || '工程与备份均未通过校验' };
+  }
+  if (result.data.recovered_from_backup) recoveredProjectFiles.add(fileName);
+  else recoveredProjectFiles.delete(fileName);
+  return {
+    ok: true,
+    data: { ...parsed.project, projectPath: result.data.path },
+    path: result.data.path,
+    recoveredFromBackup: result.data.recovered_from_backup,
+  };
+}
+
+const ASSET_CHUNK_BYTES = 1024 * 1024;
+
+export async function storeAssetViaTauri(fileName: string, bytes: Uint8Array): Promise<void> {
+  const begin = await invokeTauriCommand<string>('begin_asset_upload', { fileName, size: bytes.byteLength });
+  if (!begin.ok || !begin.data) throw new Error(begin.error || 'ERR_ASSET_UPLOAD: 无法开始上传');
+  const token = begin.data;
   try {
-    const parsed = JSON.parse(res.data) as VNProject;
-    return { ok: true, data: parsed };
-  } catch (err: unknown) {
-    return {
-      ok: false,
-      code: 'ERR_PARSE_PROJECT_JSON',
-      error: err instanceof Error ? err.message : '工程 JSON 解析失败',
-    };
+    for (let offset = 0; offset < bytes.byteLength; offset += ASSET_CHUNK_BYTES) {
+      const chunk = Array.from(bytes.subarray(offset, offset + ASSET_CHUNK_BYTES));
+      const result = await invokeTauriCommand<void>('append_asset_upload', { token, bytes: chunk });
+      if (!result.ok) throw new Error(result.error || 'ERR_ASSET_WRITE: 资源写入失败');
+    }
+    const finish = await invokeTauriCommand<string>('finish_asset_upload', { token });
+    if (!finish.ok || !finish.data) throw new Error(finish.error || 'ERR_ASSET_WRITE: 资源提交失败');
+  } catch (error) {
+    await invokeTauriCommand<void>('abort_asset_upload', { token });
+    throw error;
   }
+}
+
+export async function readAssetViaTauri(fileName: string): Promise<Uint8Array> {
+  const chunks: Uint8Array[] = [];
+  let offset = 0;
+  let total = 0;
+  do {
+    const result = await invokeTauriCommand<{ bytes: number[]; total_bytes: number }>('read_asset_chunk', {
+      fileName, offset, length: ASSET_CHUNK_BYTES,
+    });
+    if (!result.ok || !result.data) throw new Error(result.error || 'ERR_ASSET_READ: 资源读取失败');
+    if (offset && total !== result.data.total_bytes) throw new Error('ERR_ASSET_CHANGED: 读取期间资源发生变化');
+    total = result.data.total_bytes;
+    const chunk = Uint8Array.from(result.data.bytes);
+    if (!chunk.length && offset < total) throw new Error('ERR_ASSET_READ: 资源读取不完整');
+    chunks.push(chunk);
+    offset += chunk.length;
+  } while (offset < total);
+  const combined = new Uint8Array(total);
+  let position = 0;
+  for (const chunk of chunks) { combined.set(chunk, position); position += chunk.length; }
+  return combined;
 }
 
 export async function evalScriptViaTauriEngine(

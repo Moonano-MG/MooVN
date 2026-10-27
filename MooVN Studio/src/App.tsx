@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   X,
   ExternalLink,
@@ -26,6 +26,7 @@ import {
   CircleDot,
 } from 'lucide-react';
 import { useEditor } from './hooks/useEditor';
+import { newId } from './lib/ids';
 import {
   DockDirection,
   MenuBar,
@@ -48,7 +49,7 @@ import { AssetStudioPanel } from './components/AssetStudioPanel';
 import { SettingsModal } from './components/SettingsModal';
 import { OfficialPortal } from './components/OfficialPortal';
 import { PanelId } from './types';
-import { saveProjectToWorkspace } from './lib/workspaceManager';
+import { loadSystemSettings, saveProjectToWorkspace } from './lib/workspaceManager';
 import { useUILanguage } from './lib/i18n';
 import { clampSplitRatio } from './lib/vnRuntimeCore';
 import {
@@ -63,7 +64,7 @@ import {
   setFeatureFlag,
   Z_INDEX_TOKENS,
 } from './lib/featureFlags';
-import type { WorkflowNodeType } from './types';
+import type { VNProject, WorkflowNodeType } from './types';
 
 const PANEL_TITLES: Record<PanelId, string> = {
   explorer: '工程资源与章节',
@@ -310,7 +311,7 @@ function dockPanelIntoTree(
   if (!cleaned || leaves.length === 0) {
     return {
       kind: 'leaf',
-      id: `leaf-${Date.now()}`,
+      id: newId('leaf'),
       tabs: [panelId],
       activeTab: panelId,
     };
@@ -334,7 +335,7 @@ function dockPanelIntoTree(
 
     const newLeaf: EditorGroupLeaf = {
       kind: 'leaf',
-      id: `leaf-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+      id: newId('leaf'),
       tabs: [panelId],
       activeTab: panelId,
     };
@@ -345,7 +346,7 @@ function dockPanelIntoTree(
 
     return {
       kind: 'branch',
-      id: `branch-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+      id: newId('branch'),
       direction,
       ratio: 0.5,
       first: isFirst ? newLeaf : leaf,
@@ -356,7 +357,7 @@ function dockPanelIntoTree(
   return (
     updated || {
       kind: 'leaf',
-      id: `leaf-${Date.now()}`,
+      id: newId('leaf'),
       tabs: [panelId],
       activeTab: panelId,
     }
@@ -371,6 +372,8 @@ export function App({
   const {
     project,
     setProject,
+    adoptSavedProject,
+    replaceProject,
     selectedNodeId,
     selectedNode,
     selectedChapterId,
@@ -443,9 +446,22 @@ export function App({
   );
   const [featureFlags, setFeatureFlagsState] = useState(() => getFeatureFlags());
   const [isWindowOverviewOpen, setIsWindowOverviewOpen] = useState(false);
-  const lastSavedSnapshotRef = useRef<string>(JSON.stringify(project));
+  const [isLauncherOpen, setIsLauncherOpen] = useState(true);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const lastSavedProjectRef = useRef<VNProject | null>(null);
+  const currentProjectRef = useRef(project);
+  currentProjectRef.current = project;
+  const projectSessionRef = useRef(0);
+  const hasOpenProjectRef = useRef(false);
+  const requireManualSaveRef = useRef(false);
+  const savedPathRef = useRef<string | undefined>(undefined);
+  const savingRef = useRef(false);
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'file' | 'browser'>('idle');
+  const [saveError, setSaveError] = useState<{ code: string; error: string } | null>(null);
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
-  const isDirty = JSON.stringify(project) !== lastSavedSnapshotRef.current;
+  const [lastSaveWasAutomatic, setLastSaveWasAutomatic] = useState(false);
+  // Immutable project identity is the saved revision; no full-project serialization on render.
+  const isDirty = project !== lastSavedProjectRef.current;
   const [mobileActivePanel, setMobileActivePanel] = useState<PanelId>('canvas');
   const [mobilePinStage, setMobilePinStage] = useState<boolean>(false);
 
@@ -536,16 +552,63 @@ export function App({
 
   // Warn before closing tab/window when project has unsaved changes (`GPT-31 / CL-31`)
   useEffect(() => {
-    if (!isDirty) return;
+    if (!isDirty || !hasOpenProjectRef.current) return;
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
       e.preventDefault();
       e.returnValue = '';
     };
     window.addEventListener('beforeunload', onBeforeUnload);
     return () => window.removeEventListener('beforeunload', onBeforeUnload);
-  }, [isDirty]);
+  }, [isDirty, isLauncherOpen]);
 
-  // Global keyboard shortcuts: Ctrl+Shift+W for Window Overview (`GPT-25`, Section 8), Ctrl+S to save
+  const saveCurrentProject = useCallback(async (automatic = false) => {
+    if (savingRef.current || (automatic && requireManualSaveRef.current)) return;
+    savingRef.current = true;
+    const snapshot = currentProjectRef.current;
+    const session = projectSessionRef.current;
+    setSaveError(null);
+    setSaveState('saving');
+    try {
+      const result = await saveProjectToWorkspace(snapshot, savedPathRef.current);
+      if (session !== projectSessionRef.current) return;
+      if (!result.ok) {
+        setSaveState('idle');
+        setSaveError({ code: result.code, error: result.error });
+        return;
+      }
+      savedPathRef.current = result.path;
+      requireManualSaveRef.current = false;
+      if (currentProjectRef.current === snapshot) {
+        lastSavedProjectRef.current = result.project;
+        currentProjectRef.current = result.project;
+        adoptSavedProject(snapshot, result.project);
+      } else {
+        lastSavedProjectRef.current = snapshot;
+      }
+      setLastSavedAt(new Date(result.savedAt).toLocaleTimeString());
+      setLastSaveWasAutomatic(automatic);
+      setSaveState(result.storage);
+    } catch (error: unknown) {
+      if (session === projectSessionRef.current) {
+        setSaveState('idle');
+        setSaveError({ code: 'ERR_SAVE_UNEXPECTED', error: error instanceof Error ? error.message : String(error) });
+      }
+    } finally {
+      savingRef.current = false;
+    }
+  }, [adoptSavedProject]);
+
+  // Autosave commits the current revision, never a stale completion as the current revision.
+  useEffect(() => {
+    if (siteSection !== 'studio' || isLauncherOpen) return;
+    const seconds = Number(loadSystemSettings().editorConfig.autoSaveIntervalSec);
+    if (!Number.isFinite(seconds) || seconds <= 0) return;
+    const timer = window.setInterval(() => {
+      if (currentProjectRef.current !== lastSavedProjectRef.current) void saveCurrentProject(true);
+    }, Math.max(5, seconds) * 1000);
+    return () => window.clearInterval(timer);
+  }, [siteSection, isLauncherOpen, isSettingsOpen, saveCurrentProject]);
+
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'w') {
@@ -553,15 +616,12 @@ export function App({
         setIsWindowOverviewOpen((v) => !v);
       } else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 's') {
         e.preventDefault();
-        saveProjectToWorkspace(project).then(() => {
-          lastSavedSnapshotRef.current = JSON.stringify(project);
-          setLastSavedAt(new Date().toLocaleTimeString().slice(0, 8));
-        });
+        if (siteSection === 'studio' && !isLauncherOpen) void saveCurrentProject();
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [project]);
+  }, [siteSection, isLauncherOpen, saveCurrentProject]);
 
   const updateProjectMeta = (patch: Partial<typeof project>) => {
     setProject((prev) => ({ ...prev, ...patch }));
@@ -572,7 +632,7 @@ export function App({
   };
 
   const importProject = (proj: typeof project) => {
-    setProject(proj);
+    replaceProject(proj);
     const firstCh = proj.chapters?.[0]?.id || 'ch-1';
     const firstNode =
       proj.startNodeId ||
@@ -696,8 +756,6 @@ export function App({
   // Modals & Logs — First time entering MooVN starts on Project Selection (`isLauncherOpen = true`)
   const [isPlayingPreview, setIsPlayingPreview] = useState(false);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
-  const [isLauncherOpen, setIsLauncherOpen] = useState(true);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isFocusMode, setIsFocusMode] = useState(false);
   const savedSplitBeforeFocusRef = useRef<EditorSplitNode | null>(null);
   const [runtimeLogs, setRuntimeLogs] = useState<string[]>([
@@ -1348,7 +1406,6 @@ export function App({
             onSetStartNode={setAsStartNode}
             onUpdateCharacterProfile={updateCharacterProfile}
             onAddCharacterProfile={addCharacterProfile}
-            onUpdateChapter={updateChapter}
           />
         ) : null;
       case 'ai_agent':
@@ -2136,8 +2193,21 @@ export function App({
           isDirty={isDirty}
           lastSavedAt={lastSavedAt}
           storageWarning={storageWarning}
+          saveState={saveState}
+          saveError={saveError}
+          savedPath={savedPathRef.current}
+          lastSaveWasAutomatic={lastSaveWasAutomatic}
+          onRetrySave={() => void saveCurrentProject()}
           onOpenWindowOverview={() => setIsWindowOverviewOpen(true)}
         />
+      )}
+
+      {saveError && (
+        <div role="alert" style={{ zIndex: Z_INDEX_TOKENS.toast }} className="fixed bottom-8 right-3 max-w-md bg-rose-950 border border-rose-500 rounded p-3 text-sm text-rose-100 shadow-xl">
+          <div>保存失败 ({saveError.code})</div>
+          <div className="break-words">{saveError.error}</div>
+          <button className="mt-2 underline" onClick={() => void saveCurrentProject()}>重试保存</button>
+        </div>
       )}
 
       {/* Window Overview Modal (`Ctrl+Shift+W`, `GPT-25`, Section 8) */}
@@ -2304,9 +2374,18 @@ export function App({
       {isLauncherOpen && (
         <ProjectLauncher
           canClose={true}
-          onOpenProject={(proj) => {
+          onOpenProject={(proj, savedStorage, requireManualSave) => {
+            if (hasOpenProjectRef.current && isDirty && !window.confirm('当前工程有未保存的更改。放弃更改并打开另一个工程吗？')) return;
+            hasOpenProjectRef.current = true;
+            requireManualSaveRef.current = Boolean(requireManualSave);
+            projectSessionRef.current += 1;
+            currentProjectRef.current = proj;
+            lastSavedProjectRef.current = savedStorage ? proj : null;
+            savedPathRef.current = proj.projectPath;
+            setSaveError(null);
+            setSaveState(savedStorage || 'idle');
+            setLastSavedAt(null);
             importProject(proj);
-            saveProjectToWorkspace(proj);
             setIsLauncherOpen(false);
           }}
           onOpenSettings={() => setIsSettingsOpen(true)}

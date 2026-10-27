@@ -1,5 +1,5 @@
-import type { VNProject, SceneNode, StoryChapter } from '../types.ts';
-import { writeFileToMountedMooVNFolder } from './workspaceManager.ts';
+import type { VNProject } from '../types.ts';
+import { validateVNProjectShape } from './projectSchema.ts';
 
 export const MAX_MPVN_PROJECT_BYTES = 16 * 1024 * 1024; // 16 MiB limit
 export const MAX_MPVN_NODES_COUNT = 5000;
@@ -23,7 +23,8 @@ export interface MpvnProjectPackage {
 }
 
 function hasDangerousKeys(obj: unknown, depth = 0): boolean {
-  if (depth > 16 || !obj || typeof obj !== 'object') return false;
+  if (depth > 64) return true;
+  if (!obj || typeof obj !== 'object') return false;
   if (
     Object.prototype.hasOwnProperty.call(obj, '__proto__') ||
     Object.prototype.hasOwnProperty.call(obj, 'constructor') ||
@@ -37,64 +38,6 @@ function hasDangerousKeys(obj: unknown, depth = 0): boolean {
     }
   }
   return false;
-}
-
-function validateVNProjectShape(proj: unknown): {
-  ok: boolean;
-  project?: VNProject;
-  error?: string;
-} {
-  if (!proj || typeof proj !== 'object') {
-    return { ok: false, error: 'ERR_SCHEMA_INVALID: 工程根节点不是有效对象' };
-  }
-  const p = proj as Record<string, unknown>;
-  if (!Array.isArray(p.nodes) || p.nodes.length === 0) {
-    return { ok: false, error: 'ERR_SCHEMA_NODES: 工程缺少有效的 nodes 数组' };
-  }
-  if (p.nodes.length > MAX_MPVN_NODES_COUNT) {
-    return {
-      ok: false,
-      error: `ERR_SCHEMA_NODE_LIMIT: 节点数量 (${p.nodes.length}) 超过安全上限 (${MAX_MPVN_NODES_COUNT})`,
-    };
-  }
-  if (!Array.isArray(p.chapters) || p.chapters.length === 0) {
-    return { ok: false, error: 'ERR_SCHEMA_CHAPTERS: 工程缺少有效的 chapters 数组' };
-  }
-
-  for (let i = 0; i < p.nodes.length; i++) {
-    const n = p.nodes[i] as Partial<SceneNode> | null;
-    if (!n || typeof n !== 'object' || typeof n.id !== 'string' || !n.id.trim()) {
-      return { ok: false, error: `ERR_SCHEMA_NODE_ID: 第 ${i + 1} 个节点缺少有效 id` };
-    }
-    if (!Array.isArray(n.dialogues)) n.dialogues = [];
-    if (!Array.isArray(n.choices)) n.choices = [];
-    if (!Array.isArray(n.characters)) n.characters = [];
-    if (!n.position || typeof n.position.x !== 'number' || typeof n.position.y !== 'number') {
-      n.position = { x: 120 + i * 280, y: 160 };
-    }
-  }
-
-  for (let i = 0; i < p.chapters.length; i++) {
-    const c = p.chapters[i] as Partial<StoryChapter> | null;
-    if (!c || typeof c !== 'object' || typeof c.id !== 'string' || !c.id.trim()) {
-      return { ok: false, error: `ERR_SCHEMA_CHAPTER_ID: 第 ${i + 1} 个章节缺少有效 id` };
-    }
-  }
-
-  const typed = p as unknown as VNProject;
-  if (!typed.id || typeof typed.id !== 'string') {
-    typed.id = `proj-${Date.now()}`;
-  }
-  if (!typed.title || typeof typed.title !== 'string') {
-    typed.title = '未命名视觉小说项目';
-  }
-  if (!typed.startNodeId || !typed.nodes.some((n) => n.id === typed.startNodeId)) {
-    typed.startNodeId = typed.nodes[0].id;
-  }
-  if (!Array.isArray(typed.characters)) typed.characters = [];
-  if (!Array.isArray(typed.variables)) typed.variables = [];
-
-  return { ok: true, project: typed };
 }
 
 /**
@@ -165,9 +108,18 @@ export function parseMpvnProject(rawText: string): {
     }
 
     if (parsed.project && typeof parsed.project === 'object') {
+      if (parsed.magic && !['MPVN_STUDIO_PROJECT', 'MOOVN_PROJECT_MPVN_V1'].includes(parsed.magic)) {
+        return { ok: false, error: 'ERR_UNSUPPORTED_FORMAT: 不支持的工程标识' };
+      }
+      if (parsed.format && parsed.format !== 'mpvn') {
+        return { ok: false, error: 'ERR_UNSUPPORTED_FORMAT: 不支持的工程格式' };
+      }
+      if (parsed.schemaVersion && !['1.0', '1.0.0'].includes(String(parsed.schemaVersion))) {
+        return { ok: false, error: `ERR_SCHEMA_VERSION: 不支持的工程版本 ${String(parsed.schemaVersion)}` };
+      }
       return validateVNProjectShape(parsed.project);
     }
-
+    // Legacy bare project objects are validated as-is; no implicit repair occurs.
     return validateVNProjectShape(parsed);
   } catch (err) {
     return {
@@ -189,8 +141,6 @@ export async function exportProjectAsMpvn(project: VNProject): Promise<string> {
   );
   const fileName = safeName.endsWith('.mpvn') ? safeName : `${safeName}.mpvn`;
   const content = serializeMpvnProject(project);
-
-  await writeFileToMountedMooVNFolder(fileName, content, 'Projects');
 
   if (typeof window !== 'undefined') {
     const blob = new Blob([content], {

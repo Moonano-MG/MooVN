@@ -15,3 +15,6 @@ src-tauri/gen
 .DS_Store
 MooVN_Workspace
 **/MooVN_Workspace
+
+# Rust build outputs
+**/target/

@@ -8,83 +8,47 @@ interface StatusBarProps {
   isDirty?: boolean;
   lastSavedAt?: string | null;
   storageWarning?: string | null;
+  saveState?: 'idle' | 'saving' | 'file' | 'browser';
+  saveError?: { code: string; error: string } | null;
+  savedPath?: string;
+  lastSaveWasAutomatic?: boolean;
+  onRetrySave?: () => void;
   onOpenWindowOverview?: () => void;
 }
 
 export const StatusBar: React.FC<StatusBarProps> = ({
-  project,
-  selectedNode,
-  isDirty = false,
-  lastSavedAt = null,
-  storageWarning = null,
-  onOpenWindowOverview,
+  project, selectedNode, isDirty = true, lastSavedAt = null, storageWarning = null,
+  saveState = 'idle', saveError = null, savedPath, lastSaveWasAutomatic = false,
+  onRetrySave, onOpenWindowOverview,
 }) => {
   const { t } = useUILanguage();
+  let label = t('status.unsaved');
+  let color = 'text-amber-400';
+  if (saveError) {
+    label = `${t('status.saveFailed')} (${saveError.code})`;
+    color = 'text-rose-400';
+  } else if (saveState === 'saving') {
+    label = t('status.saving');
+    color = 'text-zinc-300';
+  } else if (!isDirty && (saveState === 'file' || saveState === 'browser')) {
+    label = saveState === 'browser' ? t('status.browserSaved') : lastSaveWasAutomatic ? t('status.autoSaved') : t('status.saved');
+    if (lastSavedAt) label += ` ${lastSavedAt}`;
+    color = 'text-emerald-400';
+  }
   return (
-    <footer className="h-6 bg-[#121215] border-t border-[#27272c] text-zinc-500 px-3 flex items-center justify-between text-[11px] select-none shrink-0 gap-3">
-      <div className="flex items-center gap-3 min-w-0">
-        {isDirty ? (
-          <span
-            className="text-amber-400 font-medium shrink-0 flex items-center gap-1"
-            title="当前工程存在未保存修改"
-          >
-            <span>●</span>
-            <span>未保存</span>
-          </span>
-        ) : (
-          <span
-            className="text-emerald-400/90 shrink-0 flex items-center gap-1"
-            title={lastSavedAt ? `上次保存：${lastSavedAt}` : '工程已同步'}
-          >
-            <span>✓</span>
-            <span>{lastSavedAt ? `已保存 ${lastSavedAt}` : '已保存'}</span>
-          </span>
-        )}
-
-        {storageWarning && (
-          <span
-            className="text-rose-400 truncate max-w-[240px]"
-            title={storageWarning}
-          >
-            ⚠ {storageWarning}
-          </span>
-        )}
-
-        <span className="shrink-0">
-          {project.chapters.length} {t('status.chapters')}
-        </span>
-        <span className="shrink-0">
-          {project.nodes.length} {t('status.nodes')}
-        </span>
-        {selectedNode && (
-          <span className="text-zinc-400 truncate max-w-[200px]">
-            {selectedNode.title}
-          </span>
-        )}
+    <footer className="min-h-6 bg-[#121215] border-t border-[#27272c] text-zinc-500 px-3 flex items-center justify-between text-[11px] select-none shrink-0 gap-3 overflow-hidden">
+      <div className="flex items-center gap-3 min-w-0 overflow-hidden">
+        <span className={`${color} font-medium truncate`} title={saveError?.error || savedPath || label}>{label}</span>
+        {saveError && onRetrySave && <button type="button" onClick={onRetrySave} className="text-rose-300 underline shrink-0">{t('status.retry')}</button>}
+        {storageWarning && <span className="text-rose-400 truncate max-w-[240px]" title={storageWarning}>⚠ {storageWarning}</span>}
+        <span className="shrink-0 hidden lg:inline">{project.chapters.length} {t('status.chapters')}</span>
+        <span className="shrink-0 hidden lg:inline">{project.nodes.length} {t('status.nodes')}</span>
+        {selectedNode && <span className="text-zinc-400 truncate max-w-[200px]">{selectedNode.title}</span>}
       </div>
-
       <div className="flex items-center gap-3 font-mono text-[10px] shrink-0">
-        {project.projectPath && (
-          <span
-            className="text-zinc-500 truncate max-w-[220px] hidden md:inline"
-            title={project.projectPath}
-          >
-            {project.projectPath}
-          </span>
-        )}
-        {onOpenWindowOverview && (
-          <button
-            type="button"
-            onClick={onOpenWindowOverview}
-            className="text-zinc-400 hover:text-zinc-200 px-1.5 py-0.5 rounded bg-[#1b1b22] border border-[#2a2a34]"
-            title="打开窗口总览 (Ctrl+Shift+W)"
-          >
-            窗口总览
-          </button>
-        )}
-        <span>
-          {project.resolution.width}×{project.resolution.height}
-        </span>
+        {(savedPath || project.projectPath) && <span className="text-zinc-500 truncate max-w-[220px] hidden md:inline" title={savedPath || project.projectPath}>{savedPath || project.projectPath}</span>}
+        {onOpenWindowOverview && <button type="button" onClick={onOpenWindowOverview} className="text-zinc-400 hover:text-zinc-200 px-1.5 py-0.5 rounded bg-[#1b1b22] border border-[#2a2a34]" title={t('status.overview')}>{t('status.overview')}</button>}
+        <span>{project.resolution.width}×{project.resolution.height}</span>
       </div>
     </footer>
   );

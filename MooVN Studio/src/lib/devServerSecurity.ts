@@ -222,81 +222,32 @@ export interface SameOriginValidationResult {
   error?: string;
 }
 
-/**
- * Validates that a dev-server mutation request (`/api/moovn-fs/write`, `/api/ai/chat`)
- * originates from the same origin or local loopback (`GPT-02`, `GPT-03`, `CL-02`, `CL-03`),
- * rejecting cross-site CSRF requests from untrusted pages.
- */
+/** Strict legacy same-origin check. No privileged dev-server endpoint is enabled by default. */
 export function validateSameOriginDevRequest(
   headers: Record<string, string | string[] | undefined> | undefined
 ): SameOriginValidationResult {
-  if (!headers) {
-    return { ok: true };
+  const first = (value: string | string[] | undefined) => Array.isArray(value) ? value[0] : value;
+  const host = first(headers?.host)?.toLowerCase();
+  const origin = first(headers?.origin);
+  const site = first(headers?.['sec-fetch-site']);
+  if (!host || !origin || origin === 'null') {
+    return { ok: false, code: 'ERR_CSRF_MISSING_ORIGIN', error: 'A Host and Origin are required.' };
   }
-
-  const secFetchSiteRaw = headers['sec-fetch-site'];
-  const secFetchSite = Array.isArray(secFetchSiteRaw) ? secFetchSiteRaw[0] : secFetchSiteRaw;
-  if (
-    secFetchSite &&
-    secFetchSite !== 'same-origin' &&
-    secFetchSite !== 'same-site' &&
-    secFetchSite !== 'none'
-  ) {
-    return {
-      ok: false,
-      code: 'ERR_CSRF_SEC_FETCH_SITE',
-      error: `Cross-site request blocked (Sec-Fetch-Site: ${secFetchSite}).`,
-    };
+  if (site && site !== 'same-origin') {
+    return { ok: false, code: 'ERR_CSRF_SEC_FETCH_SITE', error: 'Cross-site request blocked.' };
   }
-
-  const hostRaw = headers['host'];
-  const hostHeader = (Array.isArray(hostRaw) ? hostRaw[0] : hostRaw || '').toLowerCase();
-  const hostHostname = hostHeader.split(':')[0];
-
-  const checkOriginUrl = (rawUrl: string, label: string): SameOriginValidationResult => {
-    try {
-      const parsed = new URL(rawUrl);
-      const originHost = parsed.host.toLowerCase();
-      const originHostname = parsed.hostname.toLowerCase();
-      const isLoopback =
-        originHostname === 'localhost' ||
-        originHostname === '127.0.0.1' ||
-        originHostname === '[::1]' ||
-        originHostname.endsWith('.e2b.app');
-      if (isLoopback) {
-        return { ok: true };
-      }
-      if (hostHeader && (originHost === hostHeader || originHostname === hostHostname)) {
-        return { ok: true };
-      }
-      return {
-        ok: false,
-        code: 'ERR_CSRF_CROSS_ORIGIN',
-        error: `Cross-origin request blocked (${label}: ${parsed.origin}).`,
-      };
-    } catch {
-      return {
-        ok: false,
-        code: 'ERR_CSRF_INVALID_ORIGIN',
-        error: `Invalid ${label} header.`,
-      };
+  try {
+    // Vite's default local development server uses HTTP; do not infer TLS from client headers.
+    const expected = new URL(`http://${host}`).origin;
+    if (new URL(origin).origin !== expected) {
+      return { ok: false, code: 'ERR_CSRF_CROSS_ORIGIN', error: 'Origin does not match the server.' };
     }
-  };
-
-  const originRaw = headers['origin'];
-  const origin = Array.isArray(originRaw) ? originRaw[0] : originRaw;
-  if (origin && origin !== 'null') {
-    const res = checkOriginUrl(origin, 'Origin');
-    if (!res.ok) return res;
+    const referer = first(headers?.referer);
+    if (referer && new URL(referer).origin !== expected) {
+      return { ok: false, code: 'ERR_CSRF_CROSS_ORIGIN', error: 'Referer does not match the server.' };
+    }
+    return { ok: true };
+  } catch {
+    return { ok: false, code: 'ERR_CSRF_INVALID_ORIGIN', error: 'Invalid origin or host.' };
   }
-
-  const refererRaw = headers['referer'];
-  const referer = Array.isArray(refererRaw) ? refererRaw[0] : refererRaw;
-  if (referer) {
-    const res = checkOriginUrl(referer, 'Referer');
-    if (!res.ok) return res;
-  }
-
-  return { ok: true };
 }
-

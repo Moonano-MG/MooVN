@@ -1,3 +1,4 @@
+import { newId } from '../lib/ids';
 import React, { useState } from 'react';
 import {
   Plus,
@@ -26,9 +27,11 @@ import {
   NODE_CATEGORIES,
   NODE_REGISTRY,
   getNodeMeta,
+  isUnsupportedNode,
 } from '../data/nodeRegistry';
 import { generateSingleNodeCode } from '../lib/nodeCodeCompiler';
 import { soundEngine } from '../lib/soundEngine';
+import { importAsset } from '../lib/assetStore';
 import { ScratchBlockTree } from './ScratchBlockTree';
 
 interface InspectorProps {
@@ -52,10 +55,6 @@ interface InspectorProps {
     updater: (c: CharacterProfile) => CharacterProfile
   ) => void;
   onAddCharacterProfile: () => void;
-  onUpdateChapter?: (
-    chapterId: string,
-    updater: (ch: StoryChapter) => StoryChapter
-  ) => void;
 }
 
 const NESTED_ADD_OPTIONS: {
@@ -67,7 +66,7 @@ const NESTED_ADD_OPTIONS: {
   {
     type: 'dialogue',
     label: '+ 台词子节点',
-    defaultParams: { speaker: '星野 雪奈', text: '嵌套容器内台词' },
+    defaultParams: { speaker: '旁白', text: '嵌套容器内台词' },
   },
   {
     type: 'math_operation',
@@ -77,7 +76,7 @@ const NESTED_ADD_OPTIONS: {
   {
     type: 'affection_change',
     label: '+ 好感变更',
-    defaultParams: { charId: 'yukina', delta: 5 },
+    defaultParams: { charId: '', delta: 5 },
   },
   {
     type: 'camera_shake',
@@ -98,7 +97,7 @@ const NESTED_ADD_OPTIONS: {
   {
     type: 'if_else_container',
     label: '+ 嵌套如果否则',
-    defaultParams: { conditionExpr: 'ctx.affection.yukina >= 50' },
+    defaultParams: { conditionExpr: 'ctx.vars.flag == true' },
     isContainer: true,
   },
 ];
@@ -121,7 +120,6 @@ export const Inspector: React.FC<InspectorProps> = ({
   onSetStartNode,
   onUpdateCharacterProfile,
   onAddCharacterProfile,
-  onUpdateChapter,
 }) => {
   const [viewMode, setViewMode] = useState<'config' | 'scratch' | 'char' | 'script'>('config');
   const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
@@ -285,9 +283,7 @@ export const Inspector: React.FC<InspectorProps> = ({
                         key={opt.type}
                         onClick={() => {
                           const sub: NestedChildNode = {
-                            id: `sub-${Date.now()}-${Math.random()
-                              .toString(36)
-                              .slice(2, 5)}`,
+                            id: newId('sub'),
                             type: opt.type,
                             title: opt.label.replace('+ ', ''),
                             params: { ...opt.defaultParams },
@@ -426,8 +422,8 @@ export const Inspector: React.FC<InspectorProps> = ({
                 <optgroup key={cat.id} label={cat.label}>
                   {NODE_REGISTRY.filter((n) => n.category === cat.id).map(
                     (item) => (
-                      <option key={item.type} value={item.type}>
-                        [{item.categoryLabel}] {item.title}
+                      <option key={item.type} value={item.type} disabled={isUnsupportedNode(item.type)}>
+                        [{item.categoryLabel}] {item.title}{isUnsupportedNode(item.type) ? '（未实现）' : ''}
                       </option>
                     )
                   )}
@@ -607,36 +603,6 @@ export const Inspector: React.FC<InspectorProps> = ({
                       {currentChapter.yamlFileName}
                     </span>
                   </div>
-                  <div className="text-[10px] text-zinc-400">
-                    跳章最低好感度保底配置 (minCharacterAffection)：
-                  </div>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    {characters.map((ch) => (
-                      <div
-                        key={ch.id}
-                        className="flex items-center justify-between px-2 py-1 rounded bg-[#141418] border border-[#272730] text-[10px]"
-                      >
-                        <span className="text-zinc-300 truncate">{ch.name}</span>
-                        <input
-                          type="number"
-                          value={
-                            (currentChapter.minCharacterAffection || {})[ch.id] ??
-                            0
-                          }
-                          onChange={(e) =>
-                            onUpdateChapter?.(currentChapter.id, (prev) => ({
-                              ...prev,
-                              minCharacterAffection: {
-                                ...(prev.minCharacterAffection || {}),
-                                [ch.id]: Number(e.target.value),
-                              },
-                            }))
-                          }
-                          className="w-12 px-1 py-0.5 text-center font-mono text-[10px]"
-                        />
-                      </div>
-                    ))}
-                  </div>
                 </div>
               );
             })()}
@@ -733,29 +699,23 @@ export const Inspector: React.FC<InspectorProps> = ({
                         type="file"
                         accept="image/*,video/mp4,video/webm,video/quicktime,.gif,.apng,.webp,.mp4,.webm,.mov"
                         className="hidden"
-                        onChange={(e) => {
+                        onChange={async (e) => {
                           const file = e.target.files?.[0];
+                          e.target.value = '';
                           if (!file) return;
-                          const isVid =
-                            file.type.startsWith('video/') ||
-                            /\.(mp4|webm|mov|ogv)$/i.test(file.name);
-                          const isAnim = /\.(gif|apng|webp)$/i.test(file.name);
-                          const reader = new FileReader();
-                          reader.onload = () => {
-                            const url = String(reader.result || '');
+                          try {
+                            const reference = await importAsset(file);
+                            const isVideo = file.type.startsWith('video/') || /\.(mp4|webm|mov|ogv)$/i.test(file.name);
+                            const isAnimated = /\.(gif|apng|webp)$/i.test(file.name);
                             onUpdateCharacterProfile(char.id, (prev) => ({
                               ...prev,
-                              mediaUrl: url,
-                              mediaType: isVid
-                                ? 'video'
-                                : isAnim
-                                ? 'animated_image'
-                                : 'image',
+                              mediaUrl: reference,
+                              mediaType: isVideo ? 'video' : isAnimated ? 'animated_image' : 'image',
                               videoLoop: true,
                             }));
-                          };
-                          reader.readAsDataURL(file);
-                          e.target.value = '';
+                          } catch (error: unknown) {
+                            window.alert(error instanceof Error ? error.message : String(error));
+                          }
                         }}
                       />
                     </label>
@@ -846,7 +806,7 @@ export const Inspector: React.FC<InspectorProps> = ({
                             customAttributes: [
                               ...(prev.customAttributes || []),
                               {
-                                id: `attr-${Date.now()}`,
+                                id: newId('attr'),
                                 key: attrDraft.key.trim(),
                                 label: attrDraft.key.trim(),
                                 value: isNum ? Number(raw) : raw,
@@ -1532,57 +1492,8 @@ export const Inspector: React.FC<InspectorProps> = ({
                   </div>
                 )}
 
-                {node.type === 'stream_preload_hint' && (
-                  <div className="space-y-2">
-                    <div>
-                      <div className="flex justify-between mb-1">
-                        <span>提前流式解压后续场景数</span>
-                        <span className="font-mono text-amber-300">
-                          {node.settingsActionConfig?.preloadAheadScenes ?? 3} 个场景
-                        </span>
-                      </div>
-                      <input
-                        type="range"
-                        min={1}
-                        max={20}
-                        value={node.settingsActionConfig?.preloadAheadScenes ?? 3}
-                        onChange={(e) =>
-                          onUpdateNode((prev) => ({
-                            ...prev,
-                            settingsActionConfig: {
-                              ...(prev.settingsActionConfig || {}),
-                              preloadAheadScenes: Number(e.target.value),
-                            },
-                          }))
-                        }
-                        className="w-full"
-                      />
-                    </div>
-                    <div>
-                      <div className="flex justify-between mb-1">
-                        <span>自动卸载已走过的旧场景数</span>
-                        <span className="font-mono text-amber-300">
-                          {node.settingsActionConfig?.unloadBehindScenes ?? 5} 个场景
-                        </span>
-                      </div>
-                      <input
-                        type="range"
-                        min={1}
-                        max={20}
-                        value={node.settingsActionConfig?.unloadBehindScenes ?? 5}
-                        onChange={(e) =>
-                          onUpdateNode((prev) => ({
-                            ...prev,
-                            settingsActionConfig: {
-                              ...(prev.settingsActionConfig || {}),
-                              unloadBehindScenes: Number(e.target.value),
-                            },
-                          }))
-                        }
-                        className="w-full"
-                      />
-                    </div>
-                  </div>
+                {(node.type === 'stream_preload_hint' || node.type === 'msvn_chapter_load') && (
+                  <div className="text-amber-200">此旧节点尚未实现；播放时不会预载、卸载或加载章节。</div>
                 )}
 
                 {node.type === 'end' && (
@@ -1596,7 +1507,7 @@ export const Inspector: React.FC<InspectorProps> = ({
                         onChange={(e) =>
                           onUpdateNode((prev) => ({
                             ...prev,
-                            endingType: e.target.value as any,
+                            endingType: e.target.value as NonNullable<SceneNode['endingType']>,
                           }))
                         }
                         className="w-full px-2 py-1"
@@ -1613,7 +1524,7 @@ export const Inspector: React.FC<InspectorProps> = ({
                       </label>
                       <input
                         type="text"
-                        value={node.endingTitle || '结局：第十三声钟鸣的约定'}
+                        value={node.endingTitle || ''}
                         onChange={(e) =>
                           onUpdateNode((prev) => ({
                             ...prev,

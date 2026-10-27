@@ -1,7 +1,8 @@
+import { newId } from '../lib/ids';
 import React, { useState } from 'react';
 import { Plus, Trash2, ChevronDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { NestedChildNode, WorkflowNodeType, NodeCategory } from '../types';
-import { getNodeMeta, NODE_CATEGORIES, NODE_REGISTRY } from '../data/nodeRegistry';
+import { getNodeMeta, NODE_CATEGORIES, NODE_REGISTRY, isUnsupportedNode } from '../data/nodeRegistry';
 
 interface ScratchBlockTreeProps {
   blocks: NestedChildNode[];
@@ -15,7 +16,7 @@ const DEFAULT_PARAMS_BY_TYPE: Partial<
   repeat_loop: { repeatCount: 3 },
   while_loop: { conditionExpr: 'ctx.vars.clueCount < 5' },
   for_each_loop: { collectionTarget: 'characters', iteratorVar: 'char' },
-  if_else_container: { conditionExpr: 'ctx.affection.yukina >= 60' },
+  if_else_container: { conditionExpr: 'ctx.vars.flag == true' },
   parallel_container: { mode: 'Promise.all' },
   try_catch_container: { catchVar: 'err' },
   math_operation: { targetVar: 'clueCount', mathOp: '+=', operandValue: 1 },
@@ -26,46 +27,46 @@ const DEFAULT_PARAMS_BY_TYPE: Partial<
   array_operation: {
     targetVar: 'inventory',
     arrayAction: 'push',
-    operandValue: '钟塔黄铜钥匙',
+    operandValue: '',
   },
-  set_variable: { targetVar: 'hasClockTowerKey', value: true },
+  set_variable: { targetVar: 'flag', value: true },
   break_continue: { mode: 'break' },
-  function_call: { functionName: 'onClocktowerChime', functionArgs: 'ctx, 13' },
-  dialogue: { speaker: '星野 雪奈', text: '银怀表的齿轮开始逆向转动了……' },
-  narration: { text: '钟塔深处传来第十三声低沉的回响。' },
-  screen_text: { text: '第十三声钟鸣', x: 50, y: 45, fontSize: 32 },
-  char_enter: { charId: 'yukina', x: 35, y: 55, anim: 'fade' },
-  char_move: { charId: 'yukina', x: 60, y: 55, durationMs: 600 },
-  char_expression: { charId: 'yukina', spriteId: 'char-yukina-3' },
-  affection_change: { charId: 'yukina', delta: 10 },
-  bg_switch: { bgId: 'bg-clocktower-moonlight-cg', transition: 'dissolve' },
+  function_call: { functionName: 'onEvent', functionArgs: 'ctx' },
+  dialogue: { speaker: '旁白', text: '' },
+  narration: { text: '' },
+  screen_text: { text: '', x: 50, y: 45, fontSize: 32 },
+  char_enter: { charId: '', x: 35, y: 55, anim: 'fade' },
+  char_move: { charId: '', x: 60, y: 55, durationMs: 600 },
+  char_expression: { charId: '', spriteId: '' },
+  affection_change: { charId: '', delta: 10 },
+  bg_switch: { bgId: '', transition: 'dissolve' },
   fade: { target: 'screen', direction: 'in', durationMs: 800 },
   camera_pan_zoom: { zoom: 1.25, offsetX: 0, offsetY: 0 },
   camera_shake: { intensity: 'medium', durationMs: 450 },
   screen_flash: { color: '#ffffff', durationMs: 300 },
   weather_particles: { effect: 'sakura' },
   color_filter: { filter: 'sepia' },
-  bgm_play: { bgmId: 'bgm-spring-breeze' },
-  sfx_play: { sfxId: 'sfx-bell-chime' },
+  bgm_play: { bgmId: '' },
+  sfx_play: { sfxId: '' },
   wait_timer: { durationMs: 800 },
-  popup_toast: { message: '获得关键线索【停摆的银怀表】' },
+  popup_toast: { message: '' },
 };
 
 export function createDefaultScratchChild(type: WorkflowNodeType): NestedChildNode {
   const meta = getNodeMeta(type);
   const baseParams = DEFAULT_PARAMS_BY_TYPE[type] || { value: meta.title };
   return {
-    id: `sb-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    id: newId('sb'),
     type,
     title: meta.title,
     params: { ...baseParams },
     childrenNodes: meta.isContainer
       ? [
           {
-            id: `sb-inner-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+            id: newId('sb-inner'),
             type: 'dialogue',
             title: '角色对白',
-            params: { speaker: '星野 雪奈', text: '容器内部执行的演出步骤' },
+            params: { speaker: '旁白', text: '' },
           },
         ]
       : undefined,
@@ -185,6 +186,7 @@ export const ScratchBlockTree: React.FC<ScratchBlockTreeProps> = ({
             (meta) => (
               <button
                 key={meta.type}
+                        disabled={isUnsupportedNode(meta.type)}
                 onClick={() => {
                   onPickType(meta.type);
                   setOpenAddSlotId(null);
@@ -195,7 +197,7 @@ export const ScratchBlockTree: React.FC<ScratchBlockTreeProps> = ({
                 }}
                 className="px-2 py-1 rounded text-[10px] font-bold text-left flex items-center justify-between hover:brightness-110 transition shadow-sm"
               >
-                <span className="truncate">{meta.title}</span>
+                <span className="truncate">{meta.title}{isUnsupportedNode(meta.type) ? '（未实现）' : ''}</span>
                 {meta.isContainer && (
                   <span className="px-1 rounded bg-black/25 text-white text-[8px]">
                     C型槽

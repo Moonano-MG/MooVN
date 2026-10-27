@@ -1,3 +1,5 @@
+import { newId } from '../lib/ids';
+import { importAsset } from '../lib/assetStore';
 import React, { useRef, useState, useEffect } from 'react';
 import {
   Trash2,
@@ -164,6 +166,7 @@ export const SceneStageView: React.FC<SceneStageViewProps> = ({
             className="px-2 py-1 max-w-[145px] sm:max-w-[180px]"
             title="场景背景"
           >
+            <option value="">无背景</option>
             {BACKGROUND_ASSETS.map((b) => (
               <option key={b.id} value={b.id}>
                 {b.name}
@@ -276,37 +279,23 @@ export const SceneStageView: React.FC<SceneStageViewProps> = ({
               type="file"
               accept="image/*,video/mp4,video/webm,video/quicktime,.gif,.apng,.webp,.mp4,.webm,.mov"
               className="hidden"
-              onChange={(e) => {
+              onChange={async (e) => {
                 const file = e.target.files?.[0];
+                e.target.value = '';
                 if (!file || !selectedPlacement) return;
-                const MAX_STAGE_MEDIA_BYTES = 15 * 1024 * 1024; // 15 MB guard (`GPT-27`)
-                if (file.size > MAX_STAGE_MEDIA_BYTES) {
-                  window.alert(
-                    `媒体文件过大 (${(file.size / (1024 * 1024)).toFixed(1)} MB > 15 MB 上限)。请压缩视频或图片后再导入，以免超出本地存储配额。`
-                  );
-                  e.target.value = '';
-                  return;
-                }
-                const isVid =
-                  file.type.startsWith('video/') ||
-                  /\.(mp4|webm|mov|ogv)$/i.test(file.name);
-                const isAnimImg = /\.(gif|apng|webp)$/i.test(file.name);
-                const reader = new FileReader();
-                reader.onload = () => {
-                  const dataUrl = String(reader.result || '');
+                try {
+                  const reference = await importAsset(file);
+                  const isVideo = file.type.startsWith('video/') || /\.(mp4|webm|mov|ogv)$/i.test(file.name);
+                  const isAnimated = /\.(gif|apng|webp)$/i.test(file.name);
                   onUpdateCharacter(selectedPlacement.id, {
-                    mediaUrl: dataUrl,
-                    mediaType: isVid
-                      ? 'video'
-                      : isAnimImg
-                      ? 'animated_image'
-                      : 'image',
+                    mediaUrl: reference,
+                    mediaType: isVideo ? 'video' : isAnimated ? 'animated_image' : 'image',
                     videoLoop: true,
                     expressionLabel: file.name,
                   });
-                };
-                reader.readAsDataURL(file);
-                e.target.value = '';
+                } catch (error: unknown) {
+                  window.alert(error instanceof Error ? error.message : String(error));
+                }
               }}
             />
 
@@ -395,7 +384,7 @@ export const SceneStageView: React.FC<SceneStageViewProps> = ({
           <div
             className="absolute inset-0 bg-cover bg-center transition-all duration-500"
             style={{
-              backgroundImage: `url(${bg.path})`,
+              backgroundImage: node.backgroundId ? `url(${bg.path})` : 'none',
               filter:
                 node.colorFilter === 'sepia'
                   ? 'sepia(0.75)'
@@ -421,7 +410,7 @@ export const SceneStageView: React.FC<SceneStageViewProps> = ({
                 ? currentDialogue.expressionSpriteId
                 : pl.spriteId;
             const sprite = getCharacterById(activeSpriteId);
-            const mediaSrc = pl.mediaUrl || charProfile?.mediaUrl || sprite.path;
+            const mediaSrc = pl.mediaUrl || charProfile?.mediaUrl || (activeSpriteId ? sprite.path : '');
             const mediaType = pl.mediaType || charProfile?.mediaType || sprite.mediaType || 'image';
             const idleMotion = pl.idleMotion || charProfile?.idleMotion || 'none';
             const chromaKeyColor = pl.chromaKeyColor || charProfile?.chromaKeyColor;
@@ -621,9 +610,9 @@ export const SceneStageView: React.FC<SceneStageViewProps> = ({
                   dialogues: [
                     ...prev.dialogues,
                     {
-                      id: `dlg-${Date.now()}`,
-                      speakerId: currentDialogue?.speakerId || 'custom',
-                      speakerName: currentDialogue?.speakerName || '星野 雪奈',
+                      id: newId('dlg'),
+                      speakerId: currentDialogue?.speakerId || 'narrator',
+                      speakerName: currentDialogue?.speakerName || '旁白',
                       speakerColor: currentDialogue?.speakerColor || '#38bdf8',
                       text: '新台词内容...',
                     },

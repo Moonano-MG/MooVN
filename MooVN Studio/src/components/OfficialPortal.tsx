@@ -242,7 +242,7 @@ export const OfficialPortal: React.FC<OfficialPortalProps> = () => {
           <div className="max-w-4xl mx-auto text-center">
             <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-blue-500/15 border border-sky-400/30 text-sky-300 text-xs font-medium mb-6 shadow-inner shadow-sky-400/10">
               <Sparkles className="w-3.5 h-3.5 text-sky-400" />
-              <span>可视化节点编排 · 实时立绘舞台 · 多语言脚本同步 · 跨平台导出</span>
+              <span>可视化节点编排 · 实时立绘舞台 · 多语言脚本编辑 · HTML5 导出</span>
             </div>
 
             <h1 className="text-4xl sm:text-6xl font-extrabold tracking-tight text-white mb-6 leading-tight">
@@ -254,7 +254,7 @@ export const OfficialPortal: React.FC<OfficialPortalProps> = () => {
             <p className="text-base sm:text-xl text-blue-100/85 max-w-2xl mx-auto leading-relaxed mb-10">
               面向视觉小说与互动叙事创作者的跨平台集成开发工作台。
               <br className="hidden sm:inline" />
-              支持可视化逻辑节点与凹槽积木嵌套、16:9 实时舞台预览以及桌面与移动端工程导出。
+              支持可视化节点与场景预览；当前游戏导出为 HTML5 单文件，原生安装包尚未实现。
             </p>
 
             <div className="flex flex-wrap items-center justify-center gap-4">
@@ -337,10 +337,10 @@ export const OfficialPortal: React.FC<OfficialPortalProps> = () => {
                 <Cpu className="w-5 h-5" />
               </div>
               <h3 className="text-base font-bold text-white mb-2">
-                多语言脚本同步与多端导出
+                脚本编辑与 HTML5 导出
               </h3>
               <p className="text-xs text-blue-100/75 leading-relaxed">
-                节点树可实时双向编译为 TypeScript、JavaScript、Lua、Teal、Python 与 YAML 脚本，并支持桌面端、移动端与网页端打包导出。
+                编辑器提供多种脚本语言与 YAML 视图。游戏可导出为 HTML5 单文件；原生安装包导出尚未实现。
               </p>
             </div>
           </div>

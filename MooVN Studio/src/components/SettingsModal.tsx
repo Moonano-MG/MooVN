@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   FolderOpen,
@@ -12,7 +12,7 @@ import { MooVNSystemSettings, VNProject } from '../types';
 import {
   IS_WEB_EDITION,
   loadSystemSettings,
-  pickDeviceMooVNFolder,
+  refreshWorkspacePaths,
   resetSystemSettings,
   saveSystemSettings,
   syncSystemSettingsToDisk,
@@ -41,22 +41,28 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   >('general');
   const [savedToast, setSavedToast] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (IS_WEB_EDITION) return;
+    let active = true;
+    refreshWorkspacePaths().then((paths) => {
+      if (active) setSettings((previous) => ({ ...previous, ...paths }));
+    }).catch((error: unknown) => {
+      if (active) setSavedToast(error instanceof Error ? error.message : String(error));
+    });
+    return () => { active = false; };
+  }, []);
+
   const handleSaveAll = async () => {
-    saveSystemSettings(settings);
-    if (!IS_WEB_EDITION) {
-      await syncSystemSettingsToDisk(settings);
+    if (!saveSystemSettings(settings)) {
+      setSavedToast('ERR_SETTINGS_STORAGE: 设置保存失败');
+      return;
+    }
+    if (!IS_WEB_EDITION && !(await syncSystemSettingsToDisk(settings))) {
+      setSavedToast('ERR_SETTINGS_WRITE: 无法写入桌面设置文件');
+      return;
     }
     setSavedToast('设置已保存');
     setTimeout(() => setSavedToast(null), 2000);
-  };
-
-  const handleBrowseWorkspaceFolder = async () => {
-    const picked = await pickDeviceMooVNFolder();
-    if (picked?.loadedSettings) {
-      setSettings(picked.loadedSettings);
-      setSavedToast(`已切换工作区：${picked.folderName}`);
-      setTimeout(() => setSavedToast(null), 2500);
-    }
   };
 
   const handleReset = () => {
@@ -357,72 +363,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </div>
             )}
 
-            {/* TAB 3: Local Workspace Paths (Local Studio Edition Only) */}
             {!IS_WEB_EDITION && activeTab === 'workspace' && (
               <div className="p-3.5 rounded-md bg-[#1c1c21] border border-[#27272c] space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-zinc-100">
-                    本地工作区路径
-                  </span>
-                  <button
-                    type="button"
-                    onClick={handleBrowseWorkspaceFolder}
-                    className="px-2.5 py-1 rounded bg-[#27272c] hover:bg-zinc-700 text-zinc-200 text-[11px]"
-                  >
-                    浏览目录
-                  </button>
-                </div>
-
-                <div>
-                  <label className="block text-[11px] text-zinc-400 mb-1">
-                    工作区根目录
+                <div className="text-xs font-semibold text-zinc-100">本地工作区路径</div>
+                <p className="text-xs text-amber-300">路径由系统应用数据目录提供；自定义工作区尚未实现。</p>
+                {[
+                  ['工作区根目录', settings.workspaceRootPath],
+                  ['项目存储目录', settings.projectsDirectoryPath],
+                  ['默认导出目录', settings.exportOutputDirectoryPath],
+                ].map(([label, value]) => (
+                  <label key={label} className="block text-[11px] text-zinc-400">{label}
+                    <input readOnly type="text" value={value} className="w-full px-2.5 py-1.5 font-mono text-xs" />
                   </label>
-                  <input
-                    type="text"
-                    value={settings.workspaceRootPath}
-                    onChange={(e) =>
-                      setSettings({
-                        ...settings,
-                        workspaceRootPath: e.target.value,
-                      })
-                    }
-                    className="w-full px-2.5 py-1.5 font-mono text-xs"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] text-zinc-400 mb-1">
-                    项目存储目录
-                  </label>
-                  <input
-                    type="text"
-                    value={settings.projectsDirectoryPath}
-                    onChange={(e) =>
-                      setSettings({
-                        ...settings,
-                        projectsDirectoryPath: e.target.value,
-                      })
-                    }
-                    className="w-full px-2.5 py-1.5 font-mono text-xs"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] text-zinc-400 mb-1">
-                    默认导出目录
-                  </label>
-                  <input
-                    type="text"
-                    value={settings.exportOutputDirectoryPath}
-                    onChange={(e) =>
-                      setSettings({
-                        ...settings,
-                        exportOutputDirectoryPath: e.target.value,
-                      })
-                    }
-                    className="w-full px-2.5 py-1.5 font-mono text-xs"
-                  />
-                </div>
+                ))}
               </div>
             )}
           </div>

@@ -10,6 +10,7 @@ import {
   IAvatarRenderable,
   newImageAvatar,
 } from '../lib/avatarSystem';
+import { ASSET_PREFIX, readAsset } from '../lib/assetStore';
 
 interface CharacterMediaRendererProps {
   mediaUrl: string;
@@ -79,10 +80,10 @@ function parseHexRgb(hex: string): [number, number, number] | null {
 }
 
 export const CharacterMediaRenderer: React.FC<CharacterMediaRendererProps> = ({
-  mediaUrl,
+  mediaUrl: sourceMediaUrl,
   alt,
   mediaType,
-  layerTextures,
+  layerTextures: sourceLayerTextures,
   videoLoop = true,
   videoMuted = true,
   videoPlaybackRate = 1,
@@ -94,6 +95,48 @@ export const CharacterMediaRenderer: React.FC<CharacterMediaRendererProps> = ({
   className = '',
   style,
 }) => {
+  const [mediaUrl, setMediaUrl] = useState(sourceMediaUrl.startsWith(ASSET_PREFIX) ? '' : sourceMediaUrl);
+  const [layerTextures, setLayerTextures] = useState<AvatarLayerTextureMap | undefined>(undefined);
+  const [assetError, setAssetError] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    let objectUrl = '';
+    setAssetError(null);
+    if (!sourceMediaUrl.startsWith(ASSET_PREFIX)) {
+      setMediaUrl(sourceMediaUrl);
+      return;
+    }
+    setMediaUrl('');
+    readAsset(sourceMediaUrl).then((blob) => {
+      if (cancelled) return;
+      objectUrl = URL.createObjectURL(blob);
+      setMediaUrl(objectUrl);
+    }).catch((error: unknown) => {
+      if (!cancelled) setAssetError(error instanceof Error ? error.message : String(error));
+    });
+    return () => { cancelled = true; if (objectUrl) URL.revokeObjectURL(objectUrl); };
+  }, [sourceMediaUrl]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const urls: string[] = [];
+    setLayerTextures(undefined);
+    if (!sourceLayerTextures) return;
+    Promise.all(Object.entries(sourceLayerTextures).map(async ([layer, source]) => {
+      if (!source || !source.startsWith(ASSET_PREFIX)) return [layer, source] as const;
+      const blob = await readAsset(source);
+      if (cancelled) return [layer, undefined] as const;
+      const url = URL.createObjectURL(blob);
+      urls.push(url);
+      return [layer, url] as const;
+    })).then((entries) => {
+      if (!cancelled) setLayerTextures(Object.fromEntries(entries) as AvatarLayerTextureMap);
+    }).catch((error: unknown) => {
+      if (!cancelled) setAssetError(error instanceof Error ? error.message : String(error));
+    });
+    return () => { cancelled = true; urls.forEach((url) => URL.revokeObjectURL(url)); };
+  }, [sourceLayerTextures]);
+
   const resolvedType = detectCharacterMediaType(mediaUrl, mediaType);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -334,6 +377,13 @@ export const CharacterMediaRenderer: React.FC<CharacterMediaRendererProps> = ({
       video.pause();
     };
   }, [resolvedType, mediaUrl, videoPlaybackRate, chromaKeyColor]);
+
+  if (assetError) {
+    return <div role="alert" className="text-xs text-rose-300 bg-zinc-900/90 p-2">{assetError}</div>;
+  }
+  if (!mediaUrl && !hasL1Layers) {
+    return <div className={className} style={style} aria-label={sourceMediaUrl ? '资源加载中' : '未绑定立绘'} />;
+  }
 
   if (resolvedType === 'video') {
     const useChromaCanvas = Boolean(

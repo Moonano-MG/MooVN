@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import { SceneNode, StoryChapter, WorkflowNodeType, NodeCategory } from '../types';
 import { BACKGROUND_ASSETS, CHARACTER_ASSETS, AUDIO_ASSETS } from '../data/assets';
-import { NODE_CATEGORIES, NODE_REGISTRY, getNodeMeta } from '../data/nodeRegistry';
+import { NODE_CATEGORIES, NODE_REGISTRY, getNodeMeta, isUnsupportedNode } from '../data/nodeRegistry';
 import { soundEngine } from '../lib/soundEngine';
 import { useUILanguage } from '../lib/i18n';
 
@@ -171,6 +171,7 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
                     {catNodes.map((meta) => (
                       <button
                         key={meta.type}
+                        disabled={isUnsupportedNode(meta.type)}
                         onClick={() => onAddNode(meta.type)}
                         style={{
                           backgroundColor: meta.badgeBg,
@@ -185,7 +186,7 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
                           style={{ color: meta.badgeText }}
                           className="text-[11px] font-medium truncate"
                         >
-                          {meta.title}
+                          {meta.title}{isUnsupportedNode(meta.type) ? '（未实现）' : ''}
                         </span>
                         <Plus
                           style={{ color: meta.accentColor }}
