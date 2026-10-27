@@ -1,3 +1,4 @@
+import { importAsset } from '../lib/assetStore';
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   Wand2,
@@ -776,21 +777,15 @@ export const AssetStudioPanel: React.FC<AssetStudioPanelProps> = ({
                             type="file"
                             accept="image/png,image/webp,image/gif"
                             className="hidden"
-                            onChange={(e) => {
+                            onChange={async (e) => {
                               const file = e.target.files?.[0];
-                              if (!file) return;
-                              if (file.size > 10 * 1024 * 1024) {
-                                setLayerUploadStatus('单张图层贴图不得超过 10 MB');
-                                return;
-                              }
-                              const reader = new FileReader();
-                              reader.onload = () => {
-                                if (typeof reader.result === 'string') {
-                                  handleUpdateCharacterLayer(layerId, reader.result);
-                                }
-                              };
-                              reader.readAsDataURL(file);
                               e.target.value = '';
+                              if (!file) return;
+                              try {
+                                handleUpdateCharacterLayer(layerId, await importAsset(file));
+                              } catch (error: unknown) {
+                                setLayerUploadStatus(error instanceof Error ? error.message : String(error));
+                              }
                             }}
                           />
                         </label>

@@ -1,84 +1,22 @@
 import type {
   AssetCompressionFormat,
-  CharacterProfile,
   GamePerformanceConfig,
   SceneNode,
   StoryChapter,
   VNProject,
 } from '../types';
-import { getBackgroundById, getCharacterById } from '../data/assets.ts';
+import { BACKGROUND_ASSETS, CHARACTER_ASSETS } from '../data/assets.ts';
 import { computeFnv1a64Hex } from './vnRuntimeCore.ts';
 
-export interface CompressionAlgorithmSpec {
-  id: AssetCompressionFormat;
-  name: string;
-  tag: string;
-  minLevel: number;
-  maxLevel: number;
-  recommendedLevel: number;
-  summary: string;
-  recommendationNote: string;
-  estimatedRatio: number; // lower = smaller output
-  speedFactor: number; // higher = faster compression
-}
-
-export const COMPRESSION_FORMAT_SPECS: Record<
-  AssetCompressionFormat,
-  CompressionAlgorithmSpec
-> = {
-  xz: {
-    id: 'xz',
-    name: 'xz (LZMA2)',
-    tag: '极限压缩率 · 包体最小',
-    minLevel: 0,
-    maxLevel: 9,
-    recommendedLevel: 6,
-    summary: '采用 64MB 大字典 LZMA2 流压缩，产出体积最小，运行期连续流读取带宽占用最低。',
-    recommendationNote: '级别范围 0~9（推荐 6）· 适合正式发布包构建',
-    estimatedRatio: 0.28,
-    speedFactor: 0.45,
-  },
-  '7z': {
-    id: '7z',
-    name: '7z (LZMA)',
-    tag: '最推荐 · 速度与体积均衡',
-    minLevel: 0,
-    maxLevel: 9,
-    recommendedLevel: 5,
-    summary: '多线程分块字典索引，打包耗时比 xz 缩短约 45%，同时保持高压缩比与低解压延迟。',
-    recommendationNote: '级别范围 0~9（推荐 5）· 适合日常构建与测试分发',
-    estimatedRatio: 0.33,
-    speedFactor: 0.78,
-  },
-  brotli: {
-    id: 'brotli',
-    name: 'Brotli',
-    tag: '秒级打包 · 快速迭代',
-    minLevel: 0,
-    maxLevel: 11,
-    recommendedLevel: 6,
-    summary: '基于预置词典与滑动窗口的高速编码器，打包速度最快，浏览器与移动端原生支持度高。',
-    recommendationNote: '级别范围 0~11（推荐 6）· 适合高频开发调试阶段',
-    estimatedRatio: 0.38,
-    speedFactor: 1.0,
-  },
-};
-
 export const DEFAULT_PERFORMANCE_CONFIG: GamePerformanceConfig = {
-  compressionFormat: '7z',
+  compressionFormat: 'moovn_lz77',
   compressionLevel: 5,
-  skipAlreadyCompressedPng: true,
-  preloadSceneDistance: 3,
-  unloadSceneDistance: 5,
-  streamPreloadScenes: 4,
-  decompressTarget: 'memory',
-  workerCpuBudgetPercent: 35,
-  modularMsvnEnabled: true,
+
 };
 
 /**
  * 判断资源是否为已压缩过的图像/多媒体格式（例如 .png / .webp / .jpg / .ogg）
- * 已压缩格式直接走零重压流式通道，避免浪费 CPU 时间和反向膨胀。
+ * 用于识别无需再次编码的媒体文件扩展名。
  */
 export function isAlreadyCompressedAssetPath(pathOrId: string): boolean {
   const lower = pathOrId.toLowerCase();
@@ -189,26 +127,22 @@ export function lzCompressBytes(input: Uint8Array, windowSize = 2048): Uint8Arra
   return new Uint8Array(out);
 }
 
-export function lzDecompressBytes(compressed: Uint8Array): Uint8Array {
+export function lzDecompressBytes(compressed: Uint8Array, maxOutputBytes = 16 * 1024 * 1024): Uint8Array {
   const out: number[] = [];
   let pos = 0;
-  const n = compressed.length;
-  while (pos < n) {
+  while (pos < compressed.length) {
     const tag = compressed[pos++];
     if ((tag & 0x80) === 0) {
-      const litLen = (tag & 0x7f) + 1;
-      for (let i = 0; i < litLen && pos < n; i++) {
-        out.push(compressed[pos++]);
-      }
+      const length = (tag & 0x7f) + 1;
+      if (pos + length > compressed.length || out.length + length > maxOutputBytes) throw new Error('ERR_COMPRESSION_DATA: invalid literal');
+      for (let i = 0; i < length; i++) out.push(compressed[pos++]);
     } else {
-      const matchLen = (tag & 0x7f) + 4;
-      if (pos + 1 >= n) break;
+      const length = (tag & 0x7f) + 4;
+      if (pos + 1 >= compressed.length || out.length + length > maxOutputBytes) throw new Error('ERR_COMPRESSION_DATA: invalid match');
       const offset = ((compressed[pos] << 8) | compressed[pos + 1]) & 0xfff;
       pos += 2;
-      const start = out.length - offset;
-      for (let i = 0; i < matchLen; i++) {
-        out.push(start + i >= 0 ? out[start + i] : 0);
-      }
+      if (offset === 0 || offset > out.length) throw new Error('ERR_COMPRESSION_DATA: invalid offset');
+      for (let i = 0; i < length; i++) out.push(out[out.length - offset]);
     }
   }
   return new Uint8Array(out);
@@ -226,7 +160,6 @@ export class MooVNBuiltInCodec {
 
   static compressTextPayload(
     rawText: string,
-    format: AssetCompressionFormat,
     level: number,
     assetHintPath = ''
   ): CompressedChunkEnvelope {
@@ -265,7 +198,7 @@ export class MooVNBuiltInCodec {
 
     return {
       magic: 'MOOVN_CMP_V1',
-      format,
+      format: 'moovn_lz77',
       level,
       originalBytes,
       compressedBytes: compressedBuf.byteLength,
@@ -275,267 +208,37 @@ export class MooVNBuiltInCodec {
   }
 
   static decompressSync(envelope: CompressedChunkEnvelope): string {
-    try {
-      const bytes = base64ToUint8(envelope.payloadBase64);
-      const decodedBytes =
-        envelope.format === 'raw_passthrough' || envelope.level === 0
-          ? bytes
-          : lzDecompressBytes(bytes);
-      const text = new TextDecoder().decode(decodedBytes);
-      if (envelope.checksum && this.computeChecksum(text) !== envelope.checksum) {
-        throw new Error('Checksum mismatch during chunk decompression');
-      }
-      return text;
-    } catch {
-      return '';
+    if (envelope.magic !== 'MOOVN_CMP_V1' || !Number.isSafeInteger(envelope.originalBytes) ||
+        envelope.originalBytes < 0 || envelope.originalBytes > 16 * 1024 * 1024) {
+      throw new Error('ERR_COMPRESSION_SIZE: invalid decompressed size');
     }
+    if (!['raw_passthrough', 'moovn_lz77', 'xz', '7z', 'brotli'].includes(envelope.format)) {
+      throw new Error('ERR_COMPRESSION_FORMAT: unsupported format');
+    }
+    const bytes = base64ToUint8(envelope.payloadBase64);
+    if (bytes.length !== envelope.compressedBytes) throw new Error('ERR_COMPRESSION_SIZE: compressed size mismatch');
+    // Legacy files were labeled xz/7z/brotli but actually contained this LZ77 stream.
+    const decodedBytes = envelope.format === 'raw_passthrough'
+      ? bytes : lzDecompressBytes(bytes, envelope.originalBytes);
+    if (decodedBytes.length !== envelope.originalBytes) throw new Error('ERR_COMPRESSION_SIZE: decompressed size mismatch');
+    const text = new TextDecoder('utf-8', { fatal: true }).decode(decodedBytes);
+    if (!envelope.checksum || this.computeChecksum(text) !== envelope.checksum) throw new Error('ERR_COMPRESSION_CHECKSUM: checksum mismatch');
+    return text;
   }
 
-  static async decompressChunkAsync(
-    envelope: CompressedChunkEnvelope,
-    _cpuBudgetPercent = 35
-  ): Promise<string> {
+  static async decompressChunkAsync(envelope: CompressedChunkEnvelope): Promise<string> {
     return this.decompressSync(envelope);
   }
 }
 
-export interface StreamedSceneEntry {
-  nodeId: string;
-  chapterId: string;
-  status: 'streaming' | 'decompressed_memory' | 'decompressed_cache_file' | 'unloaded';
-  assetCount: number;
-  skippedPngCount: number;
-  memoryBytes: number;
-  cacheFileKey?: string;
-  lastTouchedStep: number;
-}
-
-/**
- * 场景流式加载器、提前解压调度器与旧场景内存卸载器
- * - 支持提前 1~20 场景流式预读与解压（到内存或缓存文件）
- * - 支持将 1~20 场景之前的旧场景资源从内存中安全卸载
- */
-export class SceneStreamMemoryManager {
-  private entries = new Map<string, StreamedSceneEntry>();
-  private stepCounter = 0;
-  private cacheFileStore = new Map<string, string>();
-
-  /**
-   * 计算从当前节点出发、距离在 maxDistance (1~20) 步以内的后续节点集合（BFS）
-   */
-  static collectReachableNodesWithinDistance(
-    startNodeId: string,
-    allNodes: SceneNode[],
-    maxDistance: number
-  ): { node: SceneNode; distance: number }[] {
-    const clampedDist = Math.max(1, Math.min(20, maxDistance));
-    const nodeMap = new Map(allNodes.map((n) => [n.id, n]));
-    const visited = new Map<string, number>();
-    const queue: { id: string; dist: number }[] = [{ id: startNodeId, dist: 0 }];
-    const result: { node: SceneNode; distance: number }[] = [];
-
-    while (queue.length > 0) {
-      const current = queue.shift()!;
-      if (visited.has(current.id)) continue;
-      visited.set(current.id, current.dist);
-
-      const node = nodeMap.get(current.id);
-      if (!node) continue;
-      result.push({ node, distance: current.dist });
-
-      if (current.dist >= clampedDist) continue;
-
-      const nextIds = new Set<string>();
-      if (node.nextNodeId) nextIds.add(node.nextNodeId);
-      for (const ch of node.choices) {
-        if (ch.targetNodeId) nextIds.add(ch.targetNodeId);
-      }
-      if (node.conditionRule) {
-        if (node.conditionRule.trueTargetNodeId) {
-          nextIds.add(node.conditionRule.trueTargetNodeId);
-        }
-        if (node.conditionRule.falseTargetNodeId) {
-          nextIds.add(node.conditionRule.falseTargetNodeId);
-        }
-      }
-      if (node.defaultTimeoutTargetId) {
-        nextIds.add(node.defaultTimeoutTargetId);
-      }
-
-      for (const nextId of nextIds) {
-        if (!visited.has(nextId)) {
-          queue.push({ id: nextId, dist: current.dist + 1 });
-        }
-      }
-    }
-
-    return result;
-  }
-
-  /**
-   * 当玩家进入某个场景节点时调用：
-   * 1. 提前解压 1~20 个后续场景资源到内存或缓存文件
-   * 2. 自动卸载超过 unloadSceneDistance (1~20) 步之前的旧场景内存
-   */
-  async onEnterScene(
-    currentNodeId: string,
-    allNodes: SceneNode[],
-    config: GamePerformanceConfig,
-    onUpdate?: (snapshot: StreamedSceneEntry[]) => void
-  ): Promise<StreamedSceneEntry[]> {
-    this.stepCounter += 1;
-    const currentStep = this.stepCounter;
-
-    const preloadDist = Math.max(1, Math.min(20, config.preloadSceneDistance));
-    const unloadDist = Math.max(1, Math.min(20, config.unloadSceneDistance));
-
-    const upcoming = SceneStreamMemoryManager.collectReachableNodesWithinDistance(
-      currentNodeId,
-      allNodes,
-      preloadDist
-    );
-    const activeIds = new Set(upcoming.map((u) => u.node.id));
-
-    // 1. 卸载很久以前（超过 unloadDist 步且不在前方预载队列中）的场景内存
-    for (const [nodeId, entry] of this.entries.entries()) {
-      if (
-        !activeIds.has(nodeId) &&
-        entry.status !== 'unloaded' &&
-        currentStep - entry.lastTouchedStep >= unloadDist
-      ) {
-        if (entry.cacheFileKey) {
-          this.cacheFileStore.delete(entry.cacheFileKey);
-        }
-        this.entries.set(nodeId, {
-          ...entry,
-          status: 'unloaded',
-          memoryBytes: 0,
-        });
-      }
-    }
-
-    // 2. 分片异步流加载并解压即将到达的 1~20 个场景
-    for (const { node } of upcoming) {
-      const existing = this.entries.get(node.id);
-      if (existing && existing.status !== 'unloaded') {
-        existing.lastTouchedStep = currentStep;
-        continue;
-      }
-
-      const bg = getBackgroundById(node.backgroundId);
-      const charSprites = node.characters.map((c) => getCharacterById(c.spriteId));
-      const allPaths = [bg.path, ...charSprites.map((c) => c.path)];
-      const skippedPngCount = config.skipAlreadyCompressedPng
-        ? allPaths.filter((p) => isAlreadyCompressedAssetPath(p)).length
-        : 0;
-
-      // 预热浏览器解码缓存（非阻塞 Image 预流读）
-      for (const p of allPaths) {
-        const img = new Image();
-        img.decoding = 'async';
-        img.src = p;
-      }
-
-      const serializedScene = JSON.stringify({
-        id: node.id,
-        dialogues: node.dialogues,
-        choices: node.choices,
-        visualBlocks: node.visualBlocks,
-      });
-
-      const compressed = MooVNBuiltInCodec.compressTextPayload(
-        serializedScene,
-        config.compressionFormat,
-        config.compressionLevel
-      );
-
-      // 标记为正在流式读取
-      this.entries.set(node.id, {
-        nodeId: node.id,
-        chapterId: node.chapterId,
-        status: 'streaming',
-        assetCount: allPaths.length + 1,
-        skippedPngCount,
-        memoryBytes: compressed.compressedBytes,
-        lastTouchedStep: currentStep,
-      });
-      onUpdate?.(this.getSnapshot());
-
-      // 后台按性能配额解压
-      const decompressed = await MooVNBuiltInCodec.decompressChunkAsync(
-        compressed,
-        config.workerCpuBudgetPercent
-      );
-
-      const cacheKey = `.moovn_cache/scene_${node.id}.bin`;
-      if (config.decompressTarget === 'cache_file') {
-        this.cacheFileStore.set(cacheKey, decompressed);
-      }
-
-      const decodedBytes =
-        decompressed.length * 2 +
-        (config.decompressTarget === 'memory' ? allPaths.length * 180 * 1024 : 24 * 1024);
-
-      this.entries.set(node.id, {
-        nodeId: node.id,
-        chapterId: node.chapterId,
-        status:
-          config.decompressTarget === 'cache_file'
-            ? 'decompressed_cache_file'
-            : 'decompressed_memory',
-        assetCount: allPaths.length + 1,
-        skippedPngCount,
-        memoryBytes: decodedBytes,
-        cacheFileKey: config.decompressTarget === 'cache_file' ? cacheKey : undefined,
-        lastTouchedStep: currentStep,
-      });
-    }
-
-    const snap = this.getSnapshot();
-    onUpdate?.(snap);
-    return snap;
-  }
-
-  getSnapshot(): StreamedSceneEntry[] {
-    return Array.from(this.entries.values());
-  }
-
-  getStats() {
-    let activeMemoryBytes = 0;
-    let loadedScenes = 0;
-    let unloadedScenes = 0;
-    let skippedPngTotal = 0;
-    for (const entry of this.entries.values()) {
-      if (entry.status === 'unloaded') {
-        unloadedScenes += 1;
-      } else {
-        loadedScenes += 1;
-        activeMemoryBytes += entry.memoryBytes;
-        skippedPngTotal += entry.skippedPngCount;
-      }
-    }
-    return {
-      loadedScenes,
-      unloadedScenes,
-      activeMemoryMb: +(activeMemoryBytes / (1024 * 1024)).toFixed(2),
-      skippedPngTotal,
-    };
-  }
-}
-
-/**
- * .msvn 插件式章节更新包格式
- * 玩家只需下载主加载器 + 第一章（必装），后续章节可单独下载 .msvn 挂载游玩，玩完后卸载上一章。
- * 若跳过中间章节，自动应用 minCharacterAffection 与 minVariables 最低角色保底数值。
- */
+/** A chapter's node data and referenced built-in asset manifest. Assets are not included. */
 export interface MsvnChapterPackage {
   magic: 'MSVN_CHAPTER_PACKAGE_V1';
   projectId: string;
   projectTitle: string;
   exportedAt: string;
-  compressionFormat: AssetCompressionFormat;
+  compressionFormat: CompressedChunkEnvelope['format'];
   compressionLevel: number;
-  skipAlreadyCompressedPng: boolean;
   chapter: StoryChapter;
   minCharacterAffection: Record<string, number>;
   minVariables: Record<string, number>;
@@ -543,7 +246,6 @@ export interface MsvnChapterPackage {
   assetManifest: {
     id: string;
     path: string;
-    passthroughPng: boolean;
   }[];
 }
 
@@ -552,47 +254,34 @@ export function buildChapterMsvnPackage(
   chapterId: string,
   perfConfig: GamePerformanceConfig = project.performanceConfig || DEFAULT_PERFORMANCE_CONFIG
 ): MsvnChapterPackage {
-  const chapter =
-    project.chapters.find((c) => c.id === chapterId) || project.chapters[0];
+  const chapter = project.chapters.find((c) => c.id === chapterId);
+  if (!chapter) throw new Error(`ERR_CHAPTER_NOT_FOUND: ${chapterId}`);
   const chapterNodes = project.nodes.filter((n) => n.chapterId === chapter.id);
 
-  // 收集本章节引用的全部背景与角色立绘清单，自动标记 .png 免二次压缩
-  const assetMap = new Map<string, { id: string; path: string; passthroughPng: boolean }>();
+  // Collect references; the referenced asset bytes are not included.
+  const assetMap = new Map<string, { id: string; path: string }>();
   for (const node of chapterNodes) {
-    const bg = getBackgroundById(node.backgroundId);
-    assetMap.set(bg.id, {
+    const bg = BACKGROUND_ASSETS.find((asset) => asset.id === node.backgroundId);
+    if (bg) assetMap.set(bg.id, {
       id: bg.id,
       path: bg.path,
-      passthroughPng:
-        perfConfig.skipAlreadyCompressedPng && isAlreadyCompressedAssetPath(bg.path),
     });
     for (const ch of node.characters) {
-      const sp = getCharacterById(ch.spriteId);
+      const sp = CHARACTER_ASSETS.find((asset) => asset.id === ch.spriteId);
+      if (!sp) continue;
       assetMap.set(sp.id, {
         id: sp.id,
         path: sp.path,
-        passthroughPng:
-          perfConfig.skipAlreadyCompressedPng && isAlreadyCompressedAssetPath(sp.path),
       });
     }
   }
 
-  // 默认按章节序号计算角色最低保底好感（若开发者已自定义则优先使用自定义值）
-  const defaultMinAffection: Record<string, number> = {};
-  for (const char of project.characters) {
-    const customMin = chapter.minCharacterAffection?.[char.id];
-    defaultMinAffection[char.id] =
-      customMin !== undefined
-        ? customMin
-        : chapter.index <= 1
-        ? char.initialAffection
-        : Math.min(char.maxAffection, char.initialAffection + (chapter.index - 1) * 10);
-  }
+  // Preserve only explicit chapter minimums; do not invent character stats.
+  const defaultMinAffection: Record<string, number> = { ...(chapter.minCharacterAffection || {}) };
 
   const nodesJson = JSON.stringify(chapterNodes);
   const compressedNodesEnvelope = MooVNBuiltInCodec.compressTextPayload(
     nodesJson,
-    perfConfig.compressionFormat,
     perfConfig.compressionLevel
   );
 
@@ -601,12 +290,10 @@ export function buildChapterMsvnPackage(
     projectId: project.id,
     projectTitle: project.title,
     exportedAt: new Date().toISOString(),
-    compressionFormat: perfConfig.compressionFormat,
-    compressionLevel: perfConfig.compressionLevel,
-    skipAlreadyCompressedPng: perfConfig.skipAlreadyCompressedPng,
+    compressionFormat: compressedNodesEnvelope.format,
+    compressionLevel: compressedNodesEnvelope.level,
     chapter: {
       ...chapter,
-      isBaseRequired: chapter.index === 1,
       minCharacterAffection: defaultMinAffection,
     },
     minCharacterAffection: defaultMinAffection,
@@ -632,7 +319,7 @@ export function downloadChapterMsvnFile(
   a.href = url;
   a.download = filename;
   a.click();
-  URL.revokeObjectURL(url);
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
   return filename;
 }
 
@@ -646,51 +333,7 @@ export async function parseAndDecompressMsvnPackage(
   if (pkg.magic !== 'MSVN_CHAPTER_PACKAGE_V1') {
     throw new Error('无效的 .msvn 章节包文件');
   }
-  const nodesRaw = await MooVNBuiltInCodec.decompressChunkAsync(
-    pkg.compressedNodesEnvelope,
-    50
-  );
+  const nodesRaw = await MooVNBuiltInCodec.decompressChunkAsync(pkg.compressedNodesEnvelope);
   const nodes = JSON.parse(nodesRaw) as SceneNode[];
   return { pkg, nodes };
-}
-
-/**
- * 跳过中间章节直接游玩新章节时，自动将低于该章节最低要求的角色好感度与变量补齐到保底数值
- */
-export function applyChapterMinimumCharacterStats(
-  chapter: StoryChapter,
-  characters: CharacterProfile[],
-  currentAffection: Record<string, number>,
-  currentVariables: Record<string, number | string | boolean>
-): {
-  nextAffection: Record<string, number>;
-  nextVariables: Record<string, number | string | boolean>;
-  boostedLogs: string[];
-} {
-  const nextAffection = { ...currentAffection };
-  const nextVariables = { ...currentVariables };
-  const boostedLogs: string[] = [];
-
-  const minMap = chapter.minCharacterAffection || {};
-  for (const char of characters) {
-    const requiredMin = minMap[char.id];
-    if (typeof requiredMin === 'number') {
-      const cur = nextAffection[char.id] ?? char.initialAffection;
-      if (cur < requiredMin) {
-        nextAffection[char.id] = requiredMin;
-        boostedLogs.push(`${char.name} 好感度保底补偿: ${cur} → ${requiredMin}`);
-      }
-    }
-  }
-
-  const minVars = chapter.minVariables || {};
-  for (const [key, minVal] of Object.entries(minVars)) {
-    const curVal = Number(nextVariables[key] ?? 0);
-    if (curVal < minVal) {
-      nextVariables[key] = minVal;
-      boostedLogs.push(`变量 [${key}] 保底补偿: ${curVal} → ${minVal}`);
-    }
-  }
-
-  return { nextAffection, nextVariables, boostedLogs };
 }

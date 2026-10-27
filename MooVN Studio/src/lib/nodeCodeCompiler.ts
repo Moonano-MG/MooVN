@@ -4,7 +4,7 @@ import type {
   VNProject,
   WorkflowNodeType,
 } from '../types.ts';
-import { getNodeMeta } from '../data/nodeRegistry.ts';
+import { getNodeMeta, isUnsupportedNode } from '../data/nodeRegistry.ts';
 
 export interface TsCompilerDiagnostic {
   id: string;
@@ -89,7 +89,7 @@ function compileNestedChildNode(
     }
     case 'if_else_container': {
       const expr = normalizeConditionForCtx(
-        String(child.params.conditionExpr || 'ctx.affection.yukina >= 60')
+        String(child.params.conditionExpr || 'ctx.affection.character >= 60')
       );
       lines.push(`${indent}if (${expr}) {`);
       for (const s of child.childrenNodes || []) {
@@ -118,7 +118,7 @@ function compileNestedChildNode(
     case 'narration':
       lines.push(
         `${indent}await ctx.say(${JSON.stringify(
-          String(child.params.speaker || '星野 雪奈')
+          String(child.params.speaker || '旁白')
         )}, ${JSON.stringify(String(child.params.text || '嵌套演出台词'))});`
       );
       break;
@@ -132,7 +132,7 @@ function compileNestedChildNode(
     case 'affection_change':
       lines.push(
         `${indent}ctx.addAffection(${JSON.stringify(
-          String(child.params.charId || 'yukina')
+          String(child.params.charId || 'character')
         )}, ${Number(child.params.delta ?? 5)});`
       );
       break;
@@ -156,7 +156,7 @@ function compileNestedChildNode(
     case 'char_move':
       lines.push(
         `${indent}await ctx.tweenCharacter(${JSON.stringify(
-          String(child.params.charId || 'yukina')
+          String(child.params.charId || 'character')
         )}, { x: ${Number(child.params.x ?? 50)}, y: ${Number(child.params.y ?? 55)} });`
       );
       break;
@@ -278,7 +278,7 @@ export function generateSingleNodeCode(
     case 'condition': {
       const r = node.conditionRule || {
         variableType: 'affection',
-        characterId: 'yukina',
+        characterId: 'character',
         attributeKey: 'affection',
         operator: '>=',
         compareValue: 60,
@@ -287,7 +287,7 @@ export function generateSingleNodeCode(
       };
       const leftExpr =
         r.variableType === 'affection'
-          ? `ctx.getAffection(${JSON.stringify(r.characterId || 'yukina')})`
+          ? `ctx.getAffection(${JSON.stringify(r.characterId || 'character')})`
           : `ctx.getVar(${JSON.stringify(r.attributeKey)})`;
       body.push(
         `  ${isTs ? 'const passed: boolean =' : 'const passed ='} ${leftExpr} ${r.operator} ${JSON.stringify(
@@ -343,7 +343,7 @@ export function generateSingleNodeCode(
 
     case 'if_else_container': {
       const cond = normalizeConditionForCtx(
-        node.loopConfig?.conditionExpr || 'ctx.getAffection("yukina") >= 60'
+        node.loopConfig?.conditionExpr || 'ctx.getAffection("character") >= 60'
       );
       body.push(`  if (${cond}) {`);
       for (const child of node.childrenNodes || []) {
@@ -413,7 +413,7 @@ export function generateSingleNodeCode(
       const cfg = node.logicConfig || {
         targetVar: node.variableKey || 'status_text',
         operandValue: '',
-        formatTemplate: '第 ${day_count} 日 · 钟塔观测记录',
+        formatTemplate: '第 ${day_count} 日',
       };
       body.push(
         `  ${isTs ? 'const formatted: string =' : 'const formatted ='} ctx.formatTemplate(${JSON.stringify(
@@ -428,7 +428,7 @@ export function generateSingleNodeCode(
       const cfg = node.logicConfig || {
         targetVar: 'inventory',
         arrayAction: 'push',
-        operandValue: '旧校舍黄铜钥匙',
+        operandValue: '新值',
       };
       body.push(
         `  ctx.mutateList(${JSON.stringify(cfg.targetVar)}, ${JSON.stringify(
@@ -460,7 +460,7 @@ export function generateSingleNodeCode(
     }
 
     case 'affection_change': {
-      const targetChar = node.affectionTargetCharId || project?.characters[0]?.id || 'yukina';
+      const targetChar = node.affectionTargetCharId || project?.characters[0]?.id || 'character';
       const delta = node.affectionDelta ?? 10;
       body.push(`  ctx.addAffection(${JSON.stringify(targetChar)}, ${delta});`);
       break;
@@ -688,6 +688,13 @@ export function compileAndCheckProjectTypeScript(project: VNProject): TsCompileR
 
     // 4. 检查容器节点是否为空
     const meta = getNodeMeta(node.type);
+    if (isUnsupportedNode(node.type)) {
+      diagnostics.push({
+        id: `diag-unsupported-${node.id}`, code: 'MVN205', severity: 'warning',
+        nodeId: node.id, nodeTitle: node.title, line: lineBase + 1,
+        message: `节点 [${meta.title}] 尚未实现，预览和 HTML 不会执行此功能。`,
+      });
+    }
     if (meta.isContainer && (!node.childrenNodes || node.childrenNodes.length === 0)) {
       diagnostics.push({
         id: `diag-empty-container-${node.id}`,

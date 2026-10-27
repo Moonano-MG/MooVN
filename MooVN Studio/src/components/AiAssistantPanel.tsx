@@ -1,3 +1,4 @@
+import { newId } from '../lib/ids';
 import React, { useState, useRef, useEffect } from 'react';
 import {
   Send,
@@ -217,7 +218,7 @@ export const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({
         dialogues: [
           ...prev.dialogues,
           {
-            id: `dlg-${Date.now()}`,
+            id: newId('dlg'),
             speakerId: action.characterId || 'narrator',
             speakerName: action.speakerName || '旁白',
             speakerColor: '#38bdf8',
@@ -248,7 +249,7 @@ export const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({
             dialogues: action.text
               ? [
                   {
-                    id: `dlg-${Date.now()}`,
+                    id: newId('dlg'),
                     speakerId: action.characterId || 'narrator',
                     speakerName: action.speakerName || '旁白',
                     speakerColor: '#38bdf8',
@@ -278,7 +279,7 @@ export const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({
     setErrorBanner(null);
 
     const userMsg: AiChatMessage = {
-      id: `user-${Date.now()}`,
+      id: newId('user'),
       role: 'user',
       content: trimmed,
       timestamp: new Date().toLocaleTimeString().slice(0, 5),
@@ -350,7 +351,7 @@ export const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({
         '（接口返回为空）';
 
       const assistantMsg: AiChatMessage = {
-        id: `ai-${Date.now()}`,
+        id: newId('ai'),
         role: 'assistant',
         content: String(replyContent),
         timestamp: new Date().toLocaleTimeString().slice(0, 5),
@@ -425,7 +426,7 @@ export const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({
             onClick={() =>
               setMessages([
                 {
-                  id: `welcome-${Date.now()}`,
+                  id: newId('welcome'),
                   role: 'assistant',
                   content: '对话历史已清空。',
                   timestamp: new Date().toLocaleTimeString().slice(0, 5),

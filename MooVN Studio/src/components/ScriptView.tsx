@@ -1,3 +1,4 @@
+import { newId } from '../lib/ids';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   FileCode2,
@@ -510,15 +511,15 @@ export const ScriptView: React.FC<ScriptViewProps> = ({
     } else if (meta.ext === 'json') {
       starter = `{\n  "scene": "node-1",\n  "background": "bg-classroom-day"\n}\n`;
     } else if (meta.ext === 'cpp' || meta.ext === 'rs') {
-      starter = `moovn::bg::show("bg-classroom-day", "fade");\nmoovn::text::say("星野雪奈", "新场景已载入。");\nmoovn::save::create("Slot_01");\n`;
+      starter = `moovn::bg::show("bg-classroom-day", "fade");\nmoovn::text::say("旁白", "新场景已载入。");\nmoovn::save::create("Slot_01");\n`;
     } else if (meta.ext === 'cs') {
-      starter = `Moovn.Bg.Show("bg-classroom-day", "fade");\nMoovn.Text.Say("星野雪奈", "新场景已载入。");\nMoovn.Save.Create("Slot_01");\n`;
+      starter = `Moovn.Bg.Show("bg-classroom-day", "fade");\nMoovn.Text.Say("旁白", "新场景已载入。");\nMoovn.Save.Create("Slot_01");\n`;
     } else {
-      starter = `moovn.bg.show("bg-classroom-day", "fade");\nmoovn.text.say("星野雪奈", "新场景已载入。");\nmoovn.save.create("Slot_01");\n`;
+      starter = `moovn.bg.show("bg-classroom-day", "fade");\nmoovn.text.say("旁白", "新场景已载入。");\nmoovn.save.create("Slot_01");\n`;
     }
 
     const created: ProjectScriptFile = {
-      id: `file-${Date.now()}`,
+      id: newId('file'),
       fileName: finalName,
       content: starter,
       updatedAt: new Date().toISOString(),
@@ -960,7 +961,7 @@ export const ScriptView: React.FC<ScriptViewProps> = ({
           {compileReport && (
             <div className="px-3 py-1.5 bg-[#19191f] border-b border-[#27272c] flex items-center justify-between text-xs shrink-0">
               <span className="text-zinc-200">
-                编译检查：{compileReport.ok ? '0 错误' : `${compileReport.diagnostics.length} 项提示`} · 耗时 {compileReport.durationMs}ms
+                工程图校验（不检查脚本语法）：{compileReport.ok ? '未发现图引用问题' : `${compileReport.diagnostics.length} 项提示`} · {compileReport.durationMs}ms
               </span>
               <button
                 type="button"

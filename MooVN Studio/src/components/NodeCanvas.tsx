@@ -1,3 +1,4 @@
+import { newId } from '../lib/ids';
 import React, { useState, useRef, useEffect } from 'react';
 import {
   Plus,
@@ -23,7 +24,7 @@ import {
   NodeCategory,
 } from '../types';
 import { getBackgroundById, BACKGROUND_ASSETS } from '../data/assets';
-import { NODE_CATEGORIES, NODE_REGISTRY, getNodeMeta } from '../data/nodeRegistry';
+import { NODE_CATEGORIES, NODE_REGISTRY, getNodeMeta, isUnsupportedNode } from '../data/nodeRegistry';
 import { generateSingleNodeCode } from '../lib/nodeCodeCompiler';
 import { ScratchBlockTree } from './ScratchBlockTree';
 
@@ -424,6 +425,7 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
               {NODE_REGISTRY.filter((n) => n.category === activeCat).map((meta) => (
                 <button
                   key={meta.type}
+                        disabled={isUnsupportedNode(meta.type)}
                   type="button"
                   onClick={() => {
                     onAddNode(meta.type);
@@ -432,7 +434,7 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
                   className="p-2 rounded-lg bg-[#10141d] border border-[#283142] text-left flex flex-col gap-0.5 active:bg-[#1e2638]"
                 >
                   <span style={{ color: meta.badgeText }} className="text-xs font-bold">
-                    {meta.title}
+                    {meta.title}{isUnsupportedNode(meta.type) ? '（未实现）' : ''}
                   </span>
                   <span className="text-[10px] text-zinc-400 line-clamp-1">
                     {meta.description}
@@ -636,8 +638,8 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
                                 dialogues: [
                                   ...prev.dialogues,
                                   {
-                                    id: `dlg-${Date.now()}`,
-                                    speakerId: firstDlg?.speakerId || 'custom',
+                                    id: newId('dlg'),
+                                    speakerId: firstDlg?.speakerId || 'narrator',
                                     speakerName: firstDlg?.speakerName || '旁白',
                                     speakerColor: firstDlg?.speakerColor || '#38bdf8',
                                     text: '新台词内容...',
@@ -937,6 +939,7 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
             {NODE_REGISTRY.filter((n) => n.category === activeCat).map((meta) => (
               <button
                 key={meta.type}
+                        disabled={isUnsupportedNode(meta.type)}
                 onClick={() => {
                   onAddNode(meta.type);
                   setShowAddMenu(false);
@@ -948,7 +951,7 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
                     style={{ color: meta.badgeText }}
                     className="text-xs font-semibold"
                   >
-                    {meta.title}
+                    {meta.title}{isUnsupportedNode(meta.type) ? '（未实现）' : ''}
                   </span>
                   {meta.isContainer && (
                     <span className="px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-300 text-[9px]">
@@ -1295,7 +1298,7 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
                       ? `过渡渐变: ${node.fadeConfig?.direction || 'in'} (${
                           node.fadeConfig?.durationMs ?? 800
                         }ms)`
-                      : `场景切换 → ${bg.name}`}
+                      : `场景切换 → ${node.backgroundId ? bg.name : '无背景'}`}
                   </div>
                 ) : meta.category === 'ui' ? (
                   <div className="px-2 py-1.5 rounded bg-blue-500/15 border border-blue-500/35 text-[11px] text-blue-200 truncate">
@@ -1313,12 +1316,8 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
                   <div className="px-2 py-1.5 rounded bg-amber-500/15 border border-amber-500/35 text-[11px] text-amber-200 font-mono truncate">
                     {node.type === 'wait_timer'
                       ? `await sleep(${node.waitDurationMs ?? 1500}ms)`
-                      : node.type === 'stream_preload_hint'
-                      ? `预载 ${node.settingsActionConfig?.preloadAheadScenes ?? 3} 场景 / 卸载 ${
-                          node.settingsActionConfig?.unloadBehindScenes ?? 5
-                        } 场景`
-                      : node.type === 'msvn_chapter_load'
-                      ? `挂载 .msvn 章节包`
+                      : node.type === 'stream_preload_hint' || node.type === 'msvn_chapter_load'
+                      ? '此节点尚未实现'
                       : node.type === 'end'
                       ? `结局: ${node.endingTitle || 'Good Ending'}`
                       : `${meta.title}: → ${node.nextNodeId || '下一节点'}`}
@@ -1336,7 +1335,7 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
                 )}
 
                 <div className="flex items-center justify-between text-[10px] text-zinc-500 pt-0.5">
-                  <span className="truncate max-w-[140px]">{bg.name}</span>
+                  <span className="truncate max-w-[140px]">{node.backgroundId ? bg.name : '无背景'}</span>
                   <div className="flex items-center gap-1">
                     <span className="px-1 py-0.2 rounded bg-[#22222a] text-zinc-400 font-mono text-[9px]">
                       {canvasScriptLang.toUpperCase()}

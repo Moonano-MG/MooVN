@@ -403,10 +403,7 @@ export interface StoryChapter {
   subtitle: string;
   yamlFileName: string;
   description: string;
-  /**
-   * 跳过中间章节直接游玩本章节时，每个角色的最低保底好感度/数值。
-   * 第一章必装；后续章节可作为独立 .msvn 插件包按需下载与卸载。
-   */
+  /** Legacy metadata retained for existing projects; chapter mounting is not implemented. */
   minCharacterAffection?: Record<string, number>;
   minVariables?: Record<string, number>;
   isBaseRequired?: boolean;
@@ -420,18 +417,20 @@ export interface GlobalVariable {
   value: number | boolean | string;
 }
 
-export type AssetCompressionFormat = 'xz' | '7z' | 'brotli';
+// Legacy format names remain readable, but new output uses MooVN's internal codec.
+export type AssetCompressionFormat = 'moovn_lz77' | 'xz' | '7z' | 'brotli';
 
 export interface GamePerformanceConfig {
   compressionFormat: AssetCompressionFormat;
-  compressionLevel: number; // xz: 0-9 (rec 6), 7z: 0-9 (rec 5), brotli: 0-11 (rec 6)
-  skipAlreadyCompressedPng: boolean; // png等已压缩图像不再二次压缩
-  preloadSceneDistance: number; // 1 ~ 20 场景前提前解压至内存/缓存
-  unloadSceneDistance: number; // 1 ~ 20 场景后从内存卸载释放
-  streamPreloadScenes: number; // 1 ~ 20 场景磁盘流式预读
-  decompressTarget: 'memory' | 'cache_file'; // 解压到内存中 或 解压到缓存文件
-  workerCpuBudgetPercent: number; // 后台解压性能配额 (15% - 80%)，保证游玩零卡顿
-  modularMsvnEnabled: boolean; // 启用 .msvn 插件式章节包增量更新
+  compressionLevel: number; // 0 = raw, 1–9 = internal LZ77 search window
+  // Legacy fields remain optional for reading older projects; they do not enable a runtime loader.
+  skipAlreadyCompressedPng?: boolean;
+  preloadSceneDistance?: number;
+  unloadSceneDistance?: number;
+  streamPreloadScenes?: number;
+  decompressTarget?: 'memory' | 'cache_file';
+  workerCpuBudgetPercent?: number;
+  modularMsvnEnabled?: boolean;
 }
 
 export interface GameUIConfig {
@@ -647,7 +646,6 @@ export interface MooVNSystemSettings {
   editorConfig: {
     autoSaveIntervalSec: number;
     coloredNodeCategories: boolean;
-    showStreamMonitorInPreview: boolean;
     defaultScriptLang: ScriptLanguage;
   };
   defaultGameSettings: {
@@ -670,7 +668,8 @@ export interface SavedProjectMeta {
   chaptersCount: number;
   nodesCount: number;
   isTemplatePreset?: boolean;
-  projectData: VNProject;
+  /** Present only in legacy localStorage records. New records contain metadata only. */
+  projectData?: VNProject;
 }
 
 export type PanelId =

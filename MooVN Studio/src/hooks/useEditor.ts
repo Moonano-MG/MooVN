@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import {
   VNProject,
   SceneNode,
@@ -12,66 +12,62 @@ import {
   GameUIConfig,
 } from '../types';
 import { DEFAULT_PROJECT } from '../data/defaultProject';
-import { CHARACTER_ASSETS, BACKGROUND_ASSETS, AUDIO_ASSETS } from '../data/assets';
+import { CHARACTER_ASSETS, BACKGROUND_ASSETS } from '../data/assets';
 import { getNodeMeta } from '../data/nodeRegistry';
+import { putProjectSnapshot } from '../lib/projectStorage';
+import { newId } from '../lib/ids';
 
 export function useEditor() {
   const [editorState, setEditorState] = useState<{
     project: VNProject;
     history: VNProject[];
     future: VNProject[];
-  }>(() => {
-    let initial = DEFAULT_PROJECT;
-    try {
-      const saved = localStorage.getItem('moovn_studio_project_v6');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (
-          parsed &&
-          Array.isArray(parsed.chapters) &&
-          Array.isArray(parsed.nodes) &&
-          parsed.uiConfig
-        ) {
-          initial = parsed;
-        }
-      }
-    } catch {
-      // ignore
-    }
-    return { project: initial, history: [], future: [] };
-  });
+    revision: number;
+  }>(() => ({ project: DEFAULT_PROJECT, history: [], future: [], revision: 0 }));
 
   const [storageWarning, setStorageWarning] = useState<string | null>(null);
   const project = editorState.project;
   const history = editorState.history;
   const future = editorState.future;
 
+  // A crash-recovery draft is separate from the saved project file. Structured cloning
+  // happens after the user stops typing, rather than synchronous JSON on every edit.
+  useEffect(() => {
+    if (editorState.revision === 0) return;
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      putProjectSnapshot(`draft:${project.id}`, project).then(() => {
+        if (!cancelled) setStorageWarning(null);
+      }).catch((error: unknown) => {
+        if (!cancelled) setStorageWarning(`草稿缓存失败：${error instanceof Error ? error.message : String(error)}`);
+      });
+    }, 1000);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [project, editorState.revision]);
+
   const setProject = useCallback(
     (updaterOrNext: VNProject | ((prev: VNProject) => VNProject)) => {
       setEditorState((prev) => {
-        const next =
-          typeof updaterOrNext === 'function'
-            ? (updaterOrNext as (p: VNProject) => VNProject)(prev.project)
-            : updaterOrNext;
-        try {
-          localStorage.setItem('moovn_studio_project_v6', JSON.stringify(next));
-          setStorageWarning(null);
-        } catch (err: unknown) {
-          setStorageWarning(
-            err instanceof Error
-              ? `浏览器本地缓存配额已满 (${err.message})，请及时导出 .mpvn 工程文件`
-              : '浏览器本地缓存配额已满，请及时导出 .mpvn 工程文件'
-          );
-        }
+        const next = typeof updaterOrNext === 'function' ? updaterOrNext(prev.project) : updaterOrNext;
+        if (next === prev.project) return prev;
         return {
           project: next,
-          history: [...prev.history.slice(-24), prev.project],
+          history: [...prev.history.slice(-23), prev.project],
           future: [],
+          revision: prev.revision + 1,
         };
       });
     },
     []
   );
+
+  const adoptSavedProject = useCallback((previous: VNProject, saved: VNProject) => {
+    setEditorState((state) => state.project === previous ? { ...state, project: saved } : state);
+  }, []);
+
+  const replaceProject = useCallback((next: VNProject) => {
+    setEditorState({ project: next, history: [], future: [], revision: 0 });
+  }, []);
 
   const [selectedChapterId, setSelectedChapterId] = useState<string>(
     project.chapters[0]?.id || 'chapter-1'
@@ -90,16 +86,11 @@ export function useEditor() {
   const undo = useCallback(() => {
     setEditorState((prev) => {
       if (prev.history.length === 0) return prev;
-      const previous = prev.history[prev.history.length - 1];
-      try {
-        localStorage.setItem('moovn_studio_project_v6', JSON.stringify(previous));
-      } catch {
-        // ignore
-      }
       return {
-        project: previous,
+        project: prev.history[prev.history.length - 1],
         history: prev.history.slice(0, -1),
         future: [prev.project, ...prev.future],
+        revision: prev.revision + 1,
       };
     });
   }, []);
@@ -107,16 +98,11 @@ export function useEditor() {
   const redo = useCallback(() => {
     setEditorState((prev) => {
       if (prev.future.length === 0) return prev;
-      const next = prev.future[0];
-      try {
-        localStorage.setItem('moovn_studio_project_v6', JSON.stringify(next));
-      } catch {
-        // ignore
-      }
       return {
-        project: next,
-        history: [...prev.history, prev.project],
+        project: prev.future[0],
+        history: [...prev.history.slice(-23), prev.project],
         future: prev.future.slice(1),
+        revision: prev.revision + 1,
       };
     });
   }, []);
@@ -162,7 +148,7 @@ export function useEditor() {
   const addChapter = useCallback(() => {
     const nextIdx = project.chapters.length + 1;
     const newChapter: StoryChapter = {
-      id: `chapter-${Date.now().toString().slice(-4)}`,
+      id: newId('chapter'),
       index: nextIdx,
       title: `第${nextIdx}章：新篇章`,
       subtitle: `Chapter 0${nextIdx}`,
@@ -188,20 +174,16 @@ export function useEditor() {
 
   const addCharacterProfile = useCallback(() => {
     const newChar: CharacterProfile = {
-      id: `char_${Date.now().toString().slice(-4)}`,
+      id: newId('char'),
       name: '新登场角色',
-      titleRole: '神秘转校生',
+      titleRole: '',
       color: '#38bdf8',
-      spriteId: CHARACTER_ASSETS[0].id,
-      expressions: [
-        { id: '微笑', label: '微笑', spriteId: CHARACTER_ASSETS[0].id },
-      ],
+      spriteId: '',
+      expressions: [],
       initialAffection: 20,
       maxAffection: 100,
       bio: '角色人物设定小传',
-      customAttributes: [
-        { id: `attr_${Date.now()}`, key: 'courage', label: '勇气', value: 10 },
-      ],
+      customAttributes: [],
     };
     commitProject((prev) => ({
       ...prev,
@@ -221,7 +203,7 @@ export function useEditor() {
 
   const addNode = useCallback(
     (type: WorkflowNodeType, customPosition?: { x: number; y: number }) => {
-      const id = `node-${Date.now().toString().slice(-5)}`;
+      const id = newId('node');
       const count = project.nodes.length + 1;
       const activeChapterId = selectedNode?.chapterId || selectedChapterId || project.chapters[0].id;
       const meta = getNodeMeta(type);
@@ -235,13 +217,13 @@ export function useEditor() {
           x: (selectedNode?.position.x ?? 200) + 310,
           y: (selectedNode?.position.y ?? 160) + (count % 2 === 0 ? 40 : -20),
         },
-        backgroundId: selectedNode?.backgroundId || BACKGROUND_ASSETS[0].id,
-        bgmId: selectedNode?.bgmId || AUDIO_ASSETS[0].id,
+        backgroundId: selectedNode?.backgroundId ?? '',
+        bgmId: selectedNode?.bgmId ?? '',
         transition: 'fade',
         weatherEffect: type === 'weather_particles' ? 'sakura' : 'none',
         colorFilter: type === 'color_filter' ? 'sepia' : 'none',
         characters:
-          selectedNode?.characters.map((c) => ({ ...c, id: `pl-${Date.now()}-${Math.random().toString(36).slice(2, 5)}` })) || [],
+          selectedNode?.characters.map((c) => ({ ...c, id: newId('pl') })) || [],
         dialogues:
           type === 'dialogue' ||
           type === 'narration' ||
@@ -249,17 +231,17 @@ export function useEditor() {
           type === 'cg_caption'
             ? [
                 {
-                  id: `dlg-${Date.now()}`,
+                  id: newId('dlg'),
                   speakerId:
                     type === 'narration' || type === 'inner_monologue'
                       ? 'narrator'
-                      : project.characters[0]?.id || 'protagonist',
+                      : project.characters[0]?.id || 'narrator',
                   speakerName:
                     type === 'narration'
                       ? '旁白'
                       : type === 'inner_monologue'
                       ? '内心独白'
-                      : project.characters[0]?.name || '默认角色',
+                      : project.characters[0]?.name || '旁白',
                   speakerColor:
                     type === 'narration' || type === 'inner_monologue'
                       ? '#94a3b8'
@@ -272,17 +254,17 @@ export function useEditor() {
           type === 'choice' || type === 'timed_choice' || type === 'switch_branch' || type === 'random_branch'
             ? [
                 {
-                  id: `opt-${Date.now()}-1`,
+                  id: newId('opt'),
                   text: '分支选项一',
                   targetNodeId: '',
-                  affectionCharacterId: project.characters[0]?.id || 'protagonist',
+                  affectionCharacterId: project.characters[0]?.id,
                   affectionDelta: 5,
                 },
                 {
-                  id: `opt-${Date.now()}-2`,
+                  id: newId('opt'),
                   text: '分支选项二',
                   targetNodeId: '',
-                  affectionCharacterId: project.characters[0]?.id || 'protagonist',
+                  affectionCharacterId: project.characters[0]?.id,
                   affectionDelta: 0,
                 },
               ]
@@ -293,7 +275,7 @@ export function useEditor() {
           type === 'condition'
             ? {
                 variableType: 'affection',
-                characterId: project.characters[0]?.id || 'protagonist',
+                characterId: project.characters[0]?.id,
                 attributeKey: 'affection',
                 operator: '>=',
                 compareValue: 50,
@@ -306,8 +288,8 @@ export function useEditor() {
             ? {
                 targetType: 'screen',
                 direction: 'in',
-                characterId: project.characters[0]?.id || 'protagonist',
-                backgroundId: BACKGROUND_ASSETS[0].id,
+                characterId: project.characters[0]?.id,
+                backgroundId: selectedNode?.backgroundId || '',
                 durationMs: 800,
                 easing: 'ease-in-out',
                 tintColor: '#000000',
@@ -366,11 +348,11 @@ export function useEditor() {
         unlockedClueTitle: type === 'clue_unlock' ? '新档案词条' : undefined,
         unlockedClueDesc: type === 'clue_unlock' ? '在此填写解锁线索的详细说明。' : undefined,
         targetExpressionCharId:
-          type === 'char_expression' ? project.characters[0]?.id || 'protagonist' : undefined,
+          type === 'char_expression' ? project.characters[0]?.id : undefined,
         targetExpressionSpriteId:
-          type === 'char_expression' ? CHARACTER_ASSETS[0]?.id || 'char-yukina-1' : undefined,
+          type === 'char_expression' ? project.characters[0]?.spriteId || undefined : undefined,
         affectionTargetCharId:
-          type === 'affection_change' ? project.characters[0]?.id || 'protagonist' : undefined,
+          type === 'affection_change' ? project.characters[0]?.id : undefined,
         affectionDelta: type === 'affection_change' ? 10 : undefined,
         variableKey: type === 'set_variable' ? 'chapterIndex' : undefined,
         variableValue: type === 'set_variable' ? 1 : undefined,
@@ -386,7 +368,7 @@ export function useEditor() {
                   type === 'while_loop'
                     ? 'ctx.vars.chapterIndex < 5'
                     : type === 'if_else_container'
-                    ? `ctx.affection.${project.characters[0]?.id || 'protagonist'} >= 60`
+                    ? 'ctx.vars.chapterIndex >= 1'
                     : undefined,
                 iteratorVar: type === 'for_each_loop' ? 'char' : undefined,
                 collectionTarget: type === 'for_each_loop' ? 'characters' : undefined,
@@ -420,17 +402,17 @@ export function useEditor() {
           type === 'try_catch_container'
             ? [
                 {
-                  id: `child-${Date.now()}-1`,
+                  id: newId('child'),
                   type: 'camera_shake',
                   title: '镜头震动',
                   params: { intensity: 'medium', durationMs: 400 },
                 },
                 {
-                  id: `child-${Date.now()}-2`,
+                  id: newId('child'),
                   type: 'dialogue',
                   title: '子块对白',
                   params: {
-                    speaker: project.characters[0]?.name || '默认角色',
+                    speaker: project.characters[0]?.name || '旁白',
                     text: '在此输入容器内部子块台词……',
                   },
                 },
@@ -440,7 +422,7 @@ export function useEditor() {
           type === 'if_else_container' || type === 'try_catch_container'
             ? [
                 {
-                  id: `else-${Date.now()}-1`,
+                  id: newId('else'),
                   type: 'dialogue',
                   title: '否则分支对白',
                   params: { speaker: '旁白', text: '在此输入条件未满足时的分支台词。' },
@@ -517,12 +499,12 @@ export function useEditor() {
     (nodeId: string) => {
       const defaultChar = project.characters[0];
       const newLine: DialogueLine = {
-        id: `dlg-${Date.now()}`,
-        speakerId: defaultChar?.id || 'yukina',
-        speakerName: defaultChar?.name || '星野雪奈',
+        id: newId('dlg'),
+        speakerId: defaultChar?.id || 'narrator',
+        speakerName: defaultChar?.name || '旁白',
         speakerColor: defaultChar?.color || '#60a5fa',
         text: '请输入新的角色对白……',
-        expressionSpriteId: defaultChar?.spriteId || 'char-yukina-1',
+        expressionSpriteId: defaultChar?.spriteId || undefined,
       };
       updateNode(nodeId, (node) => ({
         ...node,
@@ -559,10 +541,10 @@ export function useEditor() {
   const addChoiceOption = useCallback(
     (nodeId: string) => {
       const opt: ChoiceOption = {
-        id: `opt-${Date.now()}`,
+        id: newId('opt'),
         text: '新增分支选项',
         targetNodeId: project.startNodeId,
-        affectionCharacterId: project.characters[0]?.id || 'yukina',
+        affectionCharacterId: project.characters[0]?.id,
         affectionDelta: 5,
       };
       updateNode(nodeId, (node) => ({
@@ -595,20 +577,18 @@ export function useEditor() {
 
   const addCharacterToStage = useCallback(
     (nodeId: string, characterId: string) => {
-      const profile = project.characters.find((c) => c.id === characterId) || project.characters[0];
-      const spriteAsset =
-        CHARACTER_ASSETS.find((a) => a.id === characterId) ||
-        CHARACTER_ASSETS.find((a) => a.id === profile?.spriteId) ||
-        CHARACTER_ASSETS[0];
+      const profile = project.characters.find((c) => c.id === characterId);
+      if (!profile) return;
+      const spriteAsset = CHARACTER_ASSETS.find((a) => a.id === profile.spriteId);
 
       const placement: CharacterPlacement = {
-        id: `pl-${Date.now()}`,
-        characterId: profile?.id || spriteAsset.id,
-        name: profile?.name || spriteAsset.characterGroup,
-        spriteId: spriteAsset.id,
-        expressionLabel: spriteAsset.expressionLabel,
+        id: newId('pl'),
+        characterId: profile.id,
+        name: profile.name,
+        spriteId: profile.spriteId,
+        expressionLabel: spriteAsset?.expressionLabel || '默认',
         x: 50,
-        y: 56,
+        y: 92,
         scale: 1,
         opacity: 1,
         enterAnimation: 'fade',
@@ -681,11 +661,12 @@ export function useEditor() {
 
   const resetToDefault = useCallback(() => {
     localStorage.removeItem('moovn_studio_project_v6');
-    setEditorState({
+    setEditorState((prev) => ({
       project: DEFAULT_PROJECT,
       history: [],
       future: [],
-    });
+      revision: prev.revision + 1,
+    }));
     setStorageWarning(null);
     setSelectedChapterId(DEFAULT_PROJECT.chapters[0].id);
     setSelectedNodeId(DEFAULT_PROJECT.startNodeId);
@@ -695,6 +676,8 @@ export function useEditor() {
   return {
     project,
     setProject,
+    adoptSavedProject,
+    replaceProject,
     storageWarning,
     selectedChapterId,
     setSelectedChapterId,

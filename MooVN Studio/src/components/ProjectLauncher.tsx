@@ -1,6 +1,5 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
-  FolderOpen,
   Plus,
   Trash2,
   Play,
@@ -23,18 +22,21 @@ import {
   createSampleVNProject,
   deleteSavedProject,
   exportSettingsFileJson,
-  getPlatformDefaultPaths,
   loadSavedProjectsList,
+  migrateLegacyRecentProjects,
   loadSystemSettings,
-  pickDeviceMooVNFolder,
+  openSavedProject,
+  refreshWorkspacePaths,
   saveProjectToWorkspace,
   saveSystemSettings,
 } from '../lib/workspaceManager';
 import { parseMpvnProject } from '../lib/mpvnFormat';
+import { getLatestDraft, type ProjectSnapshot } from '../lib/projectStorage';
 import { useUILanguage } from '../lib/i18n';
+import { newId } from '../lib/ids';
 
 interface ProjectLauncherProps {
-  onOpenProject: (project: VNProject) => void;
+  onOpenProject: (project: VNProject, savedStorage?: 'file' | 'browser', requireManualSave?: boolean) => void;
   onClose?: () => void;
   onOpenSettings?: () => void;
   canClose?: boolean;
@@ -54,30 +56,83 @@ export const ProjectLauncher: React.FC<ProjectLauncherProps> = ({
   const [settings, setSettings] = useState<MooVNSystemSettings>(() => loadSystemSettings());
   const [notice, setNotice] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [draft, setDraft] = useState<ProjectSnapshot | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    if (!IS_WEB_EDITION) {
+      refreshWorkspacePaths().then((paths) => {
+        if (active) setSettings((prev) => ({ ...prev, ...paths }));
+      }).catch((error: unknown) => {
+        if (active) setNotice(error instanceof Error ? error.message : String(error));
+      });
+    }
+    migrateLegacyRecentProjects().then((list) => {
+      if (active) setProjects(list);
+    }).catch((error: unknown) => {
+      if (active) setNotice(`旧工程迁移失败，原记录未删除：${error instanceof Error ? error.message : String(error)}`);
+    });
+    getLatestDraft().then((snapshot) => {
+      if (active && snapshot) setDraft(snapshot);
+    }).catch((error: unknown) => {
+      if (active) setNotice(`无法读取恢复草稿：${error instanceof Error ? error.message : String(error)}`);
+    });
+    return () => { active = false; };
+  }, []);
+
+  const handleRestoreDraft = () => {
+    if (!draft) return;
+    const parsed = parseMpvnProject(JSON.stringify(draft.project));
+    if (!parsed.ok || !parsed.project) {
+      setNotice(parsed.error || '草稿校验失败');
+      return;
+    }
+    if (window.confirm('将以未保存状态打开此草稿，不会覆盖已有工程文件。继续吗？')) {
+      // Restore as a separate unsaved copy; automatic saving must not replace the source.
+      onOpenProject({ ...parsed.project, id: newId('recovered'), projectPath: undefined }, undefined, true);
+    }
+  };
+
+  const handleOpenSavedProject = async (item: SavedProjectMeta) => {
+    try {
+      const result = await openSavedProject(item);
+      if (!result.ok || !result.project) {
+        setNotice(result.error || '读取工程失败');
+        return;
+      }
+      if (result.recoveredFromBackup) {
+        window.alert('工程主文件无法读取，已从备份或旧缓存恢复；请检查内容后手动保存。');
+      }
+      onOpenProject(result.project, result.recoveredFromBackup ? undefined : IS_WEB_EDITION ? 'browser' : 'file', result.recoveredFromBackup);
+    } catch (error: unknown) {
+      setNotice(error instanceof Error ? error.message : String(error));
+    }
+  };
 
   // Create project form
   const [newTitle, setNewTitle] = useState('新视觉小说项目');
   const [newAuthor, setNewAuthor] = useState('独立制作组');
   const [resolutionStr, setResolutionStr] = useState('1920x1080');
-  const [customSaveDir, setCustomSaveDir] = useState(settings.projectsDirectoryPath);
 
   const importProjectInputRef = useRef<HTMLInputElement | null>(null);
   const importSettingsInputRef = useRef<HTMLInputElement | null>(null);
 
   const loadMpvnFileObject = (file: File) => {
+    if (file.size > 16 * 1024 * 1024) {
+      setNotice('ERR_FILE_TOO_LARGE: 工程文件超过 16 MiB');
+      return;
+    }
     const reader = new FileReader();
-    reader.onload = async () => {
+    reader.onload = () => {
       const res = parseMpvnProject(String(reader.result));
       if (res.ok && res.project) {
-        if (!IS_WEB_EDITION) {
-          await saveProjectToWorkspace(res.project);
-          setProjects(loadSavedProjectsList());
-        }
-        onOpenProject(res.project);
+        // Import is a copy. It must not overwrite a prior workspace file without a save.
+        onOpenProject({ ...res.project, projectPath: undefined });
       } else {
-        setNotice(res.error || '项目文件解析失败，请确认格式为 .mpvn (MooVN Studio 项目文件)');
+        setNotice(res.error || '项目文件解析失败');
       }
     };
+    reader.onerror = () => setNotice('ERR_FILE_READ: 无法读取工程文件');
     reader.readAsText(file);
   };
 
@@ -89,43 +144,26 @@ export const ProjectLauncher: React.FC<ProjectLauncherProps> = ({
     });
   };
 
-  const handleMountDeviceFolder = async () => {
-    const res = await pickDeviceMooVNFolder();
-    if (res) {
-      if (res.loadedSettings) {
-        setSettings(res.loadedSettings);
-        setCustomSaveDir(res.loadedSettings.projectsDirectoryPath);
-      }
-      if (res.loadedProjects.length > 0) {
-        for (const p of res.loadedProjects) {
-          await saveProjectToWorkspace(p);
-        }
-        setProjects(loadSavedProjectsList());
-      }
-      setNotice(`已挂载设备 MooVN Studio 文件夹：${res.folderName}`);
-    } else {
-      setNotice('当前环境可通过下方路径框或导入 .mpvn 按钮管理本地 MooVN Studio 项目');
-    }
-  };
-
   const handleCreateProject = async () => {
     const [w, h] = resolutionStr.split('x').map(Number);
     const safeName = (newTitle || 'NewProject').replace(/[\\/:*?"<>|\s]+/g, '_');
-    const fullPath = IS_WEB_EDITION
-      ? `${safeName}.mpvn`
-      : `${customSaveDir}/${safeName}.mpvn`;
-
     const proj = createBlankVNProject({
       title: newTitle || '新视觉小说项目',
       author: newAuthor || '独立开发者',
       width: w || 1920,
       height: h || 1080,
-      projectPath: fullPath,
+      projectPath: '',
     });
-
+    proj.projectPath = `${safeName}-${proj.id.slice(-8)}.mpvn`;
     if (!IS_WEB_EDITION) {
-      await saveProjectToWorkspace(proj, fullPath);
+      const result = await saveProjectToWorkspace(proj);
+      if (!result.ok) {
+        setNotice(`保存失败 (${result.code})：${result.error}`);
+        return;
+      }
       setProjects(loadSavedProjectsList());
+      onOpenProject(result.project, 'file');
+      return;
     }
     onOpenProject(proj);
   };
@@ -147,7 +185,6 @@ export const ProjectLauncher: React.FC<ProjectLauncherProps> = ({
         if (parsed && parsed.workspaceRootPath) {
           saveSystemSettings(parsed);
           setSettings(parsed);
-          setCustomSaveDir(parsed.projectsDirectoryPath);
           setNotice('已导入并应用 settings.moovn.json 设置文件');
         }
       } catch {
@@ -156,18 +193,6 @@ export const ProjectLauncher: React.FC<ProjectLauncherProps> = ({
     };
     reader.readAsText(file);
     e.target.value = '';
-  };
-
-  const handleSwitchPlatformPreset = (
-    plat: MooVNSystemSettings['platform']
-  ) => {
-    const paths = getPlatformDefaultPaths(plat);
-    updateSettings({
-      platform: plat,
-      ...paths,
-    });
-    setCustomSaveDir(paths.projectsDirectoryPath);
-    setNotice(`已切换为 ${plat.toUpperCase()} 默认专属文件位置`);
   };
 
   return (
@@ -236,16 +261,6 @@ export const ProjectLauncher: React.FC<ProjectLauncherProps> = ({
             </button>
           )}
 
-          {!IS_WEB_EDITION && (
-            <button
-              onClick={handleMountDeviceFolder}
-              className="px-2.5 py-1.5 rounded bg-[#1c1c20] hover:bg-[#27272c] border border-[#27272c] text-zinc-200 text-xs flex items-center gap-1.5"
-              title="选择设备上已经保存的 MooVN Studio 文件夹"
-            >
-              <FolderOpen className="w-3.5 h-3.5" strokeWidth={1.6} />
-              选择设备文件夹
-            </button>
-          )}
 
           <button
             onClick={() => importProjectInputRef.current?.click()}
@@ -283,7 +298,19 @@ export const ProjectLauncher: React.FC<ProjectLauncherProps> = ({
           </div>
         )}
 
-        {/* ==================== WEB EDITION: VS CODE WEB-STYLE IMPORT OR CREATE ==================== */}
+        {draft && (
+          <div className="mb-4 p-3 rounded border border-amber-500/50 bg-amber-950/30 text-amber-200 text-xs flex flex-wrap items-center justify-between gap-2">
+            <span>发现浏览器恢复草稿：{draft.project.title} · {new Date(draft.updatedAt).toLocaleString()}</span>
+            <button type="button" onClick={handleRestoreDraft} className="px-3 py-2 border border-amber-400 rounded">恢复草稿（不覆盖文件）</button>
+          </div>
+        )}
+        {IS_WEB_EDITION && projects.length > 0 && (
+          <div className="mb-4 p-3 rounded border border-[#27272c] text-xs">
+            <div className="mb-2 text-zinc-300">浏览器中保存的工程（清除浏览器数据会丢失）</div>
+            {projects.map((item) => <button key={item.id} type="button" onClick={() => void handleOpenSavedProject(item)} className="mr-2 mb-2 px-3 py-2 rounded border border-[#3c3c46]">{item.title}</button>)}
+          </div>
+        )}
+        {/* Browser projects and desktop projects use separate storage backends. */}
         {IS_WEB_EDITION ? (
           <div className="max-w-4xl mx-auto space-y-6 py-4">
             <div className="p-4 rounded-xl bg-[#16161b] border border-[#27272f] flex items-center justify-between gap-4">
@@ -477,7 +504,7 @@ export const ProjectLauncher: React.FC<ProjectLauncherProps> = ({
                     </button>
 
                     <button
-                      onClick={() => onOpenProject(item.projectData)}
+                      onClick={() => void handleOpenSavedProject(item)}
                       className="px-4 py-1.5 rounded bg-zinc-200 hover:bg-white text-zinc-950 font-medium text-xs flex items-center gap-1.5"
                     >
                       <Play className="w-3.5 h-3.5 fill-current" strokeWidth={1.6} />
@@ -544,8 +571,8 @@ export const ProjectLauncher: React.FC<ProjectLauncherProps> = ({
                   <div className="text-[10px] text-zinc-500 mb-1">项目保存文件夹路径</div>
                   <input
                     type="text"
-                    value={customSaveDir}
-                    onChange={(e) => setCustomSaveDir(e.target.value)}
+                    value={settings.projectsDirectoryPath}
+                    readOnly
                     className="w-full px-2.5 py-1.5 font-mono text-[11px]"
                   />
                 </div>
@@ -568,71 +595,18 @@ export const ProjectLauncher: React.FC<ProjectLauncherProps> = ({
         {tab === 'workspace' && (
           <div className="space-y-4 text-xs">
             <div className="p-4 rounded-lg bg-[#161619] border border-[#27272c] space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <HardDrive className="w-4 h-4 text-zinc-300" strokeWidth={1.6} />
-                  <span className="font-medium text-zinc-100">
-                    MooVN 专属文件位置（按操作系统自动预设，可自由修改）
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-1">
-                  {(['windows', 'android', 'macos', 'ios', 'web'] as const).map((plat) => (
-                    <button
-                      key={plat}
-                      onClick={() => handleSwitchPlatformPreset(plat)}
-                      className={`px-2 py-0.5 rounded text-[10px] font-mono border transition ${
-                        settings.platform === plat
-                          ? 'bg-zinc-200 text-zinc-950 border-zinc-200 font-semibold'
-                          : 'bg-[#1c1c20] border-[#27272c] text-zinc-400'
-                      }`}
-                    >
-                      {plat.toUpperCase()}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <div className="text-[10px] text-zinc-500 mb-1">专属工作区根目录 (Workspace Root)</div>
-                  <input
-                    type="text"
-                    value={settings.workspaceRootPath}
-                    onChange={(e) => updateSettings({ workspaceRootPath: e.target.value })}
-                    className="w-full px-2.5 py-1.5 font-mono text-[11px]"
-                  />
-                </div>
-                <div>
-                  <div className="text-[10px] text-zinc-500 mb-1">项目默认保存路径 (Projects Dir)</div>
-                  <input
-                    type="text"
-                    value={settings.projectsDirectoryPath}
-                    onChange={(e) => updateSettings({ projectsDirectoryPath: e.target.value })}
-                    className="w-full px-2.5 py-1.5 font-mono text-[11px]"
-                  />
-                </div>
-                <div>
-                  <div className="text-[10px] text-zinc-500 mb-1">游戏默认导出路径 (Exports Dir)</div>
-                  <input
-                    type="text"
-                    value={settings.exportOutputDirectoryPath}
-                    onChange={(e) =>
-                      updateSettings({ exportOutputDirectoryPath: e.target.value })
-                    }
-                    className="w-full px-2.5 py-1.5 font-mono text-[11px]"
-                  />
-                </div>
-                <div>
-                  <div className="text-[10px] text-zinc-500 mb-1">流式解压缓存目录 (Cache Dir)</div>
-                  <input
-                    type="text"
-                    value={settings.cacheDirectoryPath}
-                    onChange={(e) => updateSettings({ cacheDirectoryPath: e.target.value })}
-                    className="w-full px-2.5 py-1.5 font-mono text-[11px]"
-                  />
-                </div>
-              </div>
+              <div className="flex items-center gap-2"><HardDrive className="w-4 h-4" />本地工作区路径</div>
+              <p className="text-amber-300">由系统应用数据目录提供；自定义目录尚未实现。</p>
+              {[
+                ['工作区根目录', settings.workspaceRootPath],
+                ['项目目录', settings.projectsDirectoryPath],
+                ['导出目录', settings.exportOutputDirectoryPath],
+                ['缓存目录', settings.cacheDirectoryPath],
+              ].map(([label, value]) => (
+                <label key={label} className="block text-zinc-400">{label}
+                  <input readOnly value={value} className="w-full px-2.5 py-1.5 font-mono text-[11px]" />
+                </label>
+              ))}
             </div>
 
             {/* Unified Editor + Game Settings File (settings.moovn.json) */}
