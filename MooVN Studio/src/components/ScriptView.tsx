@@ -17,8 +17,8 @@ import { generateChapterYaml, exportChapterYaml } from '../lib/projectUtils';
 import {
   generateSingleNodeCode,
   generateFullProjectCode,
-  compileAndCheckProjectTypeScript,
-  TsCompileReport,
+  checkProjectGraph,
+  GraphCheckReport,
 } from '../lib/nodeCodeCompiler';
 import {
   EnginePolyglotLanguage,
@@ -419,7 +419,13 @@ export const ScriptView: React.FC<ScriptViewProps> = ({
   const [renameDraft, setRenameDraft] = useState<string>('');
   const [copied, setCopied] = useState<boolean>(false);
   const [statusNotice, setStatusNotice] = useState<string | null>(null);
-  const [compileReport, setCompileReport] = useState<TsCompileReport | null>(null);
+  const [compileReport, setCompileReport] = useState<GraphCheckReport | null>(null);
+  const [rewritePreview, setRewritePreview] = useState<{
+    fileId: string; fileName: string; original: string; rewritten: string; count: number;
+  } | null>(null);
+  const [lastRewrite, setLastRewrite] = useState<{
+    fileId: string; original: string; rewritten: string;
+  } | null>(null);
   const [cursorPos, setCursorPos] = useState<{ line: number; col: number }>({
     line: 1,
     col: 1,
@@ -467,15 +473,14 @@ export const ScriptView: React.FC<ScriptViewProps> = ({
   );
 
   const handleCodeChange = (nextContent: string) => {
-    setFiles((prev) => {
-      const next = prev.map((f) =>
-        f.id === activeFile.id
-          ? { ...f, content: nextContent, updatedAt: new Date().toISOString() }
-          : f
-      );
-      onUpdateProject?.({ scriptFiles: next });
-      return next;
-    });
+    if (!activeFile) return;
+    const next = files.map((f) =>
+      f.id === activeFile.id
+        ? { ...f, content: nextContent, updatedAt: new Date().toISOString() }
+        : f
+    );
+    setFiles(next);
+    onUpdateProject?.({ scriptFiles: next });
   };
 
   const handleSaveCurrentFile = async () => {
@@ -491,12 +496,10 @@ export const ScriptView: React.FC<ScriptViewProps> = ({
         customScript: activeFile.content,
       }));
     }
-    await syncWriteToRealWorkspaceDisk(
-      'Scripts',
-      activeFile.fileName,
-      activeFile.content
+    const path = await syncWriteToRealWorkspaceDisk(
+      'Scripts', activeFile.fileName, activeFile.content
     );
-    setStatusNotice(`已保存 ${activeFile.fileName}`);
+    setStatusNotice(path ? `已写入 ${path}` : '已更新工程内脚本；独立文件未写入，请保存工程或下载脚本');
     setTimeout(() => setStatusNotice(null), 2200);
   };
 
@@ -524,11 +527,9 @@ export const ScriptView: React.FC<ScriptViewProps> = ({
       content: starter,
       updatedAt: new Date().toISOString(),
     };
-    setFiles((prev) => {
-      const next = [...prev, created];
-      onUpdateProject?.({ scriptFiles: next });
-      return next;
-    });
+    const next = [...files, created];
+    setFiles(next);
+    onUpdateProject?.({ scriptFiles: next });
     setActiveFileId(created.id);
     setIsCreatingFile(false);
     setNewFileName('new_script.ts');
@@ -541,37 +542,10 @@ export const ScriptView: React.FC<ScriptViewProps> = ({
       return;
     }
     const finalName = clean.includes('.') ? clean : `${clean}.ts`;
-    const newMeta = getFileExtensionMeta(finalName);
-
-    setFiles((prev) =>
-      prev.map((f) => {
-        if (f.id !== fileId) return f;
-        // Preserve custom user code when renaming extensions via non-destructive IR transpilation (`Kimi 1G`, `GPT-10`)
-        let nextContent = f.content;
-        if (
-          newMeta.engineLang !== 'yaml' &&
-          newMeta.engineLang !== 'json' &&
-          f.content.trim().length > 0
-        ) {
-          const report = translatePolyglotScriptWithReport(
-            f.content,
-            newMeta.engineLang
-          );
-          nextContent = report.code;
-          if (report.unrecognizedLines.length > 0) {
-            setStatusNotice(
-              `已转换至 .${newMeta.ext}（保留了 ${report.unrecognizedLines.length} 行宿主代码）`
-            );
-            setTimeout(() => setStatusNotice(null), 3200);
-          }
-        }
-        return {
-          ...f,
-          fileName: finalName,
-          content: nextContent,
-        };
-      })
-    );
+    // Renaming an extension never rewrites the content.
+    const next = files.map((f) => f.id === fileId ? { ...f, fileName: finalName } : f);
+    setFiles(next);
+    onUpdateProject?.({ scriptFiles: next });
     setRenamingFileId(null);
   };
 
@@ -588,34 +562,45 @@ export const ScriptView: React.FC<ScriptViewProps> = ({
   const handleRunScript = async () => {
     if (!activeFile) return;
     if (extMeta.ext === 'ts' || extMeta.ext === 'js') {
-      const report = compileAndCheckProjectTypeScript(project);
+      const report = checkProjectGraph(project);
       setCompileReport(report);
     }
     if (extMeta.engineLang !== 'yaml' && extMeta.engineLang !== 'json') {
-      const res = await evalPolyglotScriptInEngineAsync(
-        activeFile.content,
-        extMeta.engineLang
-      );
-      setStatusNotice(
-        res.logs[0] || `已执行 ${activeFile.fileName} (${res.logs.length} 条指令)`
-      );
-      setTimeout(() => setStatusNotice(null), 3000);
+      try {
+        const res = await evalPolyglotScriptInEngineAsync(activeFile.content, extMeta.engineLang);
+        setStatusNotice(res.logs[0] || '没有可显示的 API 检查结果');
+      } catch (err: unknown) {
+        setStatusNotice(err instanceof Error ? err.message : '原生引擎请求失败，未执行');
+      }
+      setTimeout(() => setStatusNotice(null), 5000);
     }
   };
 
   const handleExperimentalConvertScript = () => {
-    if (!activeFile || extMeta.engineLang === 'yaml' || extMeta.engineLang === 'json') {
-      return;
-    }
-    const report = translatePolyglotScriptWithReport(
-      activeFile.content,
-      extMeta.engineLang
-    );
-    handleCodeChange(report.code);
-    setStatusNotice(
-      `转换脚本（实验）：已转换 ${report.convertedCount} 条指令，保留 ${report.unrecognizedLines.length} 行宿主语句`
-    );
-    setTimeout(() => setStatusNotice(null), 3200);
+    if (!activeFile || extMeta.engineLang === 'yaml' || extMeta.engineLang === 'json') return;
+    const report = translatePolyglotScriptWithReport(activeFile.content, extMeta.engineLang);
+    setRewritePreview({
+      fileId: activeFile.id,
+      fileName: activeFile.fileName,
+      original: activeFile.content,
+      rewritten: report.code,
+      count: report.convertedCount,
+    });
+  };
+
+  const applyRewrite = () => {
+    if (!rewritePreview || activeFile.id !== rewritePreview.fileId || activeFile.content !== rewritePreview.original) return;
+    handleCodeChange(rewritePreview.rewritten);
+    setLastRewrite({ fileId: rewritePreview.fileId, original: rewritePreview.original, rewritten: rewritePreview.rewritten });
+    setRewritePreview(null);
+  };
+
+  const restoreRewrite = () => {
+    // Refuse to discard edits made after the rewrite.
+    if (!lastRewrite || activeFile.id !== lastRewrite.fileId || activeFile.content !== lastRewrite.rewritten) return;
+    handleCodeChange(lastRewrite.original);
+    setLastRewrite(null);
+    setStatusNotice('已还原本次 API 改写前的内容');
   };
 
   const handleDownloadFile = () => {
@@ -777,20 +762,28 @@ export const ScriptView: React.FC<ScriptViewProps> = ({
               type="button"
               onClick={handleExperimentalConvertScript}
               className="px-2 py-1 rounded bg-[#1d1d24] hover:bg-[#272730] text-amber-300 text-[11px] flex items-center gap-1 border border-amber-500/30"
-              title="实验转换脚本：仅转换 moovn.* 指令，非 API 宿主语句将以注释保留"
+              title="只预览和改写独立的 moovn API 调用；不是语言编译或移植"
             >
-              <span>转换脚本（实验）</span>
+              <span>API 改写预览（实验）</span>
             </button>
           )}
 
+          {lastRewrite && lastRewrite.fileId === activeFile?.id && (
+            <button type="button" onClick={restoreRewrite}
+              disabled={activeFile.content !== lastRewrite.rewritten}
+              title="如果改写后又编辑过文件，请手动恢复以避免覆盖新编辑"
+              className="px-2 py-1 rounded border border-amber-500/30 text-amber-300 text-[11px] disabled:opacity-40">
+              一键还原改写
+            </button>
+          )}
           <button
             type="button"
             onClick={handleRunScript}
             className="px-2 py-1 rounded bg-[#222229] hover:bg-[#2c2c35] text-zinc-200 text-[11px] flex items-center gap-1 border border-[#2f2f38]"
-            title="运行并校验当前脚本文件（桌面版调用 Tauri 引擎，Web 版执行静态检查）"
+            title="桌面版调用引擎；Web 版只解析 API 指令，不执行脚本"
           >
             <Play className="w-3 h-3 text-emerald-400" strokeWidth={1.8} />
-            <span>运行</span>
+            <span>解析 / 引擎</span>
           </button>
 
           <button
@@ -882,6 +875,32 @@ export const ScriptView: React.FC<ScriptViewProps> = ({
             </button>
           </div>
         </div>
+      )}
+
+      {rewritePreview && (
+        <section aria-label="API 改写差异预览" className="border-b border-amber-600/40 bg-[#1b1b21] p-3 text-xs shrink-0">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div>
+              <strong className="text-amber-300">改写范围与限制</strong>
+              <p className="mt-1 text-zinc-300">只改写独立 moovn API 调用的名称，参数、注释和宿主语句原样保留；这不是语言编译或代码移植。请检查目标语言与绑定是否可用。</p>
+              <p className="mt-1 text-zinc-400">{rewritePreview.fileName} · 识别 {rewritePreview.count} 行；高亮行表示有差异。</p>
+            </div>
+            {([['原文', rewritePreview.original, rewritePreview.rewritten], ['预览', rewritePreview.rewritten, rewritePreview.original]] as const).map(([label, value, other]) => {
+              const lines = value.split(/\r\n|\r|\n/);
+              const otherLines = other.split(/\r\n|\r|\n/);
+              return <div key={label} className="min-w-0"><strong>{label}</strong>
+                <pre className="mt-1 max-h-36 overflow-auto whitespace-pre-wrap break-all bg-[#101014] p-2 font-mono">{lines.map((line, index) => <span key={index} className={line !== otherLines[index] ? 'block bg-amber-500/20' : 'block'}>{line || ' '}</span>)}</pre>
+              </div>;
+            })}
+          </div>
+          <div className="mt-2 flex gap-2">
+            <button type="button" onClick={applyRewrite}
+              disabled={activeFile?.id !== rewritePreview.fileId || activeFile?.content !== rewritePreview.original}
+              className="px-2 py-1 bg-sky-600 rounded disabled:opacity-40">应用改写</button>
+            <button type="button" onClick={() => setRewritePreview(null)} className="px-2 py-1 border border-zinc-600 rounded">取消</button>
+            {(activeFile?.id !== rewritePreview.fileId || activeFile?.content !== rewritePreview.original) && <span className="text-amber-300">文件已变化，请重新预览。</span>}
+          </div>
+        </section>
       )}
 
       {/* Main Editor Workspace: Left File Explorer + Right Syntax-Highlighted Code Editor */}

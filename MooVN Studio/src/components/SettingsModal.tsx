@@ -95,7 +95,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   ];
 
   return (
-    <div className="fixed inset-0 z-[60] bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 select-none">
+    <div className="fixed inset-0 z-[600] bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 select-none">
       <div className="w-full max-w-2xl bg-[#161619] border border-[#27272c] rounded-lg shadow-2xl overflow-hidden flex flex-col max-h-[86vh]">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-2.5 bg-[#121215] border-b border-[#27272c] shrink-0">
@@ -264,21 +264,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
 
                 <label className="block text-[11px] text-zinc-300 space-y-1">
-                  <span>立绘动态（不影响视频或天气）</span>
+                  <span>动效（关闭时暂停角色视频、CSS 动画和打字机；天气尚未实现）</span>
                   <select
                     aria-label="立绘动态"
-                    value={settings.defaultGameSettings.motionLevel === 'off' ? 'off' : 'subtle'}
+                    value={settings.defaultGameSettings.motionLevel || 'subtle'}
                     onChange={(e) => setSettings({
                       ...settings,
                       defaultGameSettings: {
                         ...settings.defaultGameSettings,
-                        motionLevel: e.target.value === 'off' ? 'off' : 'subtle',
+                        motionLevel: e.target.value === 'off' ? 'off' : e.target.value === 'full' ? 'full' : 'subtle',
                       },
                     })}
                     className="block w-full px-2 py-1"
                   >
                     <option value="off">关闭</option>
-                    <option value="subtle">允许分层眨眼与已启用的微呼吸</option>
+                    <option value="subtle">轻（分层眨眼间隔 4–6 秒）</option>
+                    <option value="full">标准（分层眨眼间隔 2–6 秒）</option>
                   </select>
                 </label>
 

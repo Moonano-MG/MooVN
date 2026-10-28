@@ -1,4 +1,6 @@
 import { newId } from '../lib/ids';
+import { validateSafeAiProxyEndpoint } from '../lib/devServerSecurity';
+import { isUnsupportedNode, NODE_REGISTRY } from '../data/nodeRegistry';
 import React, { useState, useRef, useEffect } from 'react';
 import {
   Send,
@@ -69,31 +71,39 @@ export interface AgentProposedAction {
   nodeType?: WorkflowNodeType;
 }
 
-function loadEndpointConfigWithoutKey(): AiAgentConfig {
+function loadEndpointConfigWithoutKey(): { config: AiAgentConfig; warning: string | null } {
+  const fallback = { ...DEFAULT_AI_CONFIG, apiKey: inMemorySessionApiKey };
   try {
     const raw = localStorage.getItem(AI_CONFIG_STORAGE_KEY);
-    if (!raw) return { ...DEFAULT_AI_CONFIG, apiKey: inMemorySessionApiKey };
-    const parsed = JSON.parse(raw);
-    return {
+    if (!raw) return { config: fallback, warning: null };
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('接口设置格式无效');
+    }
+    const values = parsed as Record<string, unknown>;
+    const config: AiAgentConfig = {
       ...DEFAULT_AI_CONFIG,
-      baseUrl: typeof parsed.baseUrl === 'string' ? parsed.baseUrl : DEFAULT_AI_CONFIG.baseUrl,
-      modelName: typeof parsed.modelName === 'string' ? parsed.modelName : DEFAULT_AI_CONFIG.modelName,
-      temperature: typeof parsed.temperature === 'number' ? parsed.temperature : DEFAULT_AI_CONFIG.temperature,
-      customSystemPrompt:
-        typeof parsed.customSystemPrompt === 'string'
-          ? parsed.customSystemPrompt
-          : DEFAULT_AI_CONFIG.customSystemPrompt,
+      baseUrl: typeof values.baseUrl === 'string' ? values.baseUrl : DEFAULT_AI_CONFIG.baseUrl,
+      modelName: typeof values.modelName === 'string' ? values.modelName : DEFAULT_AI_CONFIG.modelName,
+      temperature: typeof values.temperature === 'number' ? values.temperature : DEFAULT_AI_CONFIG.temperature,
+      customSystemPrompt: typeof values.customSystemPrompt === 'string'
+        ? values.customSystemPrompt : DEFAULT_AI_CONFIG.customSystemPrompt,
       apiKey: inMemorySessionApiKey,
     };
-  } catch {
-    return { ...DEFAULT_AI_CONFIG, apiKey: inMemorySessionApiKey };
+    // Scrub keys written by older versions instead of reusing or retaining them.
+    const warning = Object.prototype.hasOwnProperty.call(values, 'apiKey')
+      ? saveEndpointConfigWithoutKey(config) : null;
+    return { config, warning };
+  } catch (err: unknown) {
+    const detail = err instanceof Error ? err.message : '未知错误';
+    return { config: fallback, warning: `读取接口设置失败：${detail}。本次使用默认值。` };
   }
 }
 
-function saveEndpointConfigWithoutKey(cfg: AiAgentConfig): void {
+function saveEndpointConfigWithoutKey(cfg: AiAgentConfig): string | null {
   inMemorySessionApiKey = cfg.apiKey || '';
   try {
-    // Never persist apiKey into localStorage
+    // Never persist apiKey into localStorage.
     const safePayload = {
       baseUrl: cfg.baseUrl,
       modelName: cfg.modelName,
@@ -101,8 +111,10 @@ function saveEndpointConfigWithoutKey(cfg: AiAgentConfig): void {
       customSystemPrompt: cfg.customSystemPrompt,
     };
     localStorage.setItem(AI_CONFIG_STORAGE_KEY, JSON.stringify(safePayload));
-  } catch {
-    // ignore storage errors
+    return null;
+  } catch (err: unknown) {
+    const detail = err instanceof Error ? err.message : '未知错误';
+    return `无法保存接口设置或清除旧密钥：${detail}。设置仅在本次会话生效，请检查浏览器存储权限。`;
   }
 }
 
@@ -118,26 +130,32 @@ function parseAgentActionsFromContent(content: string): {
     const rawBlock = match[1].trim();
     const isExplicitAgentBlock = match[0].toLowerCase().startsWith('```moovn-agent');
     try {
-      const parsed = JSON.parse(rawBlock);
-      const list = Array.isArray(parsed)
-        ? parsed
-        : Array.isArray(parsed?.actions)
-        ? parsed.actions
-        : [parsed];
-      for (const item of list) {
-        if (item && typeof item === 'object' && typeof item.type === 'string') {
-          actions.push({
-            type: item.type,
-            summary: item.summary || item.type,
-            speakerName: item.speakerName,
-            text: item.text,
-            characterId: item.characterId,
-            spriteId: item.spriteId,
-            scriptCode: item.scriptCode,
-            nodeTitle: item.nodeTitle,
-            nodeType: item.nodeType,
-          });
+      const parsed: unknown = JSON.parse(rawBlock);
+      const container = parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? parsed as Record<string, unknown> : null;
+      const list: unknown[] = Array.isArray(parsed) ? parsed
+        : Array.isArray(container?.actions) ? container.actions : [parsed];
+      const allowed = new Set<AgentProposedAction['type']>([
+        'update_dialogue', 'add_dialogue', 'set_expression', 'update_script', 'create_node',
+      ]);
+      for (const value of list) {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
+        const item = value as Record<string, unknown>;
+        if (typeof item.type !== 'string' || !allowed.has(item.type as AgentProposedAction['type'])) {
+          if (isExplicitAgentBlock) parseErrors.push('Agent 动作类型无效，未创建操作卡片');
+          continue;
         }
+        const str = (key: string) => typeof item[key] === 'string' ? item[key] as string : undefined;
+        const nodeType = NODE_REGISTRY.find((meta) => meta.type === item.nodeType)?.type;
+        if (item.nodeType !== undefined && !nodeType) {
+          if (isExplicitAgentBlock) parseErrors.push('Agent 节点类型无效，未创建操作卡片');
+          continue;
+        }
+        actions.push({
+          type: item.type as AgentProposedAction['type'], summary: str('summary') || item.type,
+          speakerName: str('speakerName'), text: str('text'), characterId: str('characterId'),
+          spriteId: str('spriteId'), scriptCode: str('scriptCode'), nodeTitle: str('nodeTitle'), nodeType,
+        });
       }
     } catch (err: unknown) {
       if (isExplicitAgentBlock) {
@@ -158,13 +176,12 @@ export const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({
   onCreateGeneratedNodes,
   onUpdateCurrentNode,
 }) => {
-  const [config, setConfig] = useState<AiAgentConfig>(loadEndpointConfigWithoutKey);
+  const [initialConfig] = useState(loadEndpointConfigWithoutKey);
+  const [config, setConfig] = useState<AiAgentConfig>(initialConfig.config);
+  const [configStorageWarning, setConfigStorageWarning] = useState<string | null>(initialConfig.warning);
   const [activeView, setActiveView] = useState<'chat' | 'config'>('chat');
   const [agentMode, setAgentMode] = useState<'agent' | 'chat'>('agent');
   const [appliedActionKeys, setAppliedActionKeys] = useState<Record<string, boolean>>({});
-  const [actionUndoSnapshots, setActionUndoSnapshots] = useState<
-    Record<string, SceneNode>
-  >({});
   const [messages, setMessages] = useState<AiChatMessage[]>([
     {
       id: 'welcome-1',
@@ -188,18 +205,12 @@ export const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({
   }, [messages, isSending]);
 
   const updateConfig = (patch: Partial<AiAgentConfig>) => {
-    setConfig((prev) => {
-      const next = { ...prev, ...patch };
-      saveEndpointConfigWithoutKey(next);
-      return next;
-    });
+    const next = { ...config, ...patch };
+    setConfig(next);
+    setConfigStorageWarning(saveEndpointConfigWithoutKey(next));
   };
 
   const applyAgentAction = (action: AgentProposedAction, key: string) => {
-    if (selectedNode) {
-      const snapshot = JSON.parse(JSON.stringify(selectedNode)) as SceneNode;
-      setActionUndoSnapshots((prev) => ({ ...prev, [key]: snapshot }));
-    }
     if (action.type === 'update_dialogue' && selectedNode && action.text) {
       onUpdateCurrentNode((prev) => {
         const nextDialogues = [...prev.dialogues];
@@ -246,17 +257,13 @@ export const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({
           {
             title: action.nodeTitle || 'Agent 新增节点',
             type: action.nodeType || 'dialogue',
-            dialogues: action.text
-              ? [
-                  {
-                    id: newId('dlg'),
-                    speakerId: action.characterId || 'narrator',
-                    speakerName: action.speakerName || '旁白',
-                    speakerColor: '#38bdf8',
-                    text: action.text,
-                  },
-                ]
-              : undefined,
+            ...(action.text ? { dialogues: [{
+              id: newId('dlg'),
+              speakerId: action.characterId || 'narrator',
+              speakerName: action.speakerName || '旁白',
+              speakerColor: '#38bdf8',
+              text: action.text,
+            }] } : {}),
           },
         ],
         true
@@ -265,18 +272,22 @@ export const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({
     setAppliedActionKeys((prev) => ({ ...prev, [key]: true }));
   };
 
-  const revertAgentAction = (key: string) => {
-    const snap = actionUndoSnapshots[key];
-    if (!snap) return;
-    onUpdateCurrentNode(() => JSON.parse(JSON.stringify(snap)) as SceneNode);
-    setAppliedActionKeys((prev) => ({ ...prev, [key]: false }));
-  };
-
   const handleSendMessage = async () => {
     const trimmed = input.trim();
     if (!trimmed || isSending) return;
 
     setErrorBanner(null);
+
+    if (!config.apiKey.trim()) {
+      setErrorBanner('未配置当前会话 API Key。请点击右上角「接口设置」填入 API Key。');
+      return;
+    }
+    const validation = validateSafeAiProxyEndpoint('openai_compatible', config.baseUrl);
+    if (!validation.ok || !validation.normalizedUrl) {
+      setErrorBanner(validation.error || '服务地址不受支持，请检查接口设置。');
+      return;
+    }
+    const endpoint = `${validation.normalizedUrl.replace(/\/+$/, '')}/chat/completions`;
 
     const userMsg: AiChatMessage = {
       id: newId('user'),
@@ -288,15 +299,9 @@ export const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({
     setMessages((prev) => [...prev, userMsg]);
     setInput('');
 
-    if (!config.apiKey.trim()) {
-      setErrorBanner('未配置当前会话 API Key。请点击右上角「接口设置」填入 API Key。');
-      return;
-    }
-
     setIsSending(true);
 
     try {
-      const endpoint = `${config.baseUrl.replace(/\/+$/, '')}/chat/completions`;
       const contextSummary = selectedNode
         ? `当前项目：《${project.title}》（共 ${project.chapters.length} 章，${project.nodes.length} 节点）。当前选中节点：「${selectedNode.title}」（ID: ${selectedNode.id}，类型: ${selectedNode.type}，台词数: ${selectedNode.dialogues.length}）。角色列表：${project.characters
             .map((c) => `${c.name}(${c.id}, 默认立绘:${c.spriteId})`)
@@ -328,6 +333,8 @@ export const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({
 
       const response = await fetch(endpoint, {
         method: 'POST',
+        // Do not forward a credentialed request to a redirect destination.
+        redirect: 'error',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${config.apiKey.trim()}`,
@@ -355,6 +362,8 @@ export const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({
         role: 'assistant',
         content: String(replyContent),
         timestamp: new Date().toLocaleTimeString().slice(0, 5),
+        allowAgentActions: agentMode === 'agent',
+        targetNodeId: selectedNode?.id,
       };
 
       setMessages((prev) => [...prev, assistantMsg]);
@@ -368,6 +377,11 @@ export const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({
 
   return (
     <div className="flex flex-col h-full bg-[#161619] text-zinc-200 select-none overflow-hidden text-xs">
+      {configStorageWarning && (
+        <div role="alert" className="px-3 py-2 bg-amber-950/60 text-amber-200 break-words">
+          {configStorageWarning}
+        </div>
+      )}
       {/* Top Header */}
       <div className="min-h-8 py-1 px-2.5 bg-[#141417] border-b border-[#27272c] flex flex-wrap items-center justify-between gap-1.5 shrink-0">
         <div className="flex items-center gap-1 bg-[#1b1b20] p-0.5 rounded border border-[#2c2c34]">
@@ -443,6 +457,9 @@ export const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({
 
       {activeView === 'config' ? (
         <div className="flex-1 overflow-y-auto p-3 space-y-3">
+          <p className="text-[11px] text-amber-200" role="note">
+            密钥仅在本次会话内存中保存，并由客户端直接发送给所选允许的服务商；系统钥匙串和原生代理尚未接入。浏览器 CORS 或桌面安全策略可能阻止请求。
+          </p>
           <div className="space-y-1">
             <label className="block text-[11px] text-zinc-400">
               API Base URL (兼容 OpenAI `/v1/chat/completions`)
@@ -518,7 +535,9 @@ export const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({
             <button
               type="button"
               onClick={() => {
-                saveEndpointConfigWithoutKey(config);
+                const warning = saveEndpointConfigWithoutKey(config);
+                setConfigStorageWarning(warning);
+                if (warning) return;
                 setSaveNotice(true);
                 setTimeout(() => setSaveNotice(false), 1800);
                 setActiveView('chat');
@@ -543,7 +562,7 @@ export const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({
           >
             {messages.map((m) => {
               const parsedBlock =
-                m.role === 'assistant'
+                m.role === 'assistant' && m.allowAgentActions && agentMode === 'agent'
                   ? parseAgentActionsFromContent(m.content)
                   : { actions: [], parseErrors: [] };
               const actions = parsedBlock.actions;
@@ -574,11 +593,21 @@ export const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({
                     {actions.length > 0 && (
                       <div className="mt-2 pt-2 border-t border-[#2e2e38] space-y-1.5">
                         <div className="text-[10px] font-semibold text-sky-300">
-                          Agent 建议操作（Diff 预览 · 点击确认后应用，支持一键撤销或 Ctrl+Z）：
+                          Agent 建议操作（检查预览并确认；顶部撤销按步骤回退，创建节点涉及多步）：
                         </div>
                         {actions.map((act, idx) => {
                           const actKey = `${m.id}-${idx}`;
                           const done = Boolean(appliedActionKeys[actKey]);
+                          const targetChanged = m.targetNodeId !== selectedNode?.id;
+                          const hasRequiredData = act.type === 'create_node'
+                            ? !act.nodeType || (NODE_REGISTRY.some((meta) => meta.type === act.nodeType) && !isUnsupportedNode(act.nodeType))
+                            : Boolean(selectedNode && (
+                                act.type === 'update_dialogue' ? act.text && selectedNode.dialogues.length
+                                : act.type === 'add_dialogue' ? act.text
+                                : act.type === 'set_expression' ? act.spriteId && selectedNode.characters.some((c) => !act.characterId || c.characterId === act.characterId)
+                                : act.type === 'update_script' ? act.scriptCode
+                                : false
+                              ));
                           const beforePreview =
                             act.type === 'update_dialogue'
                               ? selectedNode?.dialogues?.[0]?.text || '（空）'
@@ -596,29 +625,21 @@ export const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({
                                   {act.summary}
                                 </span>
                                 <div className="flex items-center gap-1 shrink-0">
-                                  {done && actionUndoSnapshots[actKey] && (
-                                    <button
-                                      type="button"
-                                      onClick={() => revertAgentAction(actKey)}
-                                      className="px-2 py-1 rounded text-[10px] bg-[#262630] hover:bg-[#323240] text-amber-300 border border-amber-500/30"
-                                    >
-                                      撤销此修改
-                                    </button>
-                                  )}
                                   <button
                                     type="button"
-                                    disabled={done}
+                                    disabled={done || targetChanged || !hasRequiredData}
+                                    title={targetChanged ? '选中节点已变化，请重新请求建议' : !hasRequiredData ? '动作参数缺失或节点类型不支持' : undefined}
                                     onClick={() => applyAgentAction(act, actKey)}
                                     className={`px-2 py-1 rounded text-[11px] font-medium flex items-center gap-1 shrink-0 ${
                                       done
                                         ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                                        : 'bg-sky-600 hover:bg-sky-500 text-white'
+                                        : 'bg-sky-600 hover:bg-sky-500 text-white disabled:opacity-40 disabled:cursor-not-allowed'
                                     }`}
                                   >
                                     {done ? (
                                       <>
                                         <Check className="w-3 h-3" />
-                                        <span>已应用 (可 Ctrl+Z)</span>
+                                        <span>已提交</span>
                                       </>
                                     ) : (
                                       <>

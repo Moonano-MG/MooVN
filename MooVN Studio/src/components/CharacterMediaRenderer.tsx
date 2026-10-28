@@ -66,6 +66,29 @@ export function isVideoMediaSource(
   return detectCharacterMediaType(url || '', explicitType) === 'video';
 }
 
+/** Capture one still frame so animated image formats obey motion-off. */
+function snapshotImage(source: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    if (/^https?:\/\//i.test(source)) image.crossOrigin = 'anonymous';
+    image.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = image.naturalWidth;
+        canvas.height = image.naturalHeight;
+        const context = canvas.getContext('2d');
+        if (!context || !canvas.width || !canvas.height) throw new Error('无法读取图像尺寸');
+        context.drawImage(image, 0, 0);
+        resolve(canvas.toDataURL('image/png'));
+      } catch (error: unknown) {
+        reject(new Error(`无法生成静止帧：${error instanceof Error ? error.message : String(error)}`));
+      }
+    };
+    image.onerror = () => reject(new Error('无法加载图像静止帧'));
+    image.src = source;
+  });
+}
+
 function parseHexRgb(hex: string): [number, number, number] | null {
   const clean = hex.trim().replace(/^#/, '');
   if (clean.length === 6) {
@@ -88,7 +111,6 @@ export const CharacterMediaRenderer: React.FC<CharacterMediaRendererProps> = ({
   videoMuted = true,
   videoPlaybackRate = 1,
   chromaKeyColor,
-  idleMotion = 'none',
   blinkEnabled = true,
   isTalking = false,
   motionLevel = 'subtle',
@@ -141,7 +163,6 @@ export const CharacterMediaRenderer: React.FC<CharacterMediaRendererProps> = ({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const avatarRef = useRef<IAvatarRenderable | null>(null);
-  const bodyContainerRef = useRef<HTMLDivElement | null>(null);
 
   const [videoStatus, setVideoStatus] = useState<'ready' | 'blocked' | 'error'>('ready');
   const [chromaError, setChromaError] = useState<string | null>(null);
@@ -182,6 +203,35 @@ export const CharacterMediaRenderer: React.FC<CharacterMediaRendererProps> = ({
   }, [layerTextures]);
 
   const effectiveMotionOff = motionLevel === 'off' || prefersReducedMotion;
+  const [stillFrame, setStillFrame] = useState<{
+    source: string;
+    layerSources: AvatarLayerTextureMap | undefined;
+    base: string;
+    layers: AvatarLayerTextureMap;
+    error?: string;
+  } | null>(null);
+
+  // A GIF/APNG/WebP, including a layer image, may animate by itself even
+  // when no RAF is running. Capture a still for every image while motion is
+  // off, or show an explicit error rather than display an animated fallback.
+  useEffect(() => {
+    let cancelled = false;
+    if (!effectiveMotionOff || resolvedType === 'video') {
+      setStillFrame(null);
+      return;
+    }
+    setStillFrame(null);
+    const entries = Object.entries(layerTextures || {}).filter((entry): entry is [string, string] => Boolean(entry[1]));
+    Promise.all([
+      mediaUrl ? snapshotImage(mediaUrl) : Promise.resolve(''),
+      ...entries.map(([, source]) => snapshotImage(source)),
+    ]).then(([base, ...layers]) => {
+      if (!cancelled) setStillFrame({ source: mediaUrl, layerSources: layerTextures, base, layers: Object.fromEntries(entries.map(([key], index) => [key, layers[index]])) });
+    }).catch((error: unknown) => {
+      if (!cancelled) setStillFrame({ source: mediaUrl, layerSources: layerTextures, base: '', layers: {}, error: error instanceof Error ? error.message : String(error) });
+    });
+    return () => { cancelled = true; };
+  }, [effectiveMotionOff, mediaUrl, layerTextures, resolvedType]);
 
   // Listen to OS prefers-reduced-motion media query (`GPT-33`)
   useEffect(() => {
@@ -213,7 +263,7 @@ export const CharacterMediaRenderer: React.FC<CharacterMediaRendererProps> = ({
     const avatar = newImageAvatar({
       baseTexture: mediaUrl,
       layerTextures,
-      breathingEnabled: !effectiveMotionOff && idleMotion === 'breathe',
+      blinkIntervalMinSec: motionLevel === 'subtle' ? 4 : 2,
       blinkEnabled: !effectiveMotionOff && blinkEnabled && hasL1Layers,
     });
     avatarRef.current = avatar;
@@ -224,12 +274,11 @@ export const CharacterMediaRenderer: React.FC<CharacterMediaRendererProps> = ({
       avatar.release();
       avatarRef.current = null;
     };
-  }, [layerTextures, hasL1Layers, mediaUrl]);
+  }, [layerTextures, hasL1Layers, mediaUrl, motionLevel]);
 
   useEffect(() => {
     const avatar = avatarRef.current;
     if (!avatar) return;
-    avatar.setBreathingEnabled(!effectiveMotionOff && idleMotion === 'breathe');
     avatar.setBlinkEnabled(!effectiveMotionOff && blinkEnabled && hasL1Layers);
     avatar.setTalking(!effectiveMotionOff && Boolean(isTalking) && hasL1Layers);
     if (effectiveMotionOff) {
@@ -237,21 +286,12 @@ export const CharacterMediaRenderer: React.FC<CharacterMediaRendererProps> = ({
         ? { eyesClosed: false, mouthFrame: 'neutral' }
         : state);
     }
-  }, [idleMotion, blinkEnabled, isTalking, effectiveMotionOff, hasL1Layers, mediaUrl, layerTextures]);
+  }, [blinkEnabled, isTalking, effectiveMotionOff, hasL1Layers, mediaUrl, layerTextures]);
 
-  // Imperative RAF loop ONLY runs when L1 layers or breathing are active (`GPT-14`)
-  // Updates body breathing via imperative DOM transform (0 React re-renders per frame!)
-  // and only triggers React state when discrete L1 blink/mouth state changes.
+  // L0 portraits never run a periodic animation. L1 updates discrete facial frames only.
   useEffect(() => {
     if (resolvedType === 'video') return;
-    const shouldAnimate =
-      !effectiveMotionOff && (hasL1Layers || idleMotion === 'breathe');
-    if (!shouldAnimate) {
-      if (bodyContainerRef.current) {
-        bodyContainerRef.current.style.transform = 'scaleY(1)';
-      }
-      return;
-    }
+    if (effectiveMotionOff || !hasL1Layers) return;
 
     let rafId = 0;
     let lastTime = performance.now();
@@ -270,13 +310,6 @@ export const CharacterMediaRenderer: React.FC<CharacterMediaRendererProps> = ({
       if (avatar && !avatar.isReleased()) {
         avatar.update(dt);
         const layers = avatar.getAllLayers();
-
-        // Imperative DOM update for subtle body breathing (no React re-render)
-        if (bodyContainerRef.current) {
-          const sy = layers.body.scaleY;
-          bodyContainerRef.current.style.transform =
-            Math.abs(sy - 1) > 0.0002 ? `scale(1, ${sy.toFixed(4)})` : 'scale(1, 1)';
-        }
 
         // Only update React state if L1 discrete blink/mouth frame actually changed
         if (hasL1Layers) {
@@ -299,7 +332,7 @@ export const CharacterMediaRenderer: React.FC<CharacterMediaRendererProps> = ({
 
     rafId = requestAnimationFrame(step);
     return () => cancelAnimationFrame(rafId);
-  }, [resolvedType, effectiveMotionOff, hasL1Layers, idleMotion]);
+  }, [resolvedType, effectiveMotionOff, hasL1Layers]);
 
   // Video playback & downsampled chroma-key compositing
   useEffect(() => {
@@ -310,10 +343,16 @@ export const CharacterMediaRenderer: React.FC<CharacterMediaRendererProps> = ({
     setVideoStatus('ready');
     setChromaError(null);
     video.playbackRate = Math.max(0.25, Math.min(3, videoPlaybackRate || 1));
+    if (effectiveMotionOff) {
+      video.pause();
+      return;
+    }
 
+    let cancelled = false;
     const playPromise = video.play();
     if (playPromise && typeof playPromise.catch === 'function') {
       playPromise.catch((err: unknown) => {
+        if (cancelled) return;
         const name = (err as { name?: string })?.name || '';
         setVideoStatus(name === 'NotAllowedError' ? 'blocked' : 'error');
       });
@@ -323,22 +362,27 @@ export const CharacterMediaRenderer: React.FC<CharacterMediaRendererProps> = ({
       chromaKeyColor && chromaKeyColor !== 'none'
         ? parseHexRgb(chromaKeyColor)
         : null;
-    if (!keyRgb || !canvasRef.current) return;
+    if (!keyRgb || !canvasRef.current) return () => { cancelled = true; video.pause(); };
 
     let rafId = 0;
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    if (!ctx) return;
+    if (!ctx) {
+      setChromaError('无法初始化视频色键画布');
+      return () => { cancelled = true; video.pause(); };
+    }
 
     const [kr, kg, kb] = keyRgb;
     const thresholdSq = 68 * 68;
 
-    const renderFrame = () => {
-      if (typeof document !== 'undefined' && document.hidden) {
+    let lastRenderedAt = -Infinity;
+    const renderFrame = (now: number) => {
+      if ((typeof document !== 'undefined' && document.hidden) || now - lastRenderedAt < 1000 / 24) {
         rafId = requestAnimationFrame(renderFrame);
         return;
       }
       if (video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
+        lastRenderedAt = now;
         const aspect = video.videoWidth / video.videoHeight;
         const targetW =
           video.videoWidth > video.videoHeight
@@ -381,10 +425,11 @@ export const CharacterMediaRenderer: React.FC<CharacterMediaRendererProps> = ({
 
     rafId = requestAnimationFrame(renderFrame);
     return () => {
+      cancelled = true;
       cancelAnimationFrame(rafId);
       video.pause();
     };
-  }, [resolvedType, mediaUrl, videoPlaybackRate, chromaKeyColor]);
+  }, [resolvedType, mediaUrl, videoPlaybackRate, chromaKeyColor, effectiveMotionOff]);
 
   if (assetError) {
     return <div role="alert" className="text-xs text-rose-300 bg-zinc-900/90 p-2">{assetError}</div>;
@@ -395,7 +440,7 @@ export const CharacterMediaRenderer: React.FC<CharacterMediaRendererProps> = ({
 
   if (resolvedType === 'video') {
     const useChromaCanvas = Boolean(
-      chromaKeyColor && chromaKeyColor !== 'none' && parseHexRgb(chromaKeyColor) && !chromaError
+      !effectiveMotionOff && chromaKeyColor && chromaKeyColor !== 'none' && parseHexRgb(chromaKeyColor) && !chromaError
     );
     return (
       <div
@@ -421,7 +466,7 @@ export const CharacterMediaRenderer: React.FC<CharacterMediaRendererProps> = ({
             className="w-full h-full object-contain pointer-events-none select-none"
           />
         )}
-        {videoStatus !== 'ready' && (
+        {!effectiveMotionOff && videoStatus !== 'ready' && (
           <button
             type="button"
             onClick={(e) => {
@@ -450,13 +495,19 @@ export const CharacterMediaRenderer: React.FC<CharacterMediaRendererProps> = ({
     );
   }
 
+  if (effectiveMotionOff && (!stillFrame || stillFrame.source !== mediaUrl || stillFrame.layerSources !== layerTextures)) {
+    return <div className={className} style={style} role="status">正在生成静止帧…</div>;
+  }
+  if (effectiveMotionOff && stillFrame?.error) {
+    return <div role="alert" className="text-xs text-amber-200 bg-zinc-900/90 p-2">动效已关闭；{stillFrame.error}。请重新导入图片。</div>;
+  }
+
   // L1 Layered Avatar Rendering when `layerTextures` are configured
   if (hasL1Layers && layerTextures) {
     const avatar = avatarRef.current;
     const layers = avatar?.getAllLayers();
     return (
       <div
-        ref={bodyContainerRef}
         className={`relative inline-flex items-end justify-center select-none ${className}`}
         style={{
           ...style,
@@ -469,7 +520,7 @@ export const CharacterMediaRenderer: React.FC<CharacterMediaRendererProps> = ({
         {/* The absolutely positioned layers need an intrinsic sizing image;
             otherwise a width-based stage placement collapses to zero height. */}
         <img
-          src={layerTextures.body || mediaUrl || Object.values(layerTextures).find(Boolean)}
+          src={effectiveMotionOff ? (stillFrame?.layers.body || stillFrame?.base || Object.values(stillFrame?.layers || {}).find(Boolean)) : (layerTextures.body || mediaUrl || Object.values(layerTextures).find(Boolean))}
           alt=""
           aria-hidden="true"
           draggable={false}
@@ -477,7 +528,9 @@ export const CharacterMediaRenderer: React.FC<CharacterMediaRendererProps> = ({
         />
         {ALL_AVATAR_LAYER_IDS.map((layerId) => {
           const layer = layers?.[layerId];
-          const tex = layer?.texture || layerTextures[layerId];
+          const tex = effectiveMotionOff
+            ? (stillFrame?.layers[layerId] || (layerId === 'body' ? stillFrame?.base : undefined))
+            : (layer?.texture || layerTextures[layerId]);
           if (!tex || (layer && !layer.visible)) return null;
           return (
             <img
@@ -494,10 +547,9 @@ export const CharacterMediaRenderer: React.FC<CharacterMediaRendererProps> = ({
     );
   }
 
-  // Default L0 Static Portrait (with optional subtle bottom-anchored body breathing when explicitly enabled)
+  // Default L0 static portrait; no periodic transform is applied.
   return (
     <div
-      ref={bodyContainerRef}
       className={`relative inline-flex items-end justify-center select-none ${className}`}
       style={{
         ...style,
@@ -505,7 +557,7 @@ export const CharacterMediaRenderer: React.FC<CharacterMediaRendererProps> = ({
       }}
       data-avatar-level="L0_STATIC"
     >
-      {crossfade.prevUrl && crossfade.fading && (
+      {!effectiveMotionOff && crossfade.prevUrl && crossfade.fading && (
         <img
           src={crossfade.prevUrl}
           alt={alt}
@@ -514,7 +566,7 @@ export const CharacterMediaRenderer: React.FC<CharacterMediaRendererProps> = ({
         />
       )}
       <img
-        src={crossfade.currUrl}
+        src={effectiveMotionOff ? stillFrame?.base : crossfade.currUrl}
         alt={alt}
         draggable={false}
         className="w-full h-full object-contain pointer-events-none select-none transition-opacity duration-180"

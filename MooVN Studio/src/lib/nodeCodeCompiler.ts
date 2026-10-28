@@ -6,9 +6,9 @@ import type {
 } from '../types.ts';
 import { getNodeMeta, isUnsupportedNode } from '../data/nodeRegistry.ts';
 
-export interface TsCompilerDiagnostic {
+export interface GraphDiagnostic {
   id: string;
-  code: string; // e.g. "TS2322", "TS2304", "TS1005", "MOOVN201"
+  code: string; // MooVN graph diagnostic; not a TypeScript compiler error code
   severity: 'error' | 'warning' | 'info';
   nodeId: string;
   nodeTitle: string;
@@ -16,14 +16,14 @@ export interface TsCompilerDiagnostic {
   message: string;
 }
 
-export interface TsCompileReport {
+export interface GraphCheckReport {
   ok: boolean;
   errorCount: number;
   warningCount: number;
   durationMs: number;
   elapsedMs: number;
   lineCount: number;
-  diagnostics: TsCompilerDiagnostic[];
+  diagnostics: GraphDiagnostic[];
   compiledTypeScript: string;
   compiledJavaScript: string;
 }
@@ -539,7 +539,7 @@ export function generateFullProjectCode(
   const header: string[] = [];
 
   header.push(
-    `/**\n * MooVN Compiled ${isTs ? 'TypeScript (Strict Release Mode)' : 'JavaScript (Fast Dev Mode)'}\n * Project: ${project.title} (v${project.version})\n * Nodes: ${project.nodes.length} | Chapters: ${project.chapters.length}\n */`
+    `/**\n * MooVN generated ${isTs ? 'TypeScript' : 'JavaScript'} draft (not type-checked or guaranteed executable)\n * Project: ${project.title} (v${project.version})\n * Nodes: ${project.nodes.length} | Chapters: ${project.chapters.length}\n */`
   );
 
   if (isTs) {
@@ -592,10 +592,9 @@ export interface VNRuntimeContext {
 }
 
 /**
- * TypeScript 静态类型与节点图编译器检查
- * 支持在平时用 JavaScript 快速开发，测试或导出前一键用 TypeScript 编译检查是否有语法、类型或节点引用错误！
+ * 节点图引用和部分配置检查；没有运行 tsc，不检查脚本语法或宿主语言类型。
  */
-export function compileAndCheckProjectTypeScript(project: VNProject): TsCompileReport {
+export function checkProjectGraph(project: VNProject): GraphCheckReport {
   const startTime = performance.now();
   const compiledTypeScript = generateFullProjectCode(project, 'typescript');
   const compiledJavaScript = generateFullProjectCode(project, 'javascript');
@@ -607,7 +606,7 @@ export function compileAndCheckProjectTypeScript(project: VNProject): TsCompileR
     return idx >= 0 ? idx + 1 : 1;
   };
 
-  const diagnostics: TsCompilerDiagnostic[] = [];
+  const diagnostics: GraphDiagnostic[] = [];
   const nodeIds = new Set(project.nodes.map((n) => n.id));
   const charIds = new Set(project.characters.map((c) => c.id));
   const varMap = new Map(project.variables.map((v) => [v.key, v]));

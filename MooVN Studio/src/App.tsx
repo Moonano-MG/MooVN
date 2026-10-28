@@ -51,6 +51,7 @@ import { OfficialPortal } from './components/OfficialPortal';
 import { PanelId } from './types';
 import { loadSystemSettings, saveProjectToWorkspace } from './lib/workspaceManager';
 import { useUILanguage } from './lib/i18n';
+import { useReducedMotion } from './lib/useReducedMotion';
 import { clampSplitRatio } from './lib/vnRuntimeCore';
 import {
   clampAllFloatingWindows,
@@ -364,6 +365,15 @@ function dockPanelIntoTree(
   );
 }
 
+/** Re-dock existing floating panels without discarding the user's dock tree. */
+function dockFloatingPanels(root: EditorSplitNode | null, windows: FloatingWindowState[]): EditorSplitNode | null {
+  return windows.reduce<EditorSplitNode | null>((tree, window) => {
+    const leaves = collectLeaves(tree);
+    if (leaves.some((leaf) => leaf.tabs.includes(window.id))) return tree;
+    return dockPanelIntoTree(tree, window.id, leaves[0]?.id || 'leaf-init', 'center');
+  }, root);
+}
+
 export function App({
   initialMode,
 }: {
@@ -449,6 +459,7 @@ export function App({
   const [isLauncherOpen, setIsLauncherOpen] = useState(true);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [motionLevel, setMotionLevel] = useState(() => loadSystemSettings().defaultGameSettings.motionLevel || 'subtle');
+  const reducedMotion = useReducedMotion();
   const lastSavedProjectRef = useRef<VNProject | null>(null);
   const currentProjectRef = useRef(project);
   currentProjectRef.current = project;
@@ -688,7 +699,6 @@ export function App({
     }
     return [];
   });
-  const [topZ, setTopZ] = useState<number>(60);
 
   // Persist layout state (`splitRoot` + `floatingWindows`) (`GPT-30`, `GPT-39`)
   useEffect(() => {
@@ -701,6 +711,14 @@ export function App({
       // ignore quota errors
     }
   }, [splitRoot, floatingWindows]);
+
+  // Old persisted layouts may contain floating windows while the experiment is off.
+  // Return those panels to the existing tree instead of discarding the user's layout.
+  useEffect(() => {
+    if (featureFlags.floatingWindowsExperimental || floatingWindows.length === 0) return;
+    setSplitRoot((previous) => dockFloatingPanels(previous, floatingWindows));
+    setFloatingWindows([]);
+  }, [featureFlags.floatingWindowsExperimental, floatingWindows]);
 
   // Clamp floating windows when browser / Tauri window resizes (`GPT-19`, `GPT-24`, `Kimi 1L`)
   useEffect(() => {
@@ -786,6 +804,7 @@ export function App({
     clientY = 110,
     startDraggingImmediately = false
   ) => {
+    if (!featureFlags.floatingWindowsExperimental) return;
     setSplitRoot((prev) => removePanelFromSplitTree(prev, panelId));
 
     const defaultW =
@@ -817,10 +836,10 @@ export function App({
               y: clamped.y,
               width: clamped.width,
               height: clamped.height,
-              zIndex: 999,
+              zIndex: Z_INDEX_TOKENS.floatingBase,
             },
           ];
-      return normalizeWindowZIndices(updated as any, panelId) as unknown as FloatingWindowState[];
+      return normalizeWindowZIndices(updated, panelId);
     });
 
     if (startDraggingImmediately) {
@@ -895,7 +914,7 @@ export function App({
     panelId: PanelId,
     preferredMode: 'dock' | 'float' = 'dock'
   ) => {
-    if (preferredMode === 'float') {
+    if (preferredMode === 'float' && featureFlags.floatingWindowsExperimental) {
       undockPanelToFloat(panelId, 280, 120, false);
       return;
     }
@@ -903,11 +922,7 @@ export function App({
     // If floating, bring to front
     const floating = floatingWindows.find((f) => f.id === panelId);
     if (floating) {
-      const nextZ = topZ + 1;
-      setTopZ(nextZ);
-      setFloatingWindows((prev) =>
-        prev.map((w) => (w.id === panelId ? { ...w, zIndex: nextZ } : w))
-      );
+      setFloatingWindows((prev) => normalizeWindowZIndices(prev, panelId));
       return;
     }
 
@@ -945,147 +960,6 @@ export function App({
       );
     } else {
       undockPanelToFloat(panelId, 260, 120, false);
-    }
-  };
-
-  const handleApplyLayoutPreset = (
-    preset: 'default_ide' | 'quad_2x2' | 'multi_col_4' | 'canvas_stage_terminal'
-  ) => {
-    setFloatingWindows([]);
-    if (preset === 'quad_2x2') {
-      // True 2D [A | C] over [B | D]
-      setSplitRoot({
-        kind: 'branch',
-        id: 'quad-v',
-        direction: 'vertical',
-        ratio: 0.54,
-        first: {
-          kind: 'branch',
-          id: 'quad-top-h',
-          direction: 'horizontal',
-          ratio: 0.52,
-          first: {
-            kind: 'leaf',
-            id: 'cell-a',
-            tabs: ['canvas', 'node_library'],
-            activeTab: 'canvas',
-          },
-          second: {
-            kind: 'leaf',
-            id: 'cell-c',
-            tabs: ['stage', 'asset_studio'],
-            activeTab: 'stage',
-          },
-        },
-        second: {
-          kind: 'branch',
-          id: 'quad-bot-h',
-          direction: 'horizontal',
-          ratio: 0.52,
-          first: {
-            kind: 'leaf',
-            id: 'cell-b',
-            tabs: ['ts_code', 'terminal'],
-            activeTab: 'ts_code',
-          },
-          second: {
-            kind: 'leaf',
-            id: 'cell-d',
-            tabs: ['inspector', 'ai_agent'],
-            activeTab: 'inspector',
-          },
-        },
-      });
-    } else if (preset === 'multi_col_4') {
-      // [Col 1 | Col 2 | Col 3 | Col 4]
-      setSplitRoot({
-        kind: 'branch',
-        id: 'mc-1',
-        direction: 'horizontal',
-        ratio: 0.18,
-        first: {
-          kind: 'leaf',
-          id: 'c-1',
-          tabs: ['node_library', 'explorer'],
-          activeTab: 'node_library',
-        },
-        second: {
-          kind: 'branch',
-          id: 'mc-2',
-          direction: 'horizontal',
-          ratio: 0.42,
-          first: {
-            kind: 'leaf',
-            id: 'c-2',
-            tabs: ['canvas'],
-            activeTab: 'canvas',
-          },
-          second: {
-            kind: 'branch',
-            id: 'mc-3',
-            direction: 'horizontal',
-            ratio: 0.54,
-            first: {
-              kind: 'leaf',
-              id: 'c-3',
-              tabs: ['stage', 'terminal'],
-              activeTab: 'stage',
-            },
-            second: {
-              kind: 'leaf',
-              id: 'c-4',
-              tabs: ['inspector', 'ai_agent'],
-              activeTab: 'inspector',
-            },
-          },
-        },
-      });
-    } else if (preset === 'canvas_stage_terminal') {
-      // Top row: [Canvas | Stage | Inspector], Bottom full-width row: [Terminal & TS Code]
-      setSplitRoot({
-        kind: 'branch',
-        id: 'cst-v',
-        direction: 'vertical',
-        ratio: 0.68,
-        first: {
-          kind: 'branch',
-          id: 'cst-top-1',
-          direction: 'horizontal',
-          ratio: 0.44,
-          first: {
-            kind: 'leaf',
-            id: 'cst-canvas',
-            tabs: ['canvas', 'node_library'],
-            activeTab: 'canvas',
-          },
-          second: {
-            kind: 'branch',
-            id: 'cst-top-2',
-            direction: 'horizontal',
-            ratio: 0.56,
-            first: {
-              kind: 'leaf',
-              id: 'cst-stage',
-              tabs: ['stage', 'ui_customizer'],
-              activeTab: 'stage',
-            },
-            second: {
-              kind: 'leaf',
-              id: 'cst-insp',
-              tabs: ['inspector', 'ai_agent'],
-              activeTab: 'inspector',
-            },
-          },
-        },
-        second: {
-          kind: 'leaf',
-          id: 'cst-bottom-wide',
-          tabs: ['terminal', 'ts_code', 'yaml_code'],
-          activeTab: 'terminal',
-        },
-      });
-    } else {
-      setSplitRoot(createDefaultSplitTree());
     }
   };
 
@@ -1554,6 +1428,7 @@ export function App({
                     {tPanel(tabId)}
                   </span>
                   <button
+                    disabled={!featureFlags.floatingWindowsExperimental}
                     onClick={(e) => {
                       e.stopPropagation();
                       const rect = (
@@ -1567,7 +1442,7 @@ export function App({
                       );
                     }}
                     className="opacity-0 group-hover:opacity-100 hover:text-sky-300 transition"
-                    title="弹出为漂浮窗口"
+                    title={featureFlags.floatingWindowsExperimental ? '弹出为漂浮窗口' : '请先开启实验性悬浮窗口'}
                   >
                     <ExternalLink className="w-2.5 h-2.5" strokeWidth={1.8} />
                   </button>
@@ -1625,6 +1500,7 @@ export function App({
             </button>
 
             <button
+              disabled={!featureFlags.floatingWindowsExperimental}
               onClick={(e) => {
                 const rect = (
                   e.currentTarget as HTMLElement
@@ -1637,7 +1513,7 @@ export function App({
                 );
               }}
               className="icon-btn !w-5 !h-5"
-              title="切换当前窗口为自由漂浮窗"
+              title={featureFlags.floatingWindowsExperimental ? '切换当前窗口为自由漂浮窗' : '请先开启实验性悬浮窗口'}
             >
               <ExternalLink className="w-3 h-3" strokeWidth={1.6} />
             </button>
@@ -1759,6 +1635,7 @@ export function App({
 
   return (
     <div
+      data-motion-off={motionLevel === 'off' || reducedMotion ? 'true' : undefined}
       onMouseMove={handleGlobalMouseMove}
       onMouseUp={handleGlobalMouseUp}
       onTouchMove={handleGlobalTouchMove}
@@ -1790,6 +1667,7 @@ export function App({
           }
         }}
         onToggleDockFloat={handleToggleDockFloat}
+        floatingEnabled={featureFlags.floatingWindowsExperimental}
         onResetLayout={() => {
           setIsFocusMode(false);
           setSplitRoot(createDefaultSplitTree());
@@ -1989,7 +1867,7 @@ export function App({
                       e.preventDefault();
                       handleOpenOrFocusWindow(item.id, 'float');
                     }}
-                    title={`${tPanel(item.id)} (左键停靠打开 / 右键悬浮打开 / 拖拽调整图标顺序)`}
+                    title={`${tPanel(item.id)} (左键停靠打开${featureFlags.floatingWindowsExperimental ? ' / 右键悬浮打开' : ''} / 拖拽调整图标顺序)`}
                     className={`relative w-8 h-8 rounded flex items-center justify-center transition ${
                       active
                         ? 'text-white bg-[#25252d]'
@@ -2088,7 +1966,7 @@ export function App({
                 key={fw.id}
                 onMouseDown={() => {
                   setFloatingWindows((prev) =>
-                    normalizeWindowZIndices(prev as any, fw.id) as unknown as FloatingWindowState[]
+                    normalizeWindowZIndices(prev, fw.id)
                   );
                 }}
                 style={{
@@ -2282,10 +2160,6 @@ export function App({
                     e.target.checked
                   );
                   setFeatureFlagsState(next);
-                  if (!e.target.checked && floatingWindows.length > 0) {
-                    setFloatingWindows([]);
-                    setSplitRoot(createDefaultSplitTree());
-                  }
                 }}
                 className="w-4 h-4 accent-sky-400 cursor-pointer"
               />
@@ -2372,6 +2246,15 @@ export function App({
           onUpdateProjectPerformance={(perf) =>
             updateProjectMeta({ performanceConfig: perf })
           }
+          onLocateNode={(nodeId) => {
+            const node = project.nodes.find((item) => item.id === nodeId);
+            if (!node) return;
+            setSelectedChapterId(node.chapterId);
+            setSelectedNodeId(nodeId);
+            setIsExportModalOpen(false);
+            if (isMobile) setMobileActivePanel('inspector');
+            else handleOpenOrFocusWindow('inspector', 'dock');
+          }}
           onClose={() => setIsExportModalOpen(false)}
         />
       )}

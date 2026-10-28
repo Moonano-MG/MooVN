@@ -1,9 +1,12 @@
 //! Save System (`moovn.save.create(NAME)`) for MooVN Engine (`GPT-59`, `GPT-60`).
 //!
-//! Shares the exact cross-language canonical v2 checksum payload with `MooVN Studio/src/lib/vnRuntimeCore.ts`:
+//! Builds a local canonical v2 checksum payload using the following shape:
 //! `v2|slot={slot_name}|ch={chapter_id}|node={node_id}|dlg={dialogue_index}|bg={active_background}|bgm={active_bgm}|vars=[{k}={v},...]|aff=[{k}={v},...]`
 //!
-//! Supports both in-memory session storage and atomic disk persistence (`SaveManager::with_storage_dir`)
+//! Rust and Studio v2 are not guaranteed byte-for-byte equivalent: variable merging
+//! and non-ASCII key ordering differ. FNV is an accidental-corruption check, not authentication.
+//!
+//! Supports both in-memory session storage and disk persistence (`SaveManager::with_storage_dir`)
 //! using `temp -> sync_all -> backup -> rename`.
 
 use std::collections::HashMap;
@@ -64,8 +67,7 @@ fn percent_decode(encoded: &str) -> Result<String, String> {
 }
 
 impl SaveSlotRecord {
-    /// Builds the cross-language canonical v2 payload string matching `serializeSaveCanonical`
-    /// in `MooVN Studio/src/lib/vnRuntimeCore.ts` byte-for-byte (`GPT-59`).
+    /// Builds the Rust v2 payload. It is not a cross-language canonical standard.
     pub fn compute_canonical_payload(&self) -> String {
         let mut var_pairs: Vec<(&String, &String)> = self.variables.iter().collect();
         var_pairs.sort_by(|a, b| a.0.cmp(b.0));
@@ -94,7 +96,7 @@ impl SaveSlotRecord {
         )
     }
 
-    /// Serializes all state fields into a deterministic string and computes its 64-bit FNV-1a checksum.
+    /// Computes the FNV-1a checksum of the legacy v2 payload; timestamp is not included.
     pub fn compute_canonical_checksum(&self) -> u64 {
         let canonical = self.compute_canonical_payload();
         SaveManager::compute_fnv1a64(&canonical)
@@ -105,7 +107,7 @@ impl SaveSlotRecord {
         format!("{:016x}", self.checksum_fnv1a)
     }
 
-    /// Verifies that the save record's checksum is non-zero and matches all fields.
+    /// Checks the v2 payload against its non-zero checksum; this does not authenticate data or cover the timestamp.
     pub fn verify(&self) -> bool {
         self.checksum_fnv1a != 0 && self.checksum_fnv1a == self.compute_canonical_checksum()
     }
@@ -391,7 +393,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_cross_language_canonical_checksum_vector() {
+    fn test_legacy_v2_ascii_payload() {
         let mut vars = HashMap::new();
         vars.insert("key".to_string(), "true".to_string());
         let mut aff = HashMap::new();
@@ -416,6 +418,24 @@ mod tests {
         );
         let expected_hash = SaveManager::compute_fnv1a64(&rec.compute_canonical_payload());
         assert_ne!(expected_hash, 0);
+    }
+
+    #[test]
+    fn checksum_does_not_authenticate_changes_or_cover_timestamp() {
+        let mut record = SaveSlotRecord {
+            slot_name: "slot".into(), chapter_id: "chapter".into(), node_id: "node".into(),
+            dialogue_index: 0, active_background: String::new(), active_bgm: String::new(),
+            variables: HashMap::new(), affection: HashMap::new(),
+            checksum_fnv1a: 0, timestamp_epoch_ms: 100,
+        };
+        record.checksum_fnv1a = record.compute_canonical_checksum();
+        assert!(record.verify());
+        record.timestamp_epoch_ms = 200;
+        assert!(record.verify(), "v2 does not include the timestamp");
+        record.node_id = "edited".into();
+        assert!(!record.verify());
+        record.checksum_fnv1a = record.compute_canonical_checksum();
+        assert!(record.verify(), "anyone can recalculate the public checksum");
     }
 
     #[test]

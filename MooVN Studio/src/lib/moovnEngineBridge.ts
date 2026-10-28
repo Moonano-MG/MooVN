@@ -259,44 +259,92 @@ export function translatePolyglotScriptWithReport(
   let convertedCount = 0;
   let preservedCount = 0;
 
-  const lines = source.split('\n');
-  for (let i = 0; i < lines.length; i++) {
-    const raw = lines[i];
+  // Keep each original line terminator and every non-API line verbatim. Track
+  // multiline comments and quoted strings so API-looking text inside them is
+  // not treated as a call. This is deliberately a conservative line formatter,
+  // not a host-language compiler.
+  let lexicalState: 'code' | 'block' | 'single' | 'double' | 'template' | 'raw' | 'verbatim' = 'code';
+  let rawCloser = '';
+  let blockDepth = 0;
+  const updateLexicalState = (line: string) => {
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      const next = line[i + 1];
+      if (lexicalState === 'raw') {
+        if (line.startsWith(rawCloser, i)) { i += rawCloser.length - 1; lexicalState = 'code'; }
+      } else if (lexicalState === 'block') {
+        if (ch === '/' && next === '*') { blockDepth++; i++; }
+        else if (ch === '*' && next === '/') { if (--blockDepth === 0) lexicalState = 'code'; i++; }
+      } else if (lexicalState === 'verbatim') {
+        if (ch === '"' && next === '"') i++;
+        else if (ch === '"') lexicalState = 'code';
+      } else if (lexicalState !== 'code') {
+        if (ch === '\\') { i++; continue; }
+        if ((lexicalState === 'single' && ch === "'") ||
+            (lexicalState === 'double' && ch === '"') ||
+            (lexicalState === 'template' && ch === '`')) lexicalState = 'code';
+      } else {
+        const rest = line.slice(i);
+        const boundary = i === 0 || !/[A-Za-z0-9_]/.test(line[i - 1]);
+        const rustRaw = boundary ? rest.match(/^(?:br|r)(#*)"/) : null;
+        const cppRaw = boundary ? rest.match(/^R"([^\s()\\]{0,16})\(/) : null;
+        const triple = rest.match(/^("{3,}|'{3})/);
+        if (rustRaw) {
+          rawCloser = `"${rustRaw[1]}`; lexicalState = 'raw'; i += rustRaw[0].length - 1;
+        } else if (cppRaw) {
+          rawCloser = `)${cppRaw[1]}"`; lexicalState = 'raw'; i += cppRaw[0].length - 1;
+        } else if (triple) {
+          rawCloser = triple[0]; lexicalState = 'raw'; i += triple[0].length - 1;
+        } else if (ch === '@' && next === '"') {
+          lexicalState = 'verbatim'; i++;
+        } else if (ch === '/' && next === '*') {
+          lexicalState = 'block'; blockDepth = 1; i++;
+        } else if ((ch === '/' && next === '/') || (ch === '-' && next === '-') || ch === '#') {
+          break;
+        } else if (ch === "'") {
+          lexicalState = 'single';
+        } else if (ch === '"') {
+          lexicalState = 'double';
+        } else if (ch === '`') {
+          lexicalState = 'template';
+        }
+      }
+    }
+  };
+
+  const segments = source.split(/(\r\n|\r|\n)/);
+  for (let i = 0; i < segments.length; i += 2) {
+    const raw = segments[i];
+    const lineNumber = i / 2 + 1;
     const trimmed = raw.trim();
-    const indent = raw.match(/^\s*/)?.[0] ?? '';
-
-    if (!trimmed) {
-      outLines.push('');
-      continue;
-    }
-
-    if (
-      trimmed.startsWith('//') ||
-      trimmed.startsWith('#') ||
-      trimmed.startsWith('--') ||
-      trimmed.startsWith('/*') ||
-      trimmed.startsWith('*')
-    ) {
-      const commentBody = trimmed.replace(/^(\/\/|#|--)\s?/, '');
-      outLines.push(`${indent}// ${commentBody}`);
-      preservedCount++;
-      continue;
-    }
-
-    const parsed = parsePolyglotFastApiLine(trimmed);
-    if (parsed) {
-      outLines.push(`${indent}${formatIRInstructionForLanguage(parsed, target)}`);
+    const startedInCode = lexicalState === 'code';
+    updateLexicalState(raw);
+    // Only an entire, standalone API call is eligible. Arguments and the
+    // semicolon are copied verbatim; comments or extra statements cause the
+    // line to be left untouched rather than silently discarded.
+    const call = startedInCode && lexicalState === 'code'
+      ? raw.match(/^([ \t]*)((?:moovn|Moovn)(?:(?:\.|::|:|->)[A-Za-z_]\w*){1,2})(\(.*\))([ \t]*;?[ \t]*)$/)
+      : null;
+    const parsed = call ? parsePolyglotFastApiLine(`${call[2]}${call[3]}${call[4]}`) : null;
+    if (call && parsed) {
+      const formatted = formatIRInstructionForLanguage({ ...parsed, args: [] }, target);
+      outLines.push(`${call[1]}${formatted.slice(0, formatted.indexOf('('))}${call[3]}${call[4]}`);
       convertedCount++;
     } else {
-      // Never silently discard non-API lines; preserve and report them
       outLines.push(raw);
-      preservedCount++;
-      unrecognizedLines.push({ line: i + 1, content: trimmed });
-      warnings.push(`第 ${i + 1} 行非 moovn.* 调用，已原样保留：${trimmed}`);
+      if (trimmed) {
+        preservedCount++;
+        const isComment = /^(\/\/|#|--|\/\*|\*|\*\/)/.test(trimmed) || !startedInCode;
+        if (!isComment) {
+          unrecognizedLines.push({ line: lineNumber, content: trimmed });
+          warnings.push(`第 ${lineNumber} 行未作为独立 moovn.* API 调用改写，已原样保留。`);
+        }
+      }
     }
+    if (segments[i + 1]) outLines.push(segments[i + 1]);
   }
 
-  const joined = outLines.join('\n');
+  const joined = outLines.join('');
   return {
     output: joined,
     code: joined,
@@ -465,11 +513,12 @@ export async function evalPolyglotScriptInEngineAsync(
         instructions: staticRes.instructions,
         unrecognizedLines: staticRes.unrecognizedLines,
         logs: [
-          `[Tauri 原生引擎执行 (${lang})] 已执行 ${tauriRes.data.length} 条指令`,
+          `[Tauri 引擎 (${lang})] 已处理 ${tauriRes.data.length} 条 API 指令；不执行宿主语言代码`,
           ...tauriRes.data,
         ],
       };
     }
+    throw new Error(`原生引擎请求失败，未执行且未自动降级：${tauriRes.error || '响应格式无效'}`);
   }
   return {
     mode: 'web_static',

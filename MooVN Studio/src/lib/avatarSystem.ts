@@ -7,15 +7,16 @@
  * - `L1_LAYERED`: Multi-layer static parts (`hair_back`, `body`, `eyes_open`, `eyes_closed`,
  *   `mouth_neutral`, `mouth_talk_a`, `mouth_talk_b`, `brow_neutral`, `brow_angry`, `brow_sad`,
  *   `blush`, `hair_front`). Supports independent blink (2.0–6.0s interval, 90–140ms close),
- *   text-linked lip-sync (120ms cadence while dialogue is printing), and optional bottom-anchored
- *   body breathing (`scaleY: 1.0 -> 1.0075 -> 1.0`, period 4.2s).
- * - `L2_LIVE2D`: External Live2D Cubism / Spine backend registered via `registerLive2DBackend`.
- *   Never silently falls back to a static image when unconfigured (`isLive2DBackendRegistered()`).
+ *   and text-linked lip-sync (120ms cadence while dialogue is printing).
+ *   No full-image or body scaling is used for breathing. Masked breathing is not implemented.
+ * - L2: Sequence/video is handled separately by the media renderer.
+ * - L3: Live2D/Spine needs an externally registered backend; no SDK is bundled.
+ *   Never silently falls back to a static image when unconfigured.
  */
 
 export type AvatarBackendKind = 'image' | 'live2d';
 
-export type AvatarCapabilityLevel = 'L0_STATIC' | 'L1_LAYERED' | 'L2_LIVE2D';
+export type AvatarCapabilityLevel = 'L0_STATIC' | 'L1_LAYERED' | 'L2_SEQUENCE_VIDEO' | 'L3_LIVE2D_SPINE';
 
 export type AvatarLayerId =
   | 'hair_back'
@@ -147,7 +148,6 @@ export interface IAvatarRenderable {
   setParameter(name: string, value: number): void;
   getParameter(name: string): number;
   setTalking(talking: boolean): void;
-  setBreathingEnabled(enabled: boolean): void;
   setBlinkEnabled(enabled: boolean): void;
   setNormalizedPosition(nx: number, ny: number, scale?: number): void;
   relayout(viewport: AvatarViewport): ComputedViewportRect;
@@ -172,8 +172,8 @@ export interface IAvatarRenderable {
 export interface ImageAvatarOptions {
   baseTexture?: string | null;
   layerTextures?: Partial<Record<AvatarLayerId, string | null>>;
-  breathingEnabled?: boolean;
   blinkEnabled?: boolean;
+  blinkIntervalMinSec?: number;
   randomSeed?: () => number;
 }
 
@@ -269,6 +269,7 @@ export class ImageAvatar implements IAvatarRenderable {
   private readonly expressions: Map<string, ParsedExpressionRule> = new Map();
   private readonly parameters: Map<string, number> = new Map();
   private readonly rng: () => number;
+  private readonly blinkIntervalMinSec: number;
 
   private currentExpression = 'default';
   private currentMotion: SingleShotMotionId = 'none';
@@ -279,11 +280,6 @@ export class ImageAvatar implements IAvatarRenderable {
   private currentTexture: string | null = null;
   private crossfadeAlpha = 1;
   private readonly crossfadeDurationSec = 0.18;
-
-  // Channel A: Body-only subtle breathing (default: false)
-  private breathingEnabled = false;
-  private breathElapsed = 0;
-  private readonly breathPeriodSec = 4.2;
 
   // Channel B: Independent random eye blink
   private blinkEnabled = true;
@@ -313,12 +309,12 @@ export class ImageAvatar implements IAvatarRenderable {
 
   constructor(options: ImageAvatarOptions = {}) {
     this.rng = options.randomSeed ?? Math.random;
+    this.blinkIntervalMinSec = Math.min(6, Math.max(2, options.blinkIntervalMinSec ?? 2));
     const baseTex = options.baseTexture ?? null;
     const lt = options.layerTextures ?? {};
 
     this.currentTexture = baseTex;
-    this.breathingEnabled = Boolean(options.breathingEnabled ?? false);
-    this.blinkEnabled = options.blinkEnabled !== undefined ? Boolean(options.blinkEnabled) : true;
+    this.blinkEnabled = Boolean(lt.eyes_closed) && (options.blinkEnabled ?? true);
     this.nextBlinkInterval = this.sampleNextBlinkInterval();
 
     this.layers = {
@@ -347,7 +343,7 @@ export class ImageAvatar implements IAvatarRenderable {
   }
 
   private sampleNextBlinkInterval(): number {
-    return 2.0 + this.rng() * 4.0;
+    return this.blinkIntervalMinSec + this.rng() * (6.0 - this.blinkIntervalMinSec);
   }
 
   private sampleBlinkDuration(): number {
@@ -383,10 +379,13 @@ export class ImageAvatar implements IAvatarRenderable {
   public getMissingLayerWarnings(): string[] {
     const warnings: string[] = [];
     if (!this.layers.eyes_closed.texture) {
-      warnings.push('缺少 eyes_closed 闭眼图层贴图：已禁用眨眼动画（当前为 L0 静态立绘）');
+      warnings.push('缺少 eyes_closed 闭眼图层贴图：已禁用眨眼动画');
     }
     if (!this.layers.mouth_talk_a.texture) {
       warnings.push('缺少 mouth_talk_a 口型图层贴图：已禁用说话口型切换');
+    }
+    if (!this.layers.mouth_talk_b.texture) {
+      warnings.push('缺少 mouth_talk_b 口型图层贴图：仅有 A 时重复使用 A');
     }
     return warnings;
   }
@@ -431,11 +430,13 @@ export class ImageAvatar implements IAvatarRenderable {
 
   private applyExpressionRule(rule: ParsedExpressionRule): void {
     const eyesMode = rule.eyes ?? 'open';
-    this.eyesForcedClosedByExpr = eyesMode === 'closed';
+    this.eyesForcedClosedByExpr = eyesMode === 'closed' && Boolean(this.layers.eyes_closed.texture);
     this.layers.eyes_open.setVisible(!this.eyesForcedClosedByExpr);
     this.layers.eyes_closed.setVisible(this.eyesForcedClosedByExpr);
 
-    const browMode = rule.brow ?? 'neutral';
+    const requestedBrow = rule.brow ?? 'neutral';
+    const browMode = requestedBrow === 'angry' && this.layers.brow_angry.texture ? 'angry'
+      : requestedBrow === 'sad' && this.layers.brow_sad.texture ? 'sad' : 'neutral';
     this.layers.brow_neutral.setVisible(browMode === 'neutral');
     this.layers.brow_angry.setVisible(browMode === 'angry');
     this.layers.brow_sad.setVisible(browMode === 'sad');
@@ -443,7 +444,9 @@ export class ImageAvatar implements IAvatarRenderable {
     this.layers.blush.setVisible(Boolean(rule.blush));
 
     if (!this.isTalking) {
-      const mouthMode = rule.mouth ?? 'neutral';
+      const requestedMouth = rule.mouth ?? 'neutral';
+      const mouthMode = requestedMouth === 'talk_b' && this.layers.mouth_talk_b.texture ? 'talk_b'
+        : requestedMouth !== 'neutral' && this.layers.mouth_talk_a.texture ? 'talk_a' : 'neutral';
       this.layers.mouth_neutral.setVisible(mouthMode === 'neutral');
       this.layers.mouth_talk_a.setVisible(mouthMode === 'talk_a');
       this.layers.mouth_talk_b.setVisible(mouthMode === 'talk_b');
@@ -481,26 +484,20 @@ export class ImageAvatar implements IAvatarRenderable {
     this.parameters.set(name, safeVal);
 
     if (name === 'ParamBreath') {
-      const clamped = Math.min(1, Math.max(0, safeVal));
-      this.layers.body.setScale(1, 1 + 0.0075 * clamped);
-    } else if (name === 'ParamEyeLOpen' || name === 'ParamEyeROpen') {
-      const closed = safeVal < 0.25;
+      // Kept for parameter compatibility only. No body/full-image breathing:
+      // masked local breathing has not been implemented.
+      return;
+    }
+    if (name === 'ParamEyeLOpen' || name === 'ParamEyeROpen') {
+      const closed = safeVal < 0.25 && Boolean(this.layers.eyes_closed.texture);
       this.layers.eyes_open.setVisible(!closed);
       this.layers.eyes_closed.setVisible(closed);
     } else if (name === 'ParamMouthOpenY') {
-      if (safeVal < 0.2) {
-        this.layers.mouth_neutral.setVisible(true);
-        this.layers.mouth_talk_a.setVisible(false);
-        this.layers.mouth_talk_b.setVisible(false);
-      } else if (safeVal < 0.65) {
-        this.layers.mouth_neutral.setVisible(false);
-        this.layers.mouth_talk_a.setVisible(true);
-        this.layers.mouth_talk_b.setVisible(false);
-      } else {
-        this.layers.mouth_neutral.setVisible(false);
-        this.layers.mouth_talk_a.setVisible(false);
-        this.layers.mouth_talk_b.setVisible(true);
-      }
+      const useB = safeVal >= 0.65 && Boolean(this.layers.mouth_talk_b.texture);
+      const useA = safeVal >= 0.2 && !useB && Boolean(this.layers.mouth_talk_a.texture);
+      this.layers.mouth_neutral.setVisible(!useA && !useB);
+      this.layers.mouth_talk_a.setVisible(useA);
+      this.layers.mouth_talk_b.setVisible(useB);
     }
   }
 
@@ -510,7 +507,7 @@ export class ImageAvatar implements IAvatarRenderable {
 
   public setTalking(talking: boolean): void {
     if (this.released) return;
-    const next = Boolean(talking);
+    const next = Boolean(talking) && Boolean(this.layers.mouth_talk_a.texture);
     if (this.isTalking === next) return;
     this.isTalking = next;
     this.lipSyncTimer = 0;
@@ -527,20 +524,9 @@ export class ImageAvatar implements IAvatarRenderable {
     }
   }
 
-  public setBreathingEnabled(enabled: boolean): void {
-    if (this.released) return;
-    this.breathingEnabled = Boolean(enabled);
-    if (!this.breathingEnabled) {
-      this.layers.body.setScale(1, 1);
-      this.layers.body.setOffset(0, 0);
-      this.layers.hair_front.setRotation(0);
-      this.layers.hair_back.setRotation(0);
-    }
-  }
-
   public setBlinkEnabled(enabled: boolean): void {
     if (this.released) return;
-    this.blinkEnabled = Boolean(enabled);
+    this.blinkEnabled = Boolean(enabled) && Boolean(this.layers.eyes_closed.texture);
     if (!this.blinkEnabled && !this.eyesForcedClosedByExpr) {
       this.blinkCloseRemaining = 0;
       this.layers.eyes_open.setVisible(true);
@@ -597,20 +583,6 @@ export class ImageAvatar implements IAvatarRenderable {
       }
     }
 
-    if (this.breathingEnabled) {
-      this.breathElapsed = (this.breathElapsed + dt) % this.breathPeriodSec;
-      const omega = (2 * Math.PI) / this.breathPeriodSec;
-      const phase = this.breathElapsed * omega;
-      const wave01 = 0.5 * (1 - Math.cos(phase));
-      const bodyScaleY = 1.0 + 0.0075 * wave01;
-      this.layers.body.setScale(1.0, bodyScaleY);
-      this.layers.body.setOffset(0, 0);
-
-      const hairRot = Math.sin(phase - 0.65) * 0.35;
-      this.layers.hair_front.setRotation(hairRot);
-      this.layers.hair_back.setRotation(hairRot * 0.7);
-    }
-
     if (this.blinkEnabled && !this.eyesForcedClosedByExpr) {
       if (this.blinkCloseRemaining > 0) {
         this.blinkCloseRemaining -= dt;
@@ -639,8 +611,8 @@ export class ImageAvatar implements IAvatarRenderable {
       }
       const step = this.lipSyncStepIndex;
       this.layers.mouth_neutral.setVisible(step === 3);
-      this.layers.mouth_talk_a.setVisible(step === 0 || step === 2);
-      this.layers.mouth_talk_b.setVisible(step === 1);
+      this.layers.mouth_talk_a.setVisible(step === 0 || step === 2 || (step === 1 && !this.layers.mouth_talk_b.texture));
+      this.layers.mouth_talk_b.setVisible(step === 1 && Boolean(this.layers.mouth_talk_b.texture));
     }
   }
 

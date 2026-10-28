@@ -1,0 +1,13 @@
+Compiling Engine with Rust 1.98.1, wasm32-wasip1, no Cargo
+compile exit: 0
+Compiled bytes: 1188420
+Running WASI test binary
+
+running 3 tests
+test save::tests::checksum_does_not_authenticate_changes_or_cover_timestamp ... ok
+test save::tests::test_legacy_v2_ascii_payload ... ok
+test save::tests::test_persistent_save_manager_roundtrip_and_tamper_detection ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+test exit: 0

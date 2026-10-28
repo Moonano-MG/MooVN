@@ -221,11 +221,11 @@ export const SceneStageView: React.FC<SceneStageViewProps> = ({
             title="天气粒子特效"
           >
             <option value="none">无天气</option>
-            <option value="sakura">樱花飘落</option>
-            <option value="rain">细雨连绵</option>
-            <option value="snow">冬雪纷飞</option>
-            <option value="fireflies">夏夜流萤</option>
-            <option value="sunset_glow">黄昏光尘</option>
+            <option value="sakura" disabled>樱花飘落（预览未实现）</option>
+            <option value="rain" disabled>细雨连绵（预览未实现）</option>
+            <option value="snow" disabled>冬雪纷飞（预览未实现）</option>
+            <option value="fireflies" disabled>夏夜流萤（预览未实现）</option>
+            <option value="sunset_glow" disabled>黄昏光尘（预览未实现）</option>
           </select>
 
           <select
@@ -280,10 +280,10 @@ export const SceneStageView: React.FC<SceneStageViewProps> = ({
                 })
               }
               className="px-2 py-1"
-              title="角色分层呼吸开关（默认仅表情切换+眨眼+口型联动）"
+              title="整图呼吸已移除；局部遮罩动画尚未实现"
             >
               <option value="none">默认（静态差分 + 眨眼/口型）</option>
-              <option value="breathe">启用微呼吸 (Body ScaleY ≤ 1.008)</option>
+              <option value="breathe" disabled>旧呼吸已禁用（尚无局部遮罩）</option>
             </select>
 
             <input

@@ -5,11 +5,11 @@
 //!    将 JavaScript/TypeScript (`moovn.save.create(NAME)`)、C# (`Moovn.Save.Create(NAME)`)、
 //!    C++/Rust (`moovn::save::create(NAME)`) 的视觉小说 API 调用转换为中间指令 `EngineOp`。
 //! 2. **存档与世界状态管理 (`save`, `runtime`)**：
-//!    支持多槽位存档创建、读取、删除、自动存档、快速存档与全字段 FNV-1a 64位完整性校验。
+//!    支持多槽位存档与 FNV-1a 意外损坏自检；它不能验证人为篡改，也不是全字段认证。
 //! 3. **C++ 软件合成渲染桥接 (`renderer`)**：
 //!    定义 Rust `MooVNRendererBackend` Trait 与 C-ABI `CppRendererVTable` 桥接结构。
 //! 4. **跨语言 C-ABI 导出层 (`ffi`)**：
-//!    供 Tauri (MooVN Studio)、C++、C# (P/Invoke) 与 JS/TS 调用。
+//!    供本机宿主集成；C++、C# 与 JS/TS 的完整绑定尚未交付或验收。
 
 pub mod ffi;
 pub mod ir;

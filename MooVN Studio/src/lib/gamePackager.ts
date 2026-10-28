@@ -1,7 +1,8 @@
 import type { VNProject, BackgroundAsset, CharacterSpriteAsset } from '../types';
-import { BACKGROUND_ASSETS, CHARACTER_ASSETS } from '../data/assets';
-import { escapeHtmlText } from './vnRuntimeCore';
-import { CHARACTER_WIDTH_PERCENT } from './characterPlacement';
+import { BACKGROUND_ASSETS, CHARACTER_ASSETS } from '../data/assets.ts';
+import { escapeHtmlText } from './vnRuntimeCore.ts';
+import { CHARACTER_WIDTH_PERCENT } from './characterPlacement.ts';
+import { assertStandaloneHtmlSupported } from './htmlExportValidation.ts';
 
 export interface StandaloneAssetCatalog {
   backgrounds: BackgroundAsset[];
@@ -56,6 +57,7 @@ export function buildStandaloneGameHtml(
   project: VNProject,
   catalog?: StandaloneAssetCatalog
 ): string {
+  assertStandaloneHtmlSupported(project);
   const safeJson = (val: unknown) =>
     JSON.stringify(val)
       .replace(/</g, '\\u003c')
@@ -396,13 +398,13 @@ export function buildStandaloneGameHtml(
     let activeModalMode = "save";
     let activeSaveTab = "1";
 
-    function escHtml(raw) {
-      return String(raw == null ? "" : raw)
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#39;");
+    // All runtime/project data is assigned as text, never interpolated into HTML.
+    function appendText(parent, tag, text, css) {
+      const element = document.createElement(tag);
+      element.style.cssText = css;
+      element.textContent = String(text == null ? "" : text);
+      parent.appendChild(element);
+      return element;
     }
 
     function resetGameSession() {
@@ -505,7 +507,7 @@ export function buildStandaloneGameHtml(
     function renderSaveModalContent() {
       const tabsEl = document.getElementById("modal-tabs");
       tabsEl.style.display = "flex";
-      tabsEl.innerHTML = "";
+      tabsEl.replaceChildren();
       SAVE_TABS.forEach(tab => {
         const btn = document.createElement("button");
         btn.className = "save-tab-btn" + (activeSaveTab === tab ? " active" : "");
@@ -516,7 +518,7 @@ export function buildStandaloneGameHtml(
 
       const bodyEl = document.getElementById("modal-body");
       bodyEl.style.gridTemplateColumns = "repeat(2, 1fr)";
-      bodyEl.innerHTML = "";
+      bodyEl.replaceChildren();
       const all = loadAllSaves();
       if (!all) return;
       for (let i = 0; i < 6; i++) {
@@ -525,19 +527,16 @@ export function buildStandaloneGameHtml(
         const card = document.createElement("div");
         card.className = "save-slot";
         if (slot) {
-          card.innerHTML = \`
-            <div style="display:flex;justify-content:space-between;font-size:11px;color:#38bdf8;margin-bottom:4px;">
-              <span>#\${i + 1} · \${escHtml(slot.chapterTitle)}</span>
-              <span style="color:#64748b;">\${escHtml(slot.savedAt)}</span>
-            </div>
-            <div style="font-size:13px;font-weight:700;color:#f1f5f9;margin-bottom:4px;">\${escHtml(slot.nodeTitle)}</div>
-            <div style="font-size:12px;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">\${slot.speakerName ? escHtml(slot.speakerName) + "：" : ""}\${escHtml(slot.textPreview)}</div>
-          \`;
+          const heading = document.createElement("div");
+          heading.style.cssText = "display:flex;justify-content:space-between;font-size:11px;color:#38bdf8;margin-bottom:4px;";
+          appendText(heading, "span", "#" + (i + 1) + " · " + (slot.chapterTitle || ""), "");
+          appendText(heading, "span", slot.savedAt, "color:#64748b;");
+          card.appendChild(heading);
+          appendText(card, "div", slot.nodeTitle, "font-size:13px;font-weight:700;color:#f1f5f9;margin-bottom:4px;");
+          appendText(card, "div", (slot.speakerName ? slot.speakerName + "：" : "") + (slot.textPreview || ""), "font-size:12px;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;");
         } else {
-          card.innerHTML = \`
-            <div style="font-size:11px;color:#64748b;margin-bottom:6px;">槽位 #\${i + 1}</div>
-            <div style="font-size:12px;color:#475569;padding:12px 0;">-- 空白存档槽位 --</div>
-          \`;
+          appendText(card, "div", "槽位 #" + (i + 1), "font-size:11px;color:#64748b;margin-bottom:6px;");
+          appendText(card, "div", "-- 空白存档槽位 --", "font-size:12px;color:#475569;padding:12px 0;");
         }
         card.onclick = () => {
           if (activeModalMode === "save") {
@@ -558,14 +557,18 @@ export function buildStandaloneGameHtml(
       document.getElementById("modal-tabs").style.display = "none";
       const bodyEl = document.getElementById("modal-body");
       bodyEl.style.gridTemplateColumns = "1fr";
-      bodyEl.innerHTML = backlog.length === 0
-        ? '<div style="color:#64748b;padding:20px;">暂无历史对话记录</div>'
-        : backlog.slice(-40).map(item => \`
-          <div style="padding:10px 14px;border-radius:8px;background:#101b30;border:1px solid rgba(148,163,184,0.15);">
-            <div style="font-size:12px;font-weight:700;color:#38bdf8;margin-bottom:3px;">\${escHtml(item.speaker || "旁白")}</div>
-            <div style="font-size:13px;color:#e2e8f0;">\${escHtml(item.text)}</div>
-          </div>
-        \`).join("");
+      bodyEl.replaceChildren();
+      if (backlog.length === 0) {
+        appendText(bodyEl, "div", "暂无历史对话记录", "color:#64748b;padding:20px;");
+      } else {
+        backlog.slice(-40).forEach(item => {
+          const card = document.createElement("div");
+          card.style.cssText = "padding:10px 14px;border-radius:8px;background:#101b30;border:1px solid rgba(148,163,184,0.15);";
+          appendText(card, "div", item.speaker || "旁白", "font-size:12px;font-weight:700;color:#38bdf8;margin-bottom:3px;");
+          appendText(card, "div", item.text, "font-size:13px;color:#e2e8f0;");
+          bodyEl.appendChild(card);
+        });
+      }
       document.getElementById("modal-overlay").style.display = "flex";
     }
 
@@ -594,7 +597,7 @@ export function buildStandaloneGameHtml(
     }
 
     function getNode(id) {
-      return PROJECT.nodes.find(n => n.id === id) || PROJECT.nodes[0];
+      return PROJECT.nodes.find(n => n.id === id) || null;
     }
 
     function startNewGame() {
@@ -616,7 +619,7 @@ export function buildStandaloneGameHtml(
 
     function renderScene() {
       const node = getNode(currentNodeId);
-      if (!node) return;
+      if (!node) { showToast("剧情节点不存在，无法继续"); return; }
 
       if (node.customScript && /moovn(?:\.save:|::save::)create/i.test(node.customScript)) {
         persistSaveSlot("auto", 0);
@@ -641,7 +644,7 @@ export function buildStandaloneGameHtml(
         stLayer.style.background = st.bgOverlay === 'dim' ? 'rgba(2,6,23,0.68)' : st.bgOverlay === 'black' ? '#020617' : 'transparent';
         topBar.style.display = st.bgOverlay === 'cinematic_bars' ? 'block' : 'none';
         botBar.style.display = st.bgOverlay === 'cinematic_bars' ? 'block' : 'none';
-        stLayer.innerHTML = "";
+        stLayer.replaceChildren();
         const stWrap = document.createElement("div");
         stWrap.style.position = "absolute";
         stWrap.style.left = (Number(st.x) || 50) + "%";
@@ -675,7 +678,7 @@ export function buildStandaloneGameHtml(
 
       // Characters Layer (supports Static Image, GIF/APNG, and MP4/WebM Video Animations!)
       const charLayer = document.getElementById("char-layer");
-      charLayer.innerHTML = "";
+      charLayer.replaceChildren();
       (node.characters || []).forEach(pl => {
         const prof = (PROJECT.characters || []).find(c => c.id === pl.characterId);
         let spriteId = pl.spriteId;
@@ -748,7 +751,7 @@ export function buildStandaloneGameHtml(
 
     function renderChoices(node) {
       const box = document.getElementById("choice-overlay");
-      box.innerHTML = "";
+      box.replaceChildren();
       const isLastLine = dlgIdx >= ((node.dialogues ? node.dialogues.length : 1) - 1);
       if ((node.type === "choice" || node.type === "timed_choice" || (node.choices && node.choices.length > 0)) && isLastLine && node.choices && node.choices.length > 0) {
         box.style.display = "flex";
