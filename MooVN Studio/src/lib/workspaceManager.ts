@@ -102,6 +102,7 @@ export function loadSystemSettings(): MooVNSystemSettings {
       autoPlayDelayMs: 2000,
       bgmVolume: 75,
       sfxVolume: 85,
+      motionLevel: 'subtle',
     },
     performanceConfig: { ...DEFAULT_PERFORMANCE_CONFIG },
   };
@@ -256,6 +257,7 @@ export function createBlankVNProject(params: {
   const startNodeId = newId('scene');
   const chapterId = newId('chapter');
   return {
+    schemaVersion: '1.1.0',
     id,
     title: params.title || '未命名视觉小说工程',
     author: params.author || '独立开发者',
@@ -377,8 +379,8 @@ async function performProjectSave(project: VNProject, customPath?: string): Prom
   let path: string | undefined;
   try {
     const fileName = projectFileName(project, customPath);
-    const { serializeMpvnProject, MAX_MPVN_PROJECT_BYTES } = await import('./mpvnFormat.ts');
-    const preparedProject = await migrateEmbeddedProjectMedia(project);
+    const { serializeMpvnProject, upgradeProjectCoordinates, MAX_MPVN_PROJECT_BYTES } = await import('./mpvnFormat.ts');
+    const preparedProject = await migrateEmbeddedProjectMedia(upgradeProjectCoordinates(project).project);
     if (isTauriEnvironment()) {
       const paths = await refreshWorkspacePaths();
       const separator = paths.projectsDirectoryPath.includes('\\') ? '\\' : '/';
@@ -466,12 +468,16 @@ export async function migrateLegacyRecentProjects(): Promise<SavedProjectMeta[]>
 
 export async function openSavedProject(meta: SavedProjectMeta): Promise<{
   ok: boolean; project?: VNProject; error?: string; recoveredFromBackup?: boolean;
+  migrated?: boolean; migratedPlacements?: number;
 }> {
   let nativeError: string | undefined;
   if (isTauriEnvironment()) {
     const result = await loadProjectFromTauri(projectFileName({ id: meta.id, projectPath: meta.path }));
     if (result.ok && result.data) {
-      return { ok: true, project: result.data, recoveredFromBackup: result.recoveredFromBackup };
+      return {
+        ok: true, project: result.data, recoveredFromBackup: result.recoveredFromBackup,
+        migrated: result.migrated, migratedPlacements: result.migratedPlacements,
+      };
     }
     nativeError = result.error || '工程文件读取失败';
   }
@@ -482,12 +488,20 @@ export async function openSavedProject(meta: SavedProjectMeta): Promise<{
     if (candidate) {
       const { parseMpvnProject } = await import('./mpvnFormat.ts');
       const validation = parseMpvnProject(JSON.stringify(candidate));
-      return validation.ok ? { ok: true, project: validation.project, recoveredFromBackup: isTauriEnvironment() || snapshot?.key.startsWith('legacy:') } : { ok: false, error: validation.error };
+      return validation.ok ? {
+        ok: true, project: validation.project,
+        recoveredFromBackup: isTauriEnvironment() || snapshot?.key.startsWith('legacy:'),
+        migrated: validation.migrated, migratedPlacements: validation.migratedPlacements,
+      } : { ok: false, error: validation.error };
     }
   } catch (error) {
     if (!meta.projectData) return { ok: false, error: nativeError || (error instanceof Error ? error.message : String(error)) };
-    const validation = validateVNProjectShape(meta.projectData);
-    return validation.ok ? { ok: true, project: validation.project, recoveredFromBackup: true } : { ok: false, error: validation.error };
+    const { parseMpvnProject } = await import('./mpvnFormat.ts');
+    const validation = parseMpvnProject(JSON.stringify(meta.projectData));
+    return validation.ok ? {
+      ok: true, project: validation.project, recoveredFromBackup: true,
+      migrated: validation.migrated, migratedPlacements: validation.migratedPlacements,
+    } : { ok: false, error: validation.error };
   }
   if (nativeError) return { ok: false, error: nativeError };
   return { ok: false, error: 'ERR_PROJECT_NOT_FOUND: 找不到此工程，请重新导入' };

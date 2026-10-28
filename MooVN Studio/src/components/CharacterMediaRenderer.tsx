@@ -217,11 +217,14 @@ export const CharacterMediaRenderer: React.FC<CharacterMediaRendererProps> = ({
       blinkEnabled: !effectiveMotionOff && blinkEnabled && hasL1Layers,
     });
     avatarRef.current = avatar;
+    // The instance is created after render; refresh once so the base and the
+    // initially visible layers are present even when animation is disabled.
+    setL1FacialState({ eyesClosed: false, mouthFrame: 'neutral' });
     return () => {
       avatar.release();
       avatarRef.current = null;
     };
-  }, [layerTextures, hasL1Layers]);
+  }, [layerTextures, hasL1Layers, mediaUrl]);
 
   useEffect(() => {
     const avatar = avatarRef.current;
@@ -229,7 +232,12 @@ export const CharacterMediaRenderer: React.FC<CharacterMediaRendererProps> = ({
     avatar.setBreathingEnabled(!effectiveMotionOff && idleMotion === 'breathe');
     avatar.setBlinkEnabled(!effectiveMotionOff && blinkEnabled && hasL1Layers);
     avatar.setTalking(!effectiveMotionOff && Boolean(isTalking) && hasL1Layers);
-  }, [idleMotion, blinkEnabled, isTalking, effectiveMotionOff, hasL1Layers]);
+    if (effectiveMotionOff) {
+      setL1FacialState((state) => state.eyesClosed || state.mouthFrame !== 'neutral'
+        ? { eyesClosed: false, mouthFrame: 'neutral' }
+        : state);
+    }
+  }, [idleMotion, blinkEnabled, isTalking, effectiveMotionOff, hasL1Layers, mediaUrl, layerTextures]);
 
   // Imperative RAF loop ONLY runs when L1 layers or breathing are active (`GPT-14`)
   // Updates body breathing via imperative DOM transform (0 React re-renders per frame!)
@@ -458,6 +466,15 @@ export const CharacterMediaRenderer: React.FC<CharacterMediaRendererProps> = ({
         data-eyes-closed={l1FacialState.eyesClosed ? 'true' : 'false'}
         data-mouth-frame={l1FacialState.mouthFrame}
       >
+        {/* The absolutely positioned layers need an intrinsic sizing image;
+            otherwise a width-based stage placement collapses to zero height. */}
+        <img
+          src={layerTextures.body || mediaUrl || Object.values(layerTextures).find(Boolean)}
+          alt=""
+          aria-hidden="true"
+          draggable={false}
+          className="w-full h-full object-contain invisible pointer-events-none select-none"
+        />
         {ALL_AVATAR_LAYER_IDS.map((layerId) => {
           const layer = layers?.[layerId];
           const tex = layer?.texture || layerTextures[layerId];

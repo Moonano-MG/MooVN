@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULT_PROJECT } from '../src/data/defaultProject.ts';
+import { DEFAULT_PROJECT, SAMPLE_PROJECT } from '../src/data/defaultProject.ts';
 import { saveProjectToWorkspace, writeFileToMountedMooVNFolder } from '../src/lib/workspaceManager.ts';
 import { newId } from '../src/lib/ids.ts';
 import { loadProjectFromTauri } from '../src/lib/tauriBridge.ts';
@@ -133,6 +133,36 @@ test('schema-invalid primary falls back to backup and retains that backup on the
   if (saved.ok) await saveProjectToWorkspace(saved.project);
   const saves = calls.filter((item) => item.command === 'save_project_json');
   assert.equal(saves[1]?.args.retainBackup, false);
+});
+
+test('native 1.0 load, save and reopen migrates coordinates only once', async () => {
+  const legacy = structuredClone(SAMPLE_PROJECT);
+  Reflect.deleteProperty(legacy, 'schemaVersion');
+  legacy.nodes[0].characters[0].y = 30;
+  let payload = JSON.stringify({ magic: 'MPVN_STUDIO_PROJECT', format: 'mpvn', schemaVersion: '1.0.0', project: legacy });
+  mockTauri(async (command, args) => {
+    if (command === 'get_workspace_paths') return paths;
+    if (command === 'load_project_json') return { payload, path: `${paths.projectsDirectoryPath}/legacy.mpvn`, recovered_from_backup: false };
+    if (command === 'save_project_json') {
+      payload = String(args.payload);
+      return { ok: true, path: `${paths.projectsDirectoryPath}/legacy.mpvn`, bytes_written: payload.length };
+    }
+    throw new Error(`Unexpected command ${command}`);
+  });
+  const first = await loadProjectFromTauri('legacy.mpvn');
+  assert.equal(first.ok, true);
+  assert.equal(first.migrated, true);
+  assert.equal(first.migratedPlacements, 1);
+  assert.ok(first.data);
+  assert.equal(first.data.nodes[0].characters[0].y, 69);
+  assert.equal((await saveProjectToWorkspace(first.data)).ok, true);
+  const written = JSON.parse(payload);
+  assert.equal(written.schemaVersion, '1.1.0');
+  assert.equal(written.project.schemaVersion, '1.1.0');
+  const reopened = await loadProjectFromTauri('legacy.mpvn');
+  assert.equal(reopened.ok, true);
+  assert.equal(reopened.migrated, false);
+  assert.equal(reopened.data?.nodes[0].characters[0].y, 69);
 });
 
 test('overlapping saves are serialized and the newer revision is written last', async () => {

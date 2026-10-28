@@ -1,6 +1,7 @@
 import type { VNProject, BackgroundAsset, CharacterSpriteAsset } from '../types';
 import { BACKGROUND_ASSETS, CHARACTER_ASSETS } from '../data/assets';
 import { escapeHtmlText } from './vnRuntimeCore';
+import { CHARACTER_WIDTH_PERCENT } from './characterPlacement';
 
 export interface StandaloneAssetCatalog {
   backgrounds: BackgroundAsset[];
@@ -110,12 +111,11 @@ export function buildStandaloneGameHtml(
     }
     .layer-chars { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
     .char-actor-wrap {
-      position: absolute; transform: translate(-50%, -50%);
-      height: 78vh; display: flex; align-items: flex-end; justify-content: center;
+      position: absolute; width: ${CHARACTER_WIDTH_PERCENT}%; transform-origin: bottom center;
       transition: left 0.35s ease, top 0.35s ease, transform 0.35s ease, opacity 0.3s ease;
     }
     .char-sprite {
-      height: 100%; width: auto; object-fit: contain;
+      display: block; width: 100%; height: auto;
       filter: drop-shadow(0 16px 32px rgba(0,0,0,0.68));
       transform-origin: bottom center;
     }
@@ -690,9 +690,8 @@ export function buildStandaloneGameHtml(
         wrap.className = "char-actor-wrap";
         wrap.style.left = pl.x + "%";
         wrap.style.top = pl.y + "%";
-        wrap.style.height = (76 * (pl.scale || 1)) + "vh";
         wrap.style.opacity = pl.opacity != null ? pl.opacity : 1;
-        if (pl.flipX) wrap.style.transform = "translate(-50%, -50%) scaleX(-1)";
+        wrap.style.transform = "translate(-50%, -100%) scale(" + pl.scale + ")" + (pl.flipX ? " scaleX(-1)" : "");
 
         if (isVideoUrl(src, mediaType)) {
           const vid = document.createElement("video");

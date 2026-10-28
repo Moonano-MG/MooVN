@@ -32,6 +32,7 @@ import {
 import { generateSingleNodeCode } from '../lib/nodeCodeCompiler';
 import { soundEngine } from '../lib/soundEngine';
 import { importAsset } from '../lib/assetStore';
+import { newImageAvatar } from '../lib/avatarSystem';
 import { ScratchBlockTree } from './ScratchBlockTree';
 
 interface InspectorProps {
@@ -622,6 +623,9 @@ export const Inspector: React.FC<InspectorProps> = ({
 
             {characters.map((char) => {
               const attrDraft = newAttrInputs[char.id] || { key: '', val: '' };
+              const avatar = newImageAvatar({ baseTexture: char.mediaUrl, layerTextures: char.layerTextures });
+              const capability = avatar.getCapabilityLevel();
+              avatar.release();
               return (
                 <div
                   key={char.id}
@@ -668,6 +672,66 @@ export const Inspector: React.FC<InspectorProps> = ({
                         </option>
                       ))}
                     </select>
+                  </div>
+
+                  <div className="space-y-1.5 border-t border-[#272730] pt-2">
+                    <div className="flex items-center justify-between gap-2 text-[10px]">
+                      <span>角色档案分层</span>
+                      <span
+                        data-avatar-capability={capability}
+                        className={capability === 'L1_LAYERED' ? 'text-emerald-300' : 'text-amber-300'}
+                      >
+                        {capability === 'L1_LAYERED' ? 'L1 分层' : 'L0 静态'}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 text-[10px]">
+                      <label className="px-2 py-1 rounded bg-[#141418] border border-[#2c2c36] text-sky-300 cursor-pointer">
+                        {char.layerTextures?.eyes_closed ? '替换 eyes_closed' : '绑定 eyes_closed'}
+                        <input
+                          type="file"
+                          accept="image/png,image/webp,image/gif"
+                          aria-label={`为 ${char.name} 绑定 eyes_closed`}
+                          className="hidden"
+                          onChange={async (event) => {
+                            const file = event.target.files?.[0];
+                            event.target.value = '';
+                            if (!file) return;
+                            try {
+                              const reference = await importAsset(file);
+                              onUpdateCharacterProfile(char.id, (previous) => ({
+                                ...previous,
+                                layerTextures: { ...previous.layerTextures, eyes_closed: reference },
+                              }));
+                            } catch (error: unknown) {
+                              window.alert(error instanceof Error ? error.message : String(error));
+                            }
+                          }}
+                        />
+                      </label>
+                      {char.layerTextures?.eyes_closed && (
+                        <button
+                          type="button"
+                          className="px-2 py-1 rounded border border-rose-500/30 text-rose-300"
+                          onClick={() => onUpdateCharacterProfile(char.id, (previous) => {
+                            const layers = { ...previous.layerTextures };
+                            delete layers.eyes_closed;
+                            return { ...previous, layerTextures: layers };
+                          })}
+                        >
+                          解绑 eyes_closed
+                        </button>
+                      )}
+                    </div>
+                    {!char.layerTextures?.eyes_closed && (
+                      <div className="px-2 py-1 rounded bg-amber-950/35 border border-amber-500/30 text-[10px] text-amber-200">
+                        未绑定 eyes_closed；此角色档案的眨眼已停用。
+                      </div>
+                    )}
+                    {node.characters.some((placement) => placement.characterId === char.id && placement.layerTextures) && (
+                      <div className="text-[10px] text-amber-200">
+                        当前场景存在独立分层覆盖，舞台会优先使用该覆盖。
+                      </div>
+                    )}
                   </div>
 
                   {/* 角色媒体形式：静态图 / GIF动图 / MP4·WebM视频动画 & 待机律动 */}

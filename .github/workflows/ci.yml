@@ -32,6 +32,9 @@ jobs:
       - name: Install Web dependencies
         working-directory: MooVN Web
         run: npm ci
+      - name: Studio TypeScript check
+        working-directory: MooVN Studio
+        run: npx tsc --noEmit
       - name: Test and build Studio
         working-directory: MooVN Studio
         run: |
@@ -82,4 +85,19 @@ jobs:
           npm run build
       - name: Compile Tauri and run native tests
         working-directory: MooVN Studio/src-tauri
-        run: cargo test
+        shell: pwsh
+        env:
+          CARGO_TERM_COLOR: never
+        run: |
+          # Keep the real exit status; publish a diagnostic annotation so the
+          # failure is visible even when a reviewer lacks Actions-log access.
+          $ErrorActionPreference = 'Continue'
+          $log = Join-Path $env:RUNNER_TEMP 'tauri-cargo-test.log'
+          cargo test 2>&1 | Tee-Object -FilePath $log
+          $status = $LASTEXITCODE
+          if ($null -eq $status) { throw 'cargo test did not return an exit status' }
+          if ($status -ne 0) {
+            $summary = ((Get-Content $log | Select-Object -Last 60) -join "`n").Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+            Write-Output "::error title=Windows Tauri cargo test failed::$summary"
+            exit $status
+          }

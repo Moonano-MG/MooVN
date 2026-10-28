@@ -263,6 +263,25 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   游戏运行默认参数
                 </div>
 
+                <label className="block text-[11px] text-zinc-300 space-y-1">
+                  <span>立绘动态（不影响视频或天气）</span>
+                  <select
+                    aria-label="立绘动态"
+                    value={settings.defaultGameSettings.motionLevel === 'off' ? 'off' : 'subtle'}
+                    onChange={(e) => setSettings({
+                      ...settings,
+                      defaultGameSettings: {
+                        ...settings.defaultGameSettings,
+                        motionLevel: e.target.value === 'off' ? 'off' : 'subtle',
+                      },
+                    })}
+                    className="block w-full px-2 py-1"
+                  >
+                    <option value="off">关闭</option>
+                    <option value="subtle">允许分层眨眼与已启用的微呼吸</option>
+                  </select>
+                </label>
+
                 <div>
                   <div className="flex justify-between text-[11px] text-zinc-300 mb-1">
                     <span>默认文字打字机速度</span>

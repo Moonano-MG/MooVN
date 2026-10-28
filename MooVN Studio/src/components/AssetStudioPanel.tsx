@@ -26,6 +26,7 @@ import { CharacterMediaRenderer } from './CharacterMediaRenderer';
 interface AssetStudioPanelProps {
   project: VNProject;
   selectedNode: SceneNode | undefined;
+  motionLevel?: 'off' | 'subtle' | 'full';
   onUpdateNode: (nodeId: string, patch: Partial<SceneNode>) => void;
   onUpdateProject: (patch: Partial<VNProject>) => void;
 }
@@ -48,6 +49,7 @@ const LAYER_LABELS: Record<AvatarLayerId, { label: string; requiredForL1?: boole
 export const AssetStudioPanel: React.FC<AssetStudioPanelProps> = ({
   project,
   selectedNode,
+  motionLevel = 'subtle',
   onUpdateNode,
   onUpdateProject,
 }) => {
@@ -732,6 +734,7 @@ export const AssetStudioPanel: React.FC<AssetStudioPanelProps> = ({
                   blinkEnabled={testBlink}
                   isTalking={testTalking}
                   idleMotion={testBreathe ? 'breathe' : 'none'}
+                  motionLevel={motionLevel}
                   className="h-48 w-auto"
                 />
               </div>

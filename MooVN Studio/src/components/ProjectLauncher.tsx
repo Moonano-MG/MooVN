@@ -103,7 +103,11 @@ export const ProjectLauncher: React.FC<ProjectLauncherProps> = ({
       if (result.recoveredFromBackup) {
         window.alert('工程主文件无法读取，已从备份或旧缓存恢复；请检查内容后手动保存。');
       }
-      onOpenProject(result.project, result.recoveredFromBackup ? undefined : IS_WEB_EDITION ? 'browser' : 'file', result.recoveredFromBackup);
+      if (result.migrated) {
+        window.alert(`已将旧工程迁移至 1.1 脚底锚点（${result.migratedPlacements || 0} 处使用约 39% 的偏移）。请检查位置后手动保存；源文件在保存前不会改写。`);
+      }
+      const needsReview = Boolean(result.recoveredFromBackup || result.migrated);
+      onOpenProject(result.project, needsReview ? undefined : IS_WEB_EDITION ? 'browser' : 'file', needsReview);
     } catch (error: unknown) {
       setNotice(error instanceof Error ? error.message : String(error));
     }
@@ -126,8 +130,11 @@ export const ProjectLauncher: React.FC<ProjectLauncherProps> = ({
     reader.onload = () => {
       const res = parseMpvnProject(String(reader.result));
       if (res.ok && res.project) {
-        // Import is a copy. It must not overwrite a prior workspace file without a save.
-        onOpenProject({ ...res.project, projectPath: undefined });
+        if (res.migrated) {
+          window.alert(`已将旧工程迁移至 1.1 脚底锚点（${res.migratedPlacements || 0} 处使用约 39% 的偏移）。请检查位置后手动保存。`);
+        }
+        // Import is a copy. Do not let autosave overwrite an existing project with the same ID.
+        onOpenProject({ ...res.project, projectPath: undefined }, undefined, true);
       } else {
         setNotice(res.error || '项目文件解析失败');
       }

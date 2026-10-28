@@ -448,6 +448,7 @@ export function App({
   const [isWindowOverviewOpen, setIsWindowOverviewOpen] = useState(false);
   const [isLauncherOpen, setIsLauncherOpen] = useState(true);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [motionLevel, setMotionLevel] = useState(() => loadSystemSettings().defaultGameSettings.motionLevel || 'subtle');
   const lastSavedProjectRef = useRef<VNProject | null>(null);
   const currentProjectRef = useRef(project);
   currentProjectRef.current = project;
@@ -1333,6 +1334,7 @@ export function App({
             node={selectedNode}
             characters={project.characters}
             uiConfig={project.uiConfig}
+            motionLevel={motionLevel}
             selectedDialogueIndex={selectedDialogueIndex}
             onSelectDialogueIndex={setSelectedDialogueIndex}
             selectedCharacterPlacementId={selectedCharacterPlacementId}
@@ -1452,6 +1454,7 @@ export function App({
           <AssetStudioPanel
             project={project}
             selectedNode={selectedNode}
+            motionLevel={motionLevel}
             onUpdateNode={(nodeId, patch) =>
               updateNode(nodeId, (prev) => ({ ...prev, ...patch }))
             }
@@ -1890,6 +1893,7 @@ export function App({
                 node={selectedNode}
                 characters={project.characters}
                 uiConfig={project.uiConfig}
+                motionLevel={motionLevel}
                 selectedDialogueIndex={selectedDialogueIndex}
                 onSelectDialogueIndex={setSelectedDialogueIndex}
                 selectedCharacterPlacementId={selectedCharacterPlacementId}
@@ -2357,6 +2361,7 @@ export function App({
         <PreviewPlayer
           project={project}
           initialNodeId={selectedNodeId || project.startNodeId}
+          motionLevel={motionLevel}
           onClose={() => setIsPlayingPreview(false)}
         />
       )}
@@ -2397,7 +2402,10 @@ export function App({
         <SettingsModal
           project={project}
           onUpdateProject={updateProjectMeta}
-          onClose={() => setIsSettingsOpen(false)}
+          onClose={() => {
+            setMotionLevel(loadSystemSettings().defaultGameSettings.motionLevel || 'subtle');
+            setIsSettingsOpen(false);
+          }}
         />
       )}
     </div>
