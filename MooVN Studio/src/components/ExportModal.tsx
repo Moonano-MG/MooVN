@@ -4,24 +4,27 @@ import type { GamePerformanceConfig, VNProject } from '../types';
 import { buildStandaloneGameHtml, createStandaloneAssetCatalog } from '../lib/gamePackager';
 import { DEFAULT_PERFORMANCE_CONFIG, downloadChapterMsvnFile } from '../lib/assetCompressionEngine';
 import { exportProjectAsMpvn } from '../lib/mpvnFormat';
-import { compileAndCheckProjectTypeScript } from '../lib/nodeCodeCompiler';
+import { checkProjectGraph } from '../lib/nodeCodeCompiler';
 import { ASSET_PREFIX, hydrateAssetsForHtmlExport } from '../lib/assetStore';
+import { validateStandaloneHtmlProject } from '../lib/htmlExportValidation';
 
 interface ExportModalProps {
   project: VNProject;
   onClose: () => void;
+  onLocateNode: (nodeId: string) => void;
   onUpdateProjectPerformance?: (perf: GamePerformanceConfig) => void;
 }
 
 type ExportTab = 'package' | 'msvn' | 'mpvn';
 
-export const ExportModal: React.FC<ExportModalProps> = ({ project, onClose, onUpdateProjectPerformance }) => {
+export const ExportModal: React.FC<ExportModalProps> = ({ project, onClose, onLocateNode, onUpdateProjectPerformance }) => {
   const [activeTab, setActiveTab] = useState<ExportTab>('package');
   const [name, setName] = useState(project.title);
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [perf, setPerf] = useState<GamePerformanceConfig>(project.performanceConfig || DEFAULT_PERFORMANCE_CONFIG);
-  const graphCheck = useMemo(() => compileAndCheckProjectTypeScript(project), [project]);
+  const graphCheck = useMemo(() => checkProjectGraph(project), [project]);
+  const htmlIssues = useMemo(() => validateStandaloneHtmlProject(project), [project]);
 
   const updateCompressionLevel = (level: number) => {
     const next = { ...perf, compressionFormat: 'moovn_lz77' as const, compressionLevel: level };
@@ -46,6 +49,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ project, onClose, onUp
   };
 
   const exportHtml = () => runExport(async () => {
+    if (htmlIssues.length) throw new Error('工程包含尚未支持的内容，请先处理下方问题。');
     const hydrated = await hydrateAssetsForHtmlExport(project);
     const catalog = await createStandaloneAssetCatalog(project);
     const html = buildStandaloneGameHtml({ ...hydrated, performanceConfig: perf }, catalog);
@@ -59,7 +63,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ project, onClose, onUp
   });
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 select-none">
+    <div className="fixed inset-0 z-[600] bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 select-none">
       <div className="w-full max-w-3xl bg-[#161619] border border-[#27272c] rounded-lg shadow-2xl overflow-hidden flex flex-col max-h-[88vh]">
         <div className="flex items-center justify-between px-4 py-2.5 bg-[#121215] border-b border-[#27272c] shrink-0">
           <div className="flex items-center gap-3 flex-wrap">
@@ -88,8 +92,16 @@ export const ExportModal: React.FC<ExportModalProps> = ({ project, onClose, onUp
           {activeTab === 'package' && <div className="space-y-3">
             <div className="p-3 rounded bg-[#1c1c20] border border-[#27272c] space-y-1">
               <div className="font-semibold text-zinc-100">HTML5 单文件</div>
-              <p className="text-zinc-400">导出包含当前内置图片和外置角色媒体的 HTML 文件。Windows、macOS、Android 和 iOS 原生安装包尚未实现。HTML 播放器仅支持部分节点，尚不等同于编辑器预览。</p>
+              <p className="text-zinc-400">仅支持经过下方检查的基础台词、叙述和无条件选项。音频、条件分支、结束画面、分层动画等尚未实现，遇到未支持内容会阻止导出。原生安装包尚未实现。</p>
             </div>
+            {htmlIssues.length > 0 && <div role="alert" className="p-3 rounded border border-rose-500/40 text-rose-200 space-y-1">
+              <strong>HTML 导出已阻止：{htmlIssues.length} 项待处理</strong>
+              <ul className="max-h-48 overflow-y-auto space-y-1">
+                {htmlIssues.map((item, index) => <li key={`${item.nodeId || 'project'}-${index}`} className="break-words">
+                  {item.nodeId ? <button type="button" onClick={() => onLocateNode(item.nodeId!)} className="text-sky-300 underline text-left">{item.nodeTitle || item.nodeId} ({item.nodeId})</button> : '工程'}：{item.message}
+                </li>)}
+              </ul>
+            </div>}
             <label className="block text-zinc-400">文件名称
               <input value={name} onChange={(event) => setName(event.target.value)} className="w-full mt-1 px-2.5 py-1.5 text-xs" />
             </label>
@@ -100,7 +112,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ project, onClose, onUp
                 <input type="range" min={0} max={9} value={perf.compressionLevel} onChange={(event) => updateCompressionLevel(Number(event.target.value))} />
               </label>
             </div>
-            <button type="button" disabled={busy} onClick={() => void exportHtml()} className="px-4 py-2 rounded bg-zinc-200 text-zinc-950 font-semibold inline-flex items-center gap-1.5 disabled:opacity-50">
+            <button type="button" disabled={busy || htmlIssues.length > 0} onClick={() => void exportHtml()} className="px-4 py-2 rounded bg-zinc-200 text-zinc-950 font-semibold inline-flex items-center gap-1.5 disabled:opacity-50">
               <Download className="w-3.5 h-3.5" /> 导出 HTML5
             </button>
           </div>}

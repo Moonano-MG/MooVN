@@ -43,7 +43,7 @@ interface MenuBarProps {
   onDockWindowAtDirection?: (id: PanelId, dir: DockDirection) => void;
   onOpenOrFocusWindow: (id: PanelId, mode?: 'dock' | 'float') => void;
   onToggleDockFloat: (id: PanelId) => void;
-  onApplyLayoutPreset?: (preset: 'default_ide') => void;
+  floatingEnabled: boolean;
   onResetLayout: () => void;
   onPlayPreview: () => void;
   onOpenExportModal: () => void;
@@ -66,6 +66,7 @@ export const MenuBar: React.FC<MenuBarProps> = ({
   onDockWindowAtDirection,
   onOpenOrFocusWindow,
   onToggleDockFloat,
+  floatingEnabled,
   onResetLayout,
   onPlayPreview,
   onOpenExportModal,
@@ -76,7 +77,7 @@ export const MenuBar: React.FC<MenuBarProps> = ({
   const [showWindowMenu, setShowWindowMenu] = useState(false);
 
   return (
-    <header className="min-h-9 py-1 bg-[#141417] border-b border-[#27272c] px-2.5 flex flex-wrap items-center justify-between gap-2 select-none text-xs shrink-0 z-50">
+    <header className="min-h-9 py-1 bg-[#141417] border-b border-[#27272c] px-2.5 flex flex-wrap items-center justify-between gap-2 select-none text-xs shrink-0 z-[400]">
       {/* Left: Brand, Project, Undo/Redo, Layout & Inspector */}
       <div className="flex flex-wrap items-center gap-1.5 min-w-0">
         <span className="font-semibold text-zinc-100 tracking-wide px-1.5">
@@ -286,6 +287,8 @@ export const MenuBar: React.FC<MenuBarProps> = ({
                         )}
 
                         <button
+                          disabled={!floatingEnabled && !p.floating}
+                          title={!floatingEnabled && !p.floating ? '请先开启实验性悬浮窗口' : undefined}
                           onClick={() => onToggleDockFloat(p.id)}
                           className={`px-1.5 py-0.5 rounded text-[10px] border transition ml-1 ${
                             p.floating

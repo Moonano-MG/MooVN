@@ -1,0 +1,13 @@
+
+> moovn-studio@0.1.0 test:e2e
+> node --experimental-strip-types tests/browser-smoke.mjs
+
+✓ unsupported HTML export is blocked
+✓ script rename, preview, apply and protected restore
+✓ pure chat does not create actions; Agent creates a node only on confirmation
+✓ 900×560 dock defaults, experimental windows and modal layering
+✓ L0 observed for 10s; missing layer upload and motion-off body
+✓ real WebM plays, then pauses when motion is off
+✓ system reduced-motion is applied
+✓ HTML dialogue, save-slot and backlog payloads remain inert text
+Browser smoke passed; screenshots: /home/user/MooVN/review-evidence/2026-10-28

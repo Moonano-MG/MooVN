@@ -47,7 +47,7 @@ import {
 } from '../src/lib/projectUtils.ts';
 
 import {
-  compileAndCheckProjectTypeScript,
+  checkProjectGraph,
   normalizeConditionForCtx,
 } from '../src/lib/nodeCodeCompiler.ts';
 
@@ -205,6 +205,9 @@ test('3. Save Integrity & HTML Escaping & Real LZ77 Byte Compression', () => {
   assert.equal(verifySaveRecord({ ...record, affectionMap: { ayase: 999 } }), false);
   assert.equal(verifySaveRecord({ ...record, globalVars: { key: false } }), false);
   assert.equal(verifySaveRecord({ ...record, nodeId: 'hacked_node' }), false);
+  // An attacker can recalculate the public checksum after modifying data.
+  const forged = createVerifiedSaveRecord({ ...record, affectionMap: { ayase: 999 } });
+  assert.equal(verifySaveRecord(forged), true);
 
   // Missing checksum must fail verification (`Kimi 1N`)
   const withoutChecksum = { ...record, checksumFnv64: '' };
@@ -248,7 +251,7 @@ test('4. YAML Schema Round-Trip & TS String Escaping & Node Compiler Diagnostics
   assert.equal(normCond, '(ctx.affection["protagonist"] ?? 0) >= 50');
 
   // Verify honest MVN diagnostics and real line numbers (`GPT-12`, `Kimi 2F`, `2G`)
-  const report = compileAndCheckProjectTypeScript(testProject);
+  const report = checkProjectGraph(testProject);
   assert.equal(report.errorCount, 0);
   assert.ok(report.lineCount > 10);
 });
@@ -310,10 +313,9 @@ test('6. Layered Avatar L0 vs L1 Honesty & Live2D SDK Guard', () => {
   const closedRule = parseExpressionSpec('blink', 'eyes=closed; mouth=neutral');
   assert.equal(closedRule.eyes, 'closed');
 
-  // Breathing & Lip-sync
-  l1Avatar.setBreathingEnabled(true);
+  // No whole-body breathing; lip-sync uses independent discrete layers.
   l1Avatar.update(0.05);
-  assert.ok(l1Avatar.getLayer('body').scaleY <= 1.008);
+  assert.equal(l1Avatar.getLayer('body').scaleY, 1);
 
   l1Avatar.setTalking(true);
   assert.equal(l1Avatar.getLayer('mouth_talk_a').visible, true);
@@ -347,10 +349,10 @@ test('7. Window Manager Clamping, Z-Index Normalization & Split Ratios', () => {
     280,
     200
   );
-  assert.ok(clamped1280.x >= 8);
-  assert.ok(clamped1280.y >= 44);
-  assert.ok(clamped1280.x + clamped1280.width <= 1280 - 8);
-  assert.ok(clamped1280.y + clamped1280.height <= 800 - 32);
+  assert.ok(clamped1280.x < 0, 'negative X is permitted');
+  assert.ok(clamped1280.x + clamped1280.width >= 168, '48px grab area plus title-bar buttons remain visible');
+  assert.ok(clamped1280.x <= 1280 - 48);
+  assert.ok(clamped1280.y >= 0 && clamped1280.y <= 800 - 32);
 
   const clamped900 = clampAllFloatingWindows(
     [
@@ -358,9 +360,9 @@ test('7. Window Manager Clamping, Z-Index Normalization & Split Ratios', () => {
     ],
     { width: 900, height: 560 }
   );
-  assert.ok(clamped900[0].x >= 8);
-  assert.ok(clamped900[0].x + clamped900[0].width <= 900 - 8);
-  assert.ok(clamped900[0].y + clamped900[0].height <= 560 - 32);
+  assert.ok(clamped900[0].x <= 900 - 48);
+  assert.ok(clamped900[0].x + clamped900[0].width >= 168);
+  assert.ok(clamped900[0].y >= 0 && clamped900[0].y <= 560 - 32);
 
   // Z-Index normalization (`Kimi 3E`, `GPT-49`)
   const normalized = normalizeWindowZIndices(
@@ -393,14 +395,14 @@ test('7. Window Manager Clamping, Z-Index Normalization & Split Ratios', () => {
   assert.ok(900 - splits.leftWidth - splits.rightWidth >= 320);
 });
 
-test('8. i18n Completeness Across All 4 Locales (zh-CN, zh-TW, en-US, ja-JP)', () => {
+test('8. Shared i18n dictionary keys (not full panel translation)', () => {
   const missing = getMissingI18nKeys();
   assert.deepEqual(missing, [], `Missing i18n keys found: ${JSON.stringify(missing)}`);
   assert.equal(translateUI('left.tabNodes', 'en-US'), 'Nodes');
   assert.equal(translateUI('status.nodes', 'ja-JP'), 'シーンノード');
 });
 
-test('9. Cross-Language Save Checksum Parity (TS <-> Rust v2 Canonical Format, GPT-59)', () => {
+test('9. Legacy TypeScript v2 canonical English sample (not cross-language parity)', () => {
   const canonical = serializeSaveCanonical({
     slotKey: 'Slot_01',
     chapterId: 'ch-1',
@@ -422,7 +424,7 @@ test('9. Cross-Language Save Checksum Parity (TS <-> Rust v2 Canonical Format, G
     canonical,
     'v2|slot=Slot_01|ch=ch-1|node=node_opening|dlg=2|bg=bg-station|bgm=bgm-main|vars=[key=true]|aff=[ayase=15]'
   );
-  // 64-bit FNV-1a hex matches Rust `SaveSlotRecord::checksum_hex()` byte-for-byte
+  // A single English example does not establish cross-language compatibility.
   const hex = computeFnv1a64Hex(canonical);
   assert.equal(hex.length, 16);
   assert.notEqual(hex, '0000000000000000');

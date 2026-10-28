@@ -14,7 +14,6 @@ import {
 } from 'lucide-react';
 import { CHARACTER_ASSETS } from '../data/assets';
 import type { AvatarLayerTextureMap, SceneNode, VNProject } from '../types';
-import { syncWriteToRealWorkspaceDisk } from '../lib/workspaceManager';
 import {
   ALL_AVATAR_LAYER_IDS,
   AvatarLayerId,
@@ -76,7 +75,6 @@ export const AssetStudioPanel: React.FC<AssetStudioPanelProps> = ({
   );
   const [testTalking, setTestTalking] = useState<boolean>(false);
   const [testBlink, setTestBlink] = useState<boolean>(true);
-  const [testBreathe, setTestBreathe] = useState<boolean>(false);
   const [layerUploadStatus, setLayerUploadStatus] = useState<string>('');
 
   const selectedCharacter = useMemo(
@@ -322,12 +320,11 @@ export const AssetStudioPanel: React.FC<AssetStudioPanelProps> = ({
     if (!canvas) return;
     const dataUrl = canvas.toDataURL('image/png');
     const fileName = `${selectedSpriteId}-matted.png`;
-    await syncWriteToRealWorkspaceDisk('Exports', fileName, dataUrl);
     const a = document.createElement('a');
     a.href = dataUrl;
     a.download = fileName;
     a.click();
-    setMattingStatus(`已导出透明 PNG 并同步至工作区 Exports/${fileName}`);
+    setMattingStatus(`已发起透明 PNG 下载：${fileName}`);
   };
 
   const handleUpdateCharacterLayer = (layerId: AvatarLayerId, dataUrl: string | undefined) => {
@@ -654,7 +651,7 @@ export const AssetStudioPanel: React.FC<AssetStudioPanelProps> = ({
 
             {/* Honest Live2D SDK status (`GPT-16`, `Kimi 2B`) */}
             <div className="flex items-center justify-between pt-1 border-t border-[#232329] text-[10px] text-zinc-400">
-              <span>L2 Live2D / Spine 骨骼后端：</span>
+              <span>L3 Live2D / Spine 骨骼后端：</span>
               <span className="text-zinc-500">
                 {isLive2DBackendRegistered()
                   ? '已注册 Live2D SDK'
@@ -673,17 +670,17 @@ export const AssetStudioPanel: React.FC<AssetStudioPanelProps> = ({
                 <div className="flex items-center gap-1.5">
                   <button
                     type="button"
-                    disabled={!avatarDiagnostic.hasL1}
+                    disabled={!selectedCharacter.layerTextures?.eyes_closed}
                     onClick={() => setTestBlink((v) => !v)}
                     className={`px-2 py-0.5 rounded text-[10px] border flex items-center gap-1 ${
-                      !avatarDiagnostic.hasL1
+                      !selectedCharacter.layerTextures?.eyes_closed
                         ? 'opacity-40 cursor-not-allowed border-zinc-700 text-zinc-500'
                         : testBlink
                         ? 'border-sky-500 bg-sky-500/20 text-sky-300'
                         : 'border-zinc-700 text-zinc-400'
                     }`}
                     title={
-                      avatarDiagnostic.hasL1
+                      selectedCharacter.layerTextures?.eyes_closed
                         ? '切换随机眨眼 (2~6s)'
                         : '需先绑定 eyes_closed 图层才可启用眨眼'
                     }
@@ -693,35 +690,23 @@ export const AssetStudioPanel: React.FC<AssetStudioPanelProps> = ({
                   </button>
                   <button
                     type="button"
-                    disabled={!avatarDiagnostic.hasL1}
+                    disabled={!selectedCharacter.layerTextures?.mouth_talk_a}
                     onClick={() => setTestTalking((v) => !v)}
                     className={`px-2 py-0.5 rounded text-[10px] border flex items-center gap-1 ${
-                      !avatarDiagnostic.hasL1
+                      !selectedCharacter.layerTextures?.mouth_talk_a
                         ? 'opacity-40 cursor-not-allowed border-zinc-700 text-zinc-500'
                         : testTalking
                         ? 'border-emerald-500 bg-emerald-500/20 text-emerald-300'
                         : 'border-zinc-700 text-zinc-400'
                     }`}
                     title={
-                      avatarDiagnostic.hasL1
+                      selectedCharacter.layerTextures?.mouth_talk_a
                         ? '测试 120ms 文本口型联动'
                         : '需先绑定 mouth_talk_a 图层才可测试口型'
                     }
                   >
                     <MessageSquare className="w-3 h-3" />
                     <span>测试说话口型</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setTestBreathe((v) => !v)}
-                    className={`px-2 py-0.5 rounded text-[10px] border ${
-                      testBreathe
-                        ? 'border-purple-500 bg-purple-500/20 text-purple-300'
-                        : 'border-zinc-700 text-zinc-400'
-                    }`}
-                    title="底部锚点微呼吸 (ScaleY ≤ 1.008)"
-                  >
-                    微呼吸
                   </button>
                 </div>
               </div>
@@ -733,7 +718,6 @@ export const AssetStudioPanel: React.FC<AssetStudioPanelProps> = ({
                   layerTextures={selectedCharacter.layerTextures}
                   blinkEnabled={testBlink}
                   isTalking={testTalking}
-                  idleMotion={testBreathe ? 'breathe' : 'none'}
                   motionLevel={motionLevel}
                   className="h-48 w-auto"
                 />

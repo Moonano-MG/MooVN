@@ -61,8 +61,9 @@ export function getResponsiveLayoutMode(viewportWidth: number): ResponsiveLayout
 }
 
 /**
- * Clamps a floating window rectangle so its title bar and borders remain strictly
- * inside the visible viewport (`x >= 8`, `y >= 44`, `right <= viewport.width - 8`, `bottom <= viewport.height - 32`).
+ * Keep at least 48×32 px of the draggable title bar in the viewport. The left
+ * boundary reserves extra room for the right-hand title-bar buttons, so a window
+ * may extend to negative X without leaving only buttons available to grab.
  */
 export function clampFloatingRect(
   rect: FloatingWindowRect,
@@ -83,14 +84,15 @@ export function clampFloatingRect(
     Math.min(maxH, Math.max(minH, Number.isFinite(rect.height) ? rect.height : 420))
   );
 
-  const maxX = Math.max(8, vw - width - 8);
-  const maxY = Math.max(44, vh - height - 32);
+  const minX = Math.min(0, 168 - width); // 48 px grab area + room for right-side controls
+  const maxX = Math.max(minX, vw - 48);
+  const maxY = Math.max(0, vh - 32);
 
   const x = Math.round(
-    Math.min(maxX, Math.max(8, Number.isFinite(rect.x) ? rect.x : 120))
+    Math.min(maxX, Math.max(minX, Number.isFinite(rect.x) ? rect.x : 120))
   );
   const y = Math.round(
-    Math.min(maxY, Math.max(44, Number.isFinite(rect.y) ? rect.y : 72))
+    Math.min(maxY, Math.max(0, Number.isFinite(rect.y) ? rect.y : 72))
   );
 
   return { x, y, width, height };

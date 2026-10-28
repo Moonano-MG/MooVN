@@ -1,3 +1,5 @@
+import aiEndpoints from '../../ai-endpoints.json' with { type: 'json' };
+
 export const ALLOWED_WORKSPACE_SUBFOLDERS = new Set([
   'Projects',
   'Exports',
@@ -20,15 +22,7 @@ export const ALLOWED_WRITE_EXTENSIONS = new Set([
   '.txt',
 ]);
 
-export const ALLOWED_AI_UPSTREAM_HOSTS = new Set([
-  'api.openai.com',
-  'api.deepseek.com',
-  'api.anthropic.com',
-  'generativelanguage.googleapis.com',
-  'openrouter.ai',
-  'api.siliconflow.cn',
-  'dashscope.aliyuncs.com',
-]);
+export const ALLOWED_AI_UPSTREAM_HOSTS = new Set(aiEndpoints.externalHttpsHosts);
 
 export interface SafeWriteValidationResult {
   ok: boolean;
@@ -160,7 +154,7 @@ export function validateSafeAiProxyEndpoint(
     return {
       ok: false,
       code: 'ERR_INVALID_URL',
-      error: 'Endpoint is not a valid URL.',
+      error: '地址格式无效，请填写完整的 HTTPS 地址。',
     };
   }
 
@@ -172,13 +166,17 @@ export function validateSafeAiProxyEndpoint(
     };
   }
 
+  if (parsed.search || parsed.hash) {
+    return { ok: false, code: 'ERR_URL_QUERY_FORBIDDEN', error: '地址不能包含查询参数或片段，请填写服务商的基础地址。' };
+  }
+
   const host = parsed.hostname.toLowerCase();
 
   if (providerType === 'ollama_local') {
     const isLocalOllama =
       (host === '127.0.0.1' || host === 'localhost') &&
-      (parsed.port === '11434' || parsed.port === '') &&
-      (parsed.protocol === 'http:' || parsed.protocol === 'https:');
+      parsed.port === '11434' && parsed.protocol === 'http:' &&
+      aiEndpoints.localOllamaOrigins.includes(parsed.origin);
     if (!isLocalOllama) {
       return {
         ok: false,
@@ -193,15 +191,19 @@ export function validateSafeAiProxyEndpoint(
     return {
       ok: false,
       code: 'ERR_HTTPS_REQUIRED',
-      error: 'External AI provider endpoint must use HTTPS.',
+      error: '外部 AI 服务必须使用 HTTPS。',
     };
+  }
+
+  if (parsed.port) {
+    return { ok: false, code: 'ERR_AI_PORT_FORBIDDEN', error: '外部服务仅支持 HTTPS 默认端口。' };
   }
 
   if (isPrivateOrLoopbackHost(host)) {
     return {
       ok: false,
       code: 'ERR_SSRF_PRIVATE_HOST_BLOCKED',
-      error: 'Requests to private, loopback, or link-local addresses are blocked.',
+      error: '不能向内网、回环或链路本地地址发送密钥。',
     };
   }
 
@@ -209,7 +211,7 @@ export function validateSafeAiProxyEndpoint(
     return {
       ok: false,
       code: 'ERR_UPSTREAM_HOST_NOT_ALLOWED',
-      error: `Upstream host '${host}' is not in the approved AI provider allowlist.`,
+      error: `服务商 ${host} 不在允许列表中；请求未发送。`,
     };
   }
 

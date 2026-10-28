@@ -1,0 +1,15 @@
+{
+  "externalHttpsHosts": [
+    "api.openai.com",
+    "api.deepseek.com",
+    "api.anthropic.com",
+    "generativelanguage.googleapis.com",
+    "openrouter.ai",
+    "api.siliconflow.cn",
+    "dashscope.aliyuncs.com"
+  ],
+  "localOllamaOrigins": [
+    "http://127.0.0.1:11434",
+    "http://localhost:11434"
+  ]
+}

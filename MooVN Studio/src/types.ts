@@ -632,6 +632,9 @@ export interface AiChatMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
   timestamp: string;
+  /** True only when this response was requested in Agent mode. */
+  allowAgentActions?: boolean;
+  targetNodeId?: string;
   modelCardTitle?: string;
   usedKeyBadge?: string;
   appliedActions?: string[];

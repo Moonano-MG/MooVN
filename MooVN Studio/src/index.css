@@ -241,3 +241,13 @@ input[type="radio"] {
 .moovn-shake-heavy {
   animation: moovn-camera-shake-heavy 0.48s ease-out 1 forwards;
 }
+
+/* Respect the user's motion setting and system preference throughout the editor
+   and preview. Character videos/images are paused or snapshotted separately. */
+[data-motion-off="true"] *,
+[data-motion-off="true"] *::before,
+[data-motion-off="true"] *::after {
+  animation: none !important;
+  transition: none !important;
+  scroll-behavior: auto !important;
+}

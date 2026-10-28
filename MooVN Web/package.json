@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "license": "GPL-3.0-only",
-  "description": "MooVN Studio — Cross-Platform Visual Novel IDE & GitHub Release Portal (TypeScript + Tauri 2 + Pixi.js + YAML)",
+  "description": "MooVN Studio — Cross-Platform Visual Novel IDE & GitHub Release Portal (TypeScript + Tauri 2 + YAML)",
   "type": "module",
   "scripts": {
     "dev": "vite --port 5173",
@@ -15,14 +15,15 @@
     "tauri:build": "tauri build",
     "tauri:android:init": "tauri android init",
     "tauri:android:dev": "tauri android dev",
-    "tauri:ios:init": "tauri ios init"
+    "tauri:ios:init": "tauri ios init",
+    "pretest": "node ../\"MooVN Studio\"/scripts/check-node-version.mjs"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "yaml": "^2.6.1",
-    "zod": "^3.25.76"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
@@ -33,5 +34,8 @@
     "tailwindcss": "^4.3.3",
     "typescript": "~5.6.2",
     "vite": "^6.0.5"
+  },
+  "engines": {
+    "node": ">=22.6.0"
   }
 }

@@ -187,6 +187,9 @@ fn translate_polyglot_script(
     let dst_lang = SourceLanguage::from_tag(&to_lang);
     let (program, diagnostics) = PolyglotTranslator::compile_to_ir(&source_code, src_lang);
     let code = PolyglotTranslator::transpile(&program, dst_lang);
+    let diagnostics = diagnostics.into_iter()
+        .map(|item| format!("line {}: {} ({})", item.line, item.message, item.normalized_token))
+        .collect();
     Ok(TranslationCommandResult { code, diagnostics })
 }
 

@@ -16,6 +16,7 @@ import { getBackgroundById, getCharacterById, getAudioById } from '../data/asset
 import { soundEngine } from '../lib/soundEngine';
 import { CharacterMediaRenderer } from './CharacterMediaRenderer';
 import { characterPlacementStyle } from '../lib/characterPlacement';
+import { useReducedMotion } from '../lib/useReducedMotion';
 
 interface PreviewPlayerProps {
   project: VNProject;
@@ -45,6 +46,8 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
   motionLevel = 'subtle',
   onClose,
 }) => {
+  const reducedMotion = useReducedMotion();
+  const motionOff = motionLevel === 'off' || reducedMotion;
   const [screenMode, setScreenMode] = useState<'main_menu' | 'playing'>(
     initialNodeId ? 'playing' : 'main_menu'
   );
@@ -313,7 +316,7 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
     if (screenMode !== 'playing' || !currentLine) return;
     const full = currentLine.text;
 
-    if (isSkipMode) {
+    if (isSkipMode || motionOff) {
       setTypedText(full);
       setIsTyping(false);
       return;
@@ -333,7 +336,7 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
     }, textSpeedMs);
 
     return () => clearInterval(timer);
-  }, [currentNodeId, dialogueIndex, currentLine, screenMode, textSpeedMs, isSkipMode]);
+  }, [currentNodeId, dialogueIndex, currentLine, screenMode, textSpeedMs, isSkipMode, motionOff]);
 
   const evaluateCondition = useCallback((): string | null => {
     const rule = currentNode.conditionRule;
@@ -475,7 +478,7 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
   const menuHero = ui.mainMenu.heroCharacterSpriteId ? getCharacterById(ui.mainMenu.heroCharacterSpriteId) : null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black flex flex-col select-none overflow-hidden">
+    <div className="fixed inset-0 z-[600] bg-black flex flex-col select-none overflow-hidden">
       {/* Top Bar */}
       <div className="min-h-9 py-1 bg-[#18181b] border-b border-[#2b2b30] px-2.5 sm:px-4 flex flex-wrap items-center justify-between gap-1.5 text-xs text-slate-300 shrink-0">
         <div className="flex flex-wrap items-center gap-1.5 sm:gap-3">

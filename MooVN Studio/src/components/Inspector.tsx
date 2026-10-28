@@ -514,7 +514,7 @@ export const Inspector: React.FC<InspectorProps> = ({
                         : 'text-zinc-500'
                     }`}
                   >
-                    TypeScript (严格编译)
+                    TypeScript（代码编辑；无编译器）
                   </button>
                 </div>
               </div>
@@ -560,7 +560,7 @@ export const Inspector: React.FC<InspectorProps> = ({
                     customScript: e.target.value,
                   }))
                 }
-                placeholder="// 编写自定义 JS/TS 逻辑，可在终端或脚本编辑器中通过 tsc 校验..."
+                placeholder="// 编写自定义 JS/TS 逻辑，工程图检查不校验此脚本的语法或类型..."
                 className="w-full p-2 rounded font-mono text-[11px] leading-relaxed"
               />
             </div>
@@ -684,49 +684,40 @@ export const Inspector: React.FC<InspectorProps> = ({
                         {capability === 'L1_LAYERED' ? 'L1 分层' : 'L0 静态'}
                       </span>
                     </div>
-                    <div className="flex items-center gap-2 text-[10px]">
-                      <label className="px-2 py-1 rounded bg-[#141418] border border-[#2c2c36] text-sky-300 cursor-pointer">
-                        {char.layerTextures?.eyes_closed ? '替换 eyes_closed' : '绑定 eyes_closed'}
-                        <input
-                          type="file"
-                          accept="image/png,image/webp,image/gif"
-                          aria-label={`为 ${char.name} 绑定 eyes_closed`}
-                          className="hidden"
-                          onChange={async (event) => {
-                            const file = event.target.files?.[0];
-                            event.target.value = '';
-                            if (!file) return;
-                            try {
-                              const reference = await importAsset(file);
-                              onUpdateCharacterProfile(char.id, (previous) => ({
-                                ...previous,
-                                layerTextures: { ...previous.layerTextures, eyes_closed: reference },
-                              }));
-                            } catch (error: unknown) {
-                              window.alert(error instanceof Error ? error.message : String(error));
-                            }
-                          }}
-                        />
-                      </label>
-                      {char.layerTextures?.eyes_closed && (
-                        <button
-                          type="button"
-                          className="px-2 py-1 rounded border border-rose-500/30 text-rose-300"
-                          onClick={() => onUpdateCharacterProfile(char.id, (previous) => {
-                            const layers = { ...previous.layerTextures };
-                            delete layers.eyes_closed;
-                            return { ...previous, layerTextures: layers };
-                          })}
-                        >
-                          解绑 eyes_closed
-                        </button>
-                      )}
-                    </div>
-                    {!char.layerTextures?.eyes_closed && (
-                      <div className="px-2 py-1 rounded bg-amber-950/35 border border-amber-500/30 text-[10px] text-amber-200">
-                        未绑定 eyes_closed；此角色档案的眨眼已停用。
+                    {(['eyes_closed', 'mouth_talk_a', 'mouth_talk_b'] as const).map((layer) => (
+                      <div key={layer} className="space-y-1 text-[10px]">
+                        <div className="flex items-center gap-2">
+                          <label className="px-2 py-1 rounded bg-[#141418] border border-[#2c2c36] text-sky-300 cursor-pointer">
+                            {char.layerTextures?.[layer] ? `替换 ${layer}` : `上传 ${layer}`}
+                            <input type="file" accept="image/png,image/webp,image/gif"
+                              aria-label={`为 ${char.name} 绑定 ${layer}`} className="hidden"
+                              onChange={async (event) => {
+                                const file = event.target.files?.[0];
+                                event.target.value = '';
+                                if (!file) return;
+                                try {
+                                  const reference = await importAsset(file);
+                                  onUpdateCharacterProfile(char.id, (previous) => ({
+                                    ...previous, layerTextures: { ...previous.layerTextures, [layer]: reference },
+                                  }));
+                                } catch (error: unknown) {
+                                  window.alert(error instanceof Error ? error.message : String(error));
+                                }
+                              }} />
+                          </label>
+                          {char.layerTextures?.[layer] && <button type="button"
+                            className="px-2 py-1 rounded border border-rose-500/30 text-rose-300"
+                            onClick={() => onUpdateCharacterProfile(char.id, (previous) => {
+                              const layers = { ...previous.layerTextures };
+                              delete layers[layer];
+                              return { ...previous, layerTextures: layers };
+                            })}>解绑 {layer}</button>}
+                        </div>
+                        {!char.layerTextures?.[layer] && <div className="px-2 py-1 rounded bg-amber-950/35 border border-amber-500/30 text-amber-200">
+                          {layer === 'eyes_closed' ? '缺少闭眼层，眨眼停用。' : layer === 'mouth_talk_a' ? '缺少口型 A，说话口型停用。' : '缺少口型 B；只有 A 时会重复显示 A。'}
+                        </div>}
                       </div>
-                    )}
+                    ))}
                     {node.characters.some((placement) => placement.characterId === char.id && placement.layerTextures) && (
                       <div className="text-[10px] text-amber-200">
                         当前场景存在独立分层覆盖，舞台会优先使用该覆盖。
@@ -748,7 +739,7 @@ export const Inspector: React.FC<InspectorProps> = ({
                       title="角色分层动态模式"
                     >
                       <option value="none">默认：差分切图 + 眨眼/口型</option>
-                      <option value="breathe">微呼吸：Body ScaleY ≤ 1.008</option>
+                      <option value="breathe" disabled>旧呼吸已禁用（尚无局部遮罩）</option>
                     </select>
 
                     <label className="px-2 py-1 rounded bg-[#141418] hover:bg-[#23232c] border border-[#2c2c36] text-[10px] text-sky-300 flex items-center justify-center cursor-pointer truncate">
@@ -1909,11 +1900,13 @@ export const Inspector: React.FC<InspectorProps> = ({
                             <option value="slide-right">入场：自右移入淡入 (单次)</option>
                           </select>
                         </div>
-                        {!pl.layerTextures?.eyes_closed && !pl.layerTextures?.mouth_talk_a && (
-                          <div className="mt-1 px-2 py-1 rounded bg-amber-950/35 border border-amber-500/30 text-[10px] text-amber-200/90">
-                            L0 静态立绘模式：未绑定 <code className="font-mono">eyes_closed</code> / <code className="font-mono">mouth_talk_a</code> 分层贴图，眨眼与口型联动已自动停用（可在「素材工坊 · 分层立绘」中绑定）。
-                          </div>
-                        )}
+                        {(['eyes_closed', 'mouth_talk_a', 'mouth_talk_b'] as const).map((layer) => {
+                          const profile = characters.find((item) => item.id === pl.characterId);
+                          const effectiveLayers = pl.layerTextures || profile?.layerTextures;
+                          return !effectiveLayers?.[layer] ? <div key={layer} className="mt-1 px-2 py-1 rounded bg-amber-950/35 border border-amber-500/30 text-[10px] text-amber-200/90">
+                            缺少 {layer}：{layer === 'eyes_closed' ? '眨眼停用' : layer === 'mouth_talk_a' ? '口型停用' : '口型 B 不可用'}。可在角色档案上传。
+                          </div> : null;
+                        })}
                       </div>
                     ))}
                   </div>
@@ -2024,11 +2017,11 @@ export const Inspector: React.FC<InspectorProps> = ({
                       }
                       className="w-full px-2 py-1.5"
                     >
-                      <option value="sakura">樱花飘落</option>
-                      <option value="rain">细雨连绵</option>
-                      <option value="snow">冬雪纷飞</option>
-                      <option value="fireflies">夏夜流萤</option>
-                      <option value="sunset_glow">黄昏光尘</option>
+                      <option value="sakura" disabled>樱花飘落（预览未实现）</option>
+                      <option value="rain" disabled>细雨连绵（预览未实现）</option>
+                      <option value="snow" disabled>冬雪纷飞（预览未实现）</option>
+                      <option value="fireflies" disabled>夏夜流萤（预览未实现）</option>
+                      <option value="sunset_glow" disabled>黄昏光尘（预览未实现）</option>
                       <option value="none">关闭粒子</option>
                     </select>
                   </div>

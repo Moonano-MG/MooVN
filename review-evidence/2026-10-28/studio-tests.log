@@ -1,0 +1,294 @@
+
+> moovn-studio@0.1.0 pretest
+> node scripts/check-node-version.mjs
+
+
+> moovn-studio@0.1.0 test
+> node --experimental-strip-types --test tests/*.test.mts
+
+TAP version 13
+# Subtest: all placement coordinates, scales and flips share a bottom-center anchor
+ok 1 - all placement coordinates, scales and flips share a bottom-center anchor
+  ---
+  duration_ms: 0.91906
+  type: 'test'
+  ...
+# Subtest: dragging preserves the grab offset and can move continuously across the full stage
+ok 2 - dragging preserves the grab offset and can move continuously across the full stage
+  ---
+  duration_ms: 0.865174
+  type: 'test'
+  ...
+# Subtest: new chapter output identifies the actual LZ77 codec and legacy labels remain readable
+ok 3 - new chapter output identifies the actual LZ77 codec and legacy labels remain readable
+  ---
+  duration_ms: 10.826493
+  type: 'test'
+  ...
+# Subtest: damaged or oversized compressed data is rejected rather than decoded silently
+ok 4 - damaged or oversized compressed data is rejected rather than decoded silently
+  ---
+  duration_ms: 0.444269
+  type: 'test'
+  ...
+# Subtest: legacy origin check rejects missing, cross-site, different port and loopback aliases
+ok 5 - legacy origin check rejects missing, cross-site, different port and loopback aliases
+  ---
+  duration_ms: 0.797533
+  type: 'test'
+  ...
+# Subtest: studio development server has no privileged mutation endpoints and blocks unknown hosts
+ok 6 - studio development server has no privileged mutation endpoints and blocks unknown hosts
+  ---
+  duration_ms: 230.058448
+  type: 'test'
+  ...
+# Subtest: web development server has no privileged mutation endpoints and blocks unknown hosts
+ok 7 - web development server has no privileged mutation endpoints and blocks unknown hosts
+  ---
+  duration_ms: 499.785811
+  type: 'test'
+  ...
+# Subtest: 1. Polyglot API & Transpiler: emits syntactically valid code per language, never emits moobn/sava, preserves unrecognized lines
+ok 8 - 1. Polyglot API & Transpiler: emits syntactically valid code per language, never emits moobn/sava, preserves unrecognized lines
+  ---
+  duration_ms: 3.106718
+  type: 'test'
+  ...
+# Subtest: 2. Security Guards: path traversal, customDir rejection, extension allowlist, and SSRF protection
+ok 9 - 2. Security Guards: path traversal, customDir rejection, extension allowlist, and SSRF protection
+  ---
+  duration_ms: 0.512804
+  type: 'test'
+  ...
+# Subtest: 3. Save Integrity & HTML Escaping & Real LZ77 Byte Compression
+ok 10 - 3. Save Integrity & HTML Escaping & Real LZ77 Byte Compression
+  ---
+  duration_ms: 1.774947
+  type: 'test'
+  ...
+# Subtest: 4. YAML Schema Round-Trip & TS String Escaping & Node Compiler Diagnostics
+ok 11 - 4. YAML Schema Round-Trip & TS String Escaping & Node Compiler Diagnostics
+  ---
+  duration_ms: 27.970698
+  type: 'test'
+  ...
+# Subtest: 5. MPVN Serialization & Validation: size guard, prototype pollution guard, schema validation
+ok 12 - 5. MPVN Serialization & Validation: size guard, prototype pollution guard, schema validation
+  ---
+  duration_ms: 13.572366
+  type: 'test'
+  ...
+# Subtest: 6. Layered Avatar L0 vs L1 Honesty & Live2D SDK Guard
+ok 13 - 6. Layered Avatar L0 vs L1 Honesty & Live2D SDK Guard
+  ---
+  duration_ms: 0.93287
+  type: 'test'
+  ...
+# Subtest: 7. Window Manager Clamping, Z-Index Normalization & Split Ratios
+ok 14 - 7. Window Manager Clamping, Z-Index Normalization & Split Ratios
+  ---
+  duration_ms: 0.358793
+  type: 'test'
+  ...
+# Subtest: 8. Shared i18n dictionary keys (not full panel translation)
+ok 15 - 8. Shared i18n dictionary keys (not full panel translation)
+  ---
+  duration_ms: 0.291021
+  type: 'test'
+  ...
+# Subtest: 9. Legacy TypeScript v2 canonical English sample (not cross-language parity)
+ok 16 - 9. Legacy TypeScript v2 canonical English sample (not cross-language parity)
+  ---
+  duration_ms: 0.310165
+  type: 'test'
+  ...
+# Subtest: 10. True Blank Project Purity, Feature Flags, CSRF Guard & Security Docs (GPT-18, GPT-53, GPT-57, GPT-58)
+ok 17 - 10. True Blank Project Purity, Feature Flags, CSRF Guard & Security Docs (GPT-18, GPT-53, GPT-57, GPT-58)
+  ---
+  duration_ms: 2.011465
+  type: 'test'
+  ...
+# Subtest: 1.0 envelope migrates each legacy center anchor exactly once and preserves the source
+ok 18 - 1.0 envelope migrates each legacy center anchor exactly once and preserves the source
+  ---
+  duration_ms: 21.281623
+  type: 'test'
+  ...
+# Subtest: unversioned snapshots and bare files migrate, but a new 1.1 snapshot never migrates again
+ok 19 - unversioned snapshots and bare files migrate, but a new 1.1 snapshot never migrates again
+  ---
+  duration_ms: 1.698301
+  type: 'test'
+  ...
+# Subtest: exporting an unversioned legacy object migrates before stamping the new envelope
+ok 20 - exporting an unversioned legacy object migrates before stamping the new envelope
+  ---
+  duration_ms: 0.30167
+  type: 'test'
+  ...
+# Subtest: 1.1 envelope alone marks coordinates as current and unsupported or conflicting versions fail
+ok 21 - 1.1 envelope alone marks coordinates as current and unsupported or conflicting versions fail
+  ---
+  duration_ms: 2.646657
+  type: 'test'
+  ...
+# Subtest: blank and example projects satisfy the same runtime schema
+ok 22 - blank and example projects satisfy the same runtime schema
+  ---
+  duration_ms: 30.099738
+  type: 'test'
+  ...
+# Subtest: invalid enums and duplicated ids are rejected with a location
+ok 23 - invalid enums and duplicated ids are rejected with a location
+  ---
+  duration_ms: 4.454257
+  type: 'test'
+  ...
+# Subtest: dangling speakers, placements, choices, chapter and sprite references fail
+ok 24 - dangling speakers, placements, choices, chapter and sprite references fail
+  ---
+  duration_ms: 5.713186
+  type: 'test'
+  ...
+# Subtest: validation never repairs or modifies malformed input
+ok 25 - validation never repairs or modifies malformed input
+  ---
+  duration_ms: 1.583198
+  type: 'test'
+  ...
+# Subtest: deep prototype pollution, cyclic values, and unsupported versions are rejected
+ok 26 - deep prototype pollution, cyclic values, and unsupported versions are rejected
+  ---
+  duration_ms: 0.522654
+  type: 'test'
+  ...
+# Subtest: strict nested fields, types, ids and asset references are validated
+ok 27 - strict nested fields, types, ids and asset references are validated
+  ---
+  duration_ms: 7.737788
+  type: 'test'
+  ...
+# Subtest: legitimate custom sprite references are accepted when a media source is present
+ok 28 - legitimate custom sprite references are accepted when a media source is present
+  ---
+  duration_ms: 0.831514
+  type: 'test'
+  ...
+# Subtest: HTML builder accepts a minimal narrative but blocks every unsupported registered node
+ok 29 - HTML builder accepts a minimal narrative but blocks every unsupported registered node
+  ---
+  duration_ms: 8.451044
+  type: 'test'
+  ...
+# Subtest: HTML exporter fails closed for unsupported settings, conditions, dangling targets and audio
+ok 30 - HTML exporter fails closed for unsupported settings, conditions, dangling targets and audio
+  ---
+  duration_ms: 0.362497
+  type: 'test'
+  ...
+# Subtest: HTML export embeds untrusted project text safely inside the script
+ok 31 - HTML export embeds untrusted project text safely inside the script
+  ---
+  duration_ms: 0.380711
+  type: 'test'
+  ...
+# Subtest: API rewrite keeps comments, whitespace, CRLF, arguments and host statements verbatim
+ok 32 - API rewrite keeps comments, whitespace, CRLF, arguments and host statements verbatim
+  ---
+  duration_ms: 1.501981
+  type: 'test'
+  ...
+# Subtest: AI endpoint policy rejects credentials, query, fragments, unusual ports and redirects must be blocked in the client
+ok 33 - AI endpoint policy rejects credentials, query, fragments, unusual ports and redirects must be blocked in the client
+  ---
+  duration_ms: 31.472188
+  type: 'test'
+  ...
+# Subtest: static and layered avatars never stretch the body; missing layers do not erase neutral parts
+ok 34 - static and layered avatars never stretch the body; missing layers do not erase neutral parts
+  ---
+  duration_ms: 1.271135
+  type: 'test'
+  ...
+# Subtest: HTML low-level builder rejects unhydrated workspace image references
+ok 35 - HTML low-level builder rejects unhydrated workspace image references
+  ---
+  duration_ms: 0.44413
+  type: 'test'
+  ...
+# Subtest: native engine errors are not silently downgraded to a successful web check
+ok 36 - native engine errors are not silently downgraded to a successful web check
+  ---
+  duration_ms: 0.69246
+  type: 'test'
+  ...
+# Subtest: release build is manual-only and every job is restricted to v0.1.0-dev
+ok 37 - release build is manual-only and every job is restricted to v0.1.0-dev
+  ---
+  duration_ms: 25.265378
+  type: 'test'
+  ...
+# Subtest: push/PR quality checks cannot run compiler, build or native/browser test commands
+ok 38 - push/PR quality checks cannot run compiler, build or native/browser test commands
+  ---
+  duration_ms: 9.907537
+  type: 'test'
+  ...
+# Subtest: desktop save propagates native errors and never attempts a second write
+ok 39 - desktop save propagates native errors and never attempts a second write
+  ---
+  duration_ms: 18.247285
+  type: 'test'
+  ...
+# Subtest: save twice and rename title uses one file and metadata only
+ok 40 - save twice and rename title uses one file and metadata only
+  ---
+  duration_ms: 282.75093
+  type: 'test'
+  ...
+# Subtest: oversized project is rejected before invoking a disk write
+ok 41 - oversized project is rejected before invoking a disk write
+  ---
+  duration_ms: 178.669844
+  type: 'test'
+  ...
+# Subtest: browser without mounted directory does not report a file write as successful
+ok 42 - browser without mounted directory does not report a file write as successful
+  ---
+  duration_ms: 1.41348
+  type: 'test'
+  ...
+# Subtest: 100,000 generated editor IDs are distinct
+ok 43 - 100,000 generated editor IDs are distinct
+  ---
+  duration_ms: 202.55258
+  type: 'test'
+  ...
+# Subtest: schema-invalid primary falls back to backup and retains that backup on the first save
+ok 44 - schema-invalid primary falls back to backup and retains that backup on the first save
+  ---
+  duration_ms: 4.608568
+  type: 'test'
+  ...
+# Subtest: native 1.0 load, save and reopen migrates coordinates only once
+ok 45 - native 1.0 load, save and reopen migrates coordinates only once
+  ---
+  duration_ms: 8.920991
+  type: 'test'
+  ...
+# Subtest: overlapping saves are serialized and the newer revision is written last
+ok 46 - overlapping saves are serialized and the newer revision is written last
+  ---
+  duration_ms: 2.15824
+  type: 'test'
+  ...
+1..46
+# tests 46
+# suites 0
+# pass 46
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 3639.630505

@@ -1,13 +1,10 @@
 /**
  * Shared MooVN Runtime Core (`vnRuntimeCore.ts`)
  *
- * Unifies:
- * 1. HTML Escaping (`escapeHtmlText`) to eliminate XSS in exported HTML packages.
- * 2. 64-bit FNV-1a Checksum (`computeFnv1a64Hex`) matching `MooVN Engine/src/save.rs`.
- * 3. Cross-language canonical save payload (`serializeSaveCanonical`) matching
- *    `SaveSlotRecord::compute_canonical_payload` in `MooVN Engine/src/save.rs` byte-for-byte (`GPT-59`).
- * 4. Save Slot integrity creation & verification (`createVerifiedSaveRecord`, `verifySaveRecord`).
- * 5. Split-pane ratio clamping (`clampSplitRatio`) to guarantee minimum pane dimensions.
+ * Provides HTML escaping, a non-cryptographic FNV-1a corruption check,
+ * a legacy TypeScript v2 save serializer, and split-pane clamping.
+ * The v2 serializer differs from the Rust serializer and is not interoperable.
+ * A checksum can be recomputed by anyone who changes the data; it is not authentication.
  */
 
 export function escapeHtmlText(raw: unknown): string {
@@ -63,13 +60,11 @@ function bytewiseCompare(a: string, b: string): number {
 }
 
 /**
- * Serializes a save record into the exact cross-language canonical v2 format shared with
- * `SaveSlotRecord::compute_canonical_payload` in `MooVN Engine/src/save.rs` (`GPT-59`):
- *
- * `v2|slot={slotKey}|ch={chapterId}|node={nodeId}|dlg={dialogueIndex}|bg={activeBackground}|bgm={activeBgm}|vars=[{k}={v},...]|aff=[{k}={v},...]`
- *
- * Custom attributes and unlocked clues (if present) are folded into `vars` with deterministic
- * `__attr.{charId}.{key}` and `__clue.{idx}` keys so tampering with any field invalidates the hash.
+ * Serializes a legacy TypeScript v2 save payload. Custom attributes and clues
+ * are folded into variables and keys are ordered by JavaScript UTF-16 order.
+ * This differs from Rust's v2 representation; do not exchange v2 saves between them.
+ * Several display fields are omitted. FNV-1a only detects some accidental changes,
+ * not deliberate edits followed by checksum recomputation.
  */
 export function serializeSaveCanonical(
   record: Omit<VerifiedSaveRecord, 'checksumFnv64'>
@@ -123,7 +118,8 @@ export function createVerifiedSaveRecord(
 }
 
 /**
- * Strictly verifies a save record's 64-bit FNV-1a checksum (`GPT-09`, `GPT-59`).
+ * Checks the stored 64-bit FNV-1a value against the legacy v2 payload.
+ * This is not a cryptographic verification or a check of every field.
  * Missing or empty `checksumFnv64` is rejected (`false`).
  * Legacy unverified saves must be checked separately via `isLegacyUnverifiedSave`.
  */

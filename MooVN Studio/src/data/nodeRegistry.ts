@@ -558,5 +558,5 @@ export function getNodeMeta(type: WorkflowNodeType): NodeTypeMeta {
 
 /** Kept in the registry so old projects can be inspected, but not added as working nodes. */
 export function isUnsupportedNode(type: WorkflowNodeType): boolean {
-  return type === 'stream_preload_hint' || type === 'msvn_chapter_load';
+  return type === 'stream_preload_hint' || type === 'msvn_chapter_load' || type === 'weather_particles';
 }

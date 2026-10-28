@@ -66,11 +66,11 @@ const visualBlock = z.object({
     'switch_expr', 'move_char_tween', 'hide_char', 'play_anim_frames', 'play_bgm', 'play_sfx',
     'camera_effect', 'weather_effect', 'filter_effect', 'modify_affection', 'set_char_attr',
     'branch_if', 'wait_ms', 'toast_popup', 'call_bridge_script']),
-  params: z.record(primitive),
+  params: z.record(z.string(), primitive),
 }).strict();
 const nestedNode: z.ZodType<NestedChildNode> = z.lazy(() => z.object({
   id, type: nodeType as z.ZodType<NestedChildNode['type']>, title: smallText,
-  params: z.record(primitive), customCode: text.optional(),
+  params: z.record(z.string(), primitive), customCode: text.optional(),
   childrenNodes: z.array(nestedNode).max(1000).optional(),
   elseChildrenNodes: z.array(nestedNode).max(1000).optional(),
 }).strict());
@@ -136,7 +136,7 @@ const node = z.object({
 }).strict();
 const chapter = z.object({
   id, index: num, title: smallText, subtitle: smallText, yamlFileName: smallText, description: text,
-  minCharacterAffection: z.record(num).optional(), minVariables: z.record(num).optional(),
+  minCharacterAffection: z.record(z.string(), num).optional(), minVariables: z.record(z.string(), num).optional(),
   isBaseRequired: z.boolean().optional(), msvnSizeEstimateMb: num.optional(),
 }).strict();
 const controls = z.object({ back: z.boolean(), auto: z.boolean(), skip: z.boolean(), hide: z.boolean(), settings: z.boolean() }).strict();

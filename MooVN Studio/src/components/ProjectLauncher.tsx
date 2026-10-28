@@ -203,7 +203,7 @@ export const ProjectLauncher: React.FC<ProjectLauncherProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-[#0e0e11] text-zinc-200 flex flex-col select-none overflow-hidden">
+    <div className="fixed inset-0 z-[600] bg-[#0e0e11] text-zinc-200 flex flex-col select-none overflow-hidden">
       <input
         ref={importProjectInputRef}
         type="file"

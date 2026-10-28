@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   Download,
   ExternalLink,
@@ -9,7 +9,6 @@ import {
   Apple,
   Terminal,
   Code2,
-  Package,
   FileArchive,
   Layers,
   Sparkles,
@@ -17,20 +16,10 @@ import {
   X,
   Cpu,
   Workflow,
-  AlertTriangle,
 } from 'lucide-react';
 
 interface OfficialPortalProps {
   onEnterStudio?: () => void;
-}
-
-interface IpRateStatus {
-  ipMasked: string;
-  allowed: boolean;
-  downloadRemaining: number;
-  downloadLimit: number;
-  resetInSeconds: number;
-  error?: string;
 }
 
 const EDITOR_SCREENSHOTS = [
@@ -63,113 +52,23 @@ const EDITOR_SCREENSHOTS = [
 export const OfficialPortal: React.FC<OfficialPortalProps> = () => {
   const repoUrl = 'https://github.com/Moonano-MG/MooVN';
   const branchTreeUrl = 'https://github.com/Moonano-MG/MooVN/tree/v0.1.0-dev';
-  const studioFolderUrl = 'https://github.com/Moonano-MG/MooVN/tree/v0.1.0-dev/MooVN%20Studio';
   const sourceZipUrl =
     'https://codeload.github.com/Moonano-MG/MooVN/zip/refs/heads/v0.1.0-dev';
 
   const [activeShotIndex, setActiveShotIndex] = useState(0);
   const [lightboxShot, setLightboxShot] = useState<(typeof EDITOR_SCREENSHOTS)[0] | null>(null);
-  const [rateStatus, setRateStatus] = useState<IpRateStatus>({
-    ipMasked: '检测中...',
-    allowed: true,
-    downloadRemaining: 6,
-    downloadLimit: 6,
-    resetInSeconds: 600,
-  });
-  const [rateAlert, setRateAlert] = useState<string | null>(null);
-  const [checkingDownload, setCheckingDownload] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetch('/api/rate-limit?action=status', { cache: 'no-store' })
-      .then((r) => r.json())
-      .then((data) => {
-        if (cancelled) return;
-        if (data && typeof data.downloadRemaining === 'number') {
-          setRateStatus({
-            ipMasked: data.ipMasked || '当前客户端 IP',
-            allowed: data.allowed !== false,
-            downloadRemaining: data.downloadRemaining,
-            downloadLimit: data.downloadLimit || 6,
-            resetInSeconds: data.resetInSeconds || 600,
-            error: data.error,
-          });
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setRateStatus((prev) => ({ ...prev, ipMasked: '受保护客户端 IP' }));
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const handleRateLimitedDownload = async (
-    e: React.MouseEvent<HTMLAnchorElement>,
-    targetKey: string,
-    targetUrl: string
-  ) => {
-    e.preventDefault();
-    if (checkingDownload) return;
-    setCheckingDownload(targetKey);
-    setRateAlert(null);
-
-    try {
-      const res = await fetch(
-        `/api/rate-limit?action=download&target=${encodeURIComponent(targetKey)}`,
-        {
-          method: 'POST',
-          cache: 'no-store',
-        }
-      );
-      const data = await res.json();
-      if (typeof data.downloadRemaining === 'number') {
-        setRateStatus({
-          ipMasked: data.ipMasked || rateStatus.ipMasked,
-          allowed: data.allowed !== false,
-          downloadRemaining: data.downloadRemaining,
-          downloadLimit: data.downloadLimit || 6,
-          resetInSeconds: data.resetInSeconds || 600,
-          error: data.error,
-        });
-      }
-
-      if (res.status === 429 || data.allowed === false) {
-        setRateAlert(
-          data.error || '下载请求过于频繁，请稍后再试。'
-        );
-        setCheckingDownload(null);
-        return;
-      }
-
-      window.open(targetUrl, '_blank', 'noopener,noreferrer');
-    } catch {
-      window.open(targetUrl, '_blank', 'noopener,noreferrer');
-    } finally {
-      setCheckingDownload(null);
-    }
-  };
-
   const windowsArchs = [
     {
       arch: 'x64',
       desc: '64位主流桌面处理器 (Intel / AMD)',
-      installName: 'Windows x64 Install (.msi / .exe)',
-      zipName: 'Windows x64 ZIP 免安装便携包 (.zip)',
     },
     {
       arch: 'ARM64',
       desc: 'ARM64 架构设备 (Snapdragon X / Windows on ARM)',
-      installName: 'Windows ARM64 Install (.msi / .exe)',
-      zipName: 'Windows ARM64 ZIP 免安装便携包 (.zip)',
     },
     {
       arch: 'x86',
       desc: '32位传统桌面处理器兼容架构',
-      installName: 'Windows x86 Install (.msi / .exe)',
-      zipName: 'Windows x86 ZIP 免安装便携包 (.zip)',
     },
   ];
 
@@ -469,32 +368,16 @@ export const OfficialPortal: React.FC<OfficialPortalProps> = () => {
             <div>
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/15 border border-sky-400/30 text-sky-300 text-xs font-semibold mb-3">
                 <Download className="w-3.5 h-3.5" />
-                <span>多平台安装包与源码获取</span>
+                <span>平台发布状态与源码</span>
               </div>
               <h2 className="text-2xl sm:text-3xl font-bold text-white mb-2">
                 下载 MooVN Studio
               </h2>
               <p className="text-sm text-blue-200/75">
-                选择适合你操作系统与处理器架构的版本，或直接下载工程源码。
+                各平台安装包尚未发布，可下载源码或使用在线工作台。
               </p>
             </div>
           </div>
-
-          {rateAlert && (
-            <div className="mb-6 rounded-xl border border-amber-400/50 bg-amber-950/60 px-4 py-3 text-xs text-amber-200 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2.5">
-                <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
-                <span>{rateAlert}</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setRateAlert(null)}
-                className="text-amber-300 hover:text-white px-2 py-0.5 rounded"
-              >
-                关闭
-              </button>
-            </div>
-          )}
 
           <div className="space-y-6">
             {/* 1. Windows (ARM64, x64, x86 with Install & ZIP) */}
@@ -506,7 +389,7 @@ export const OfficialPortal: React.FC<OfficialPortalProps> = () => {
                 <div>
                   <h3 className="text-lg font-bold text-white">Windows</h3>
                   <p className="text-xs text-blue-200/75">
-                    支持 ARM64、x64、x86 三种处理器架构，每种架构均提供安装程序 (Install) 与免安装压缩包 (ZIP) 两种方式
+                    安装包与便携包尚未发布。
                   </p>
                 </div>
               </div>
@@ -529,38 +412,7 @@ export const OfficialPortal: React.FC<OfficialPortalProps> = () => {
                       <p className="text-xs text-blue-200/70">{item.desc}</p>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-2.5">
-                      <a
-                        href={studioFolderUrl}
-                        onClick={(e) =>
-                          handleRateLimitedDownload(
-                            e,
-                            `win-${item.arch}-install`,
-                            studioFolderUrl
-                          )
-                        }
-                        title={item.installName}
-                        className="px-3 py-2.5 rounded-lg bg-gradient-to-r from-blue-600 to-sky-500 hover:from-blue-500 hover:to-sky-400 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-all shadow-md shadow-blue-600/25"
-                      >
-                        <Package className="w-3.5 h-3.5" />
-                        <span>Install</span>
-                      </a>
-                      <a
-                        href={sourceZipUrl}
-                        onClick={(e) =>
-                          handleRateLimitedDownload(
-                            e,
-                            `win-${item.arch}-zip`,
-                            sourceZipUrl
-                          )
-                        }
-                        title={item.zipName}
-                        className="px-3 py-2.5 rounded-lg bg-[#132c56] hover:bg-[#19386b] border border-sky-400/30 text-sky-100 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
-                      >
-                        <FileArchive className="w-3.5 h-3.5 text-sky-400" />
-                        <span>ZIP</span>
-                      </a>
-                    </div>
+                    <button type="button" disabled className="px-3 py-2 rounded-lg border border-slate-700 bg-slate-900 text-slate-400 text-xs cursor-not-allowed">暂未发布</button>
                   </div>
                 ))}
               </div>
@@ -576,19 +428,10 @@ export const OfficialPortal: React.FC<OfficialPortalProps> = () => {
                   </div>
                   <h3 className="text-base font-bold text-white mb-1">Android</h3>
                   <p className="text-xs text-blue-200/70 mb-4">
-                    Android 移动端安装包 (.apk / .aab)
+                    该平台安装包尚未发布。
                   </p>
                 </div>
-                <a
-                  href={studioFolderUrl}
-                  onClick={(e) =>
-                    handleRateLimitedDownload(e, 'android-apk', studioFolderUrl)
-                  }
-                  className="w-full px-3 py-2.5 rounded-lg bg-[#12284e] hover:bg-[#183463] border border-sky-400/30 text-sky-100 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
-                >
-                  <Download className="w-3.5 h-3.5 text-sky-400" />
-                  <span>下载 Android 版</span>
-                </a>
+                <button type="button" disabled className="w-full px-3 py-2.5 rounded-lg bg-slate-900 border border-slate-700 text-slate-400 text-xs font-semibold cursor-not-allowed">暂未发布</button>
               </div>
 
               {/* iOS */}
@@ -599,19 +442,10 @@ export const OfficialPortal: React.FC<OfficialPortalProps> = () => {
                   </div>
                   <h3 className="text-base font-bold text-white mb-1">iOS</h3>
                   <p className="text-xs text-blue-200/70 mb-4">
-                    iPhone / iPad 移动端工程与安装包 (.ipa)
+                    该平台安装包尚未发布。
                   </p>
                 </div>
-                <a
-                  href={studioFolderUrl}
-                  onClick={(e) =>
-                    handleRateLimitedDownload(e, 'ios-ipa', studioFolderUrl)
-                  }
-                  className="w-full px-3 py-2.5 rounded-lg bg-[#12284e] hover:bg-[#183463] border border-sky-400/30 text-sky-100 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
-                >
-                  <Download className="w-3.5 h-3.5 text-sky-400" />
-                  <span>下载 iOS 版</span>
-                </a>
+                <button type="button" disabled className="w-full px-3 py-2.5 rounded-lg bg-slate-900 border border-slate-700 text-slate-400 text-xs font-semibold cursor-not-allowed">暂未发布</button>
               </div>
 
               {/* macOS */}
@@ -622,19 +456,10 @@ export const OfficialPortal: React.FC<OfficialPortalProps> = () => {
                   </div>
                   <h3 className="text-base font-bold text-white mb-1">macOS</h3>
                   <p className="text-xs text-blue-200/70 mb-4">
-                    Apple Silicon (M系列) 与 Intel 通用镜像 (.dmg)
+                    该平台安装包尚未发布。
                   </p>
                 </div>
-                <a
-                  href={studioFolderUrl}
-                  onClick={(e) =>
-                    handleRateLimitedDownload(e, 'macos-dmg', studioFolderUrl)
-                  }
-                  className="w-full px-3 py-2.5 rounded-lg bg-[#12284e] hover:bg-[#183463] border border-sky-400/30 text-sky-100 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
-                >
-                  <Download className="w-3.5 h-3.5 text-sky-400" />
-                  <span>下载 macOS 版</span>
-                </a>
+                <button type="button" disabled className="w-full px-3 py-2.5 rounded-lg bg-slate-900 border border-slate-700 text-slate-400 text-xs font-semibold cursor-not-allowed">暂未发布</button>
               </div>
 
               {/* Linux */}
@@ -645,19 +470,10 @@ export const OfficialPortal: React.FC<OfficialPortalProps> = () => {
                   </div>
                   <h3 className="text-base font-bold text-white mb-1">Linux</h3>
                   <p className="text-xs text-blue-200/70 mb-4">
-                    x86_64 与 ARM64 桌面发行版 (.AppImage / .deb)
+                    该平台安装包尚未发布。
                   </p>
                 </div>
-                <a
-                  href={studioFolderUrl}
-                  onClick={(e) =>
-                    handleRateLimitedDownload(e, 'linux-appimage', studioFolderUrl)
-                  }
-                  className="w-full px-3 py-2.5 rounded-lg bg-[#12284e] hover:bg-[#183463] border border-sky-400/30 text-sky-100 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
-                >
-                  <Download className="w-3.5 h-3.5 text-sky-400" />
-                  <span>下载 Linux 版</span>
-                </a>
+                <button type="button" disabled className="w-full px-3 py-2.5 rounded-lg bg-slate-900 border border-slate-700 text-slate-400 text-xs font-semibold cursor-not-allowed">暂未发布</button>
               </div>
 
               {/* 源代码 */}
@@ -674,9 +490,8 @@ export const OfficialPortal: React.FC<OfficialPortalProps> = () => {
                 <div className="flex flex-col gap-2">
                   <a
                     href={sourceZipUrl}
-                    onClick={(e) =>
-                      handleRateLimitedDownload(e, 'source-zip', sourceZipUrl)
-                    }
+                    target="_blank"
+                    rel="noopener noreferrer"
                     className="w-full px-3 py-2 rounded-lg bg-gradient-to-r from-blue-600 to-sky-500 hover:from-blue-500 hover:to-sky-400 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-all"
                   >
                     <FileArchive className="w-3.5 h-3.5" />
