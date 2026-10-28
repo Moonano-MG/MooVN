@@ -1,0 +1,36 @@
+   Compiling moovn-engine v0.1.0 (/home/user/MooVN/MooVN Engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.29s
+     Running tests/save_failure.rs (MooVN Engine/target/debug/deps/save_failure-6a3d66b39b97888f)
+
+running 3 tests
+test failed_delete_does_not_claim_success_or_forget_the_slot ... FAILED
+test failed_disk_write_is_reported_and_not_kept_as_a_successful_slot ... FAILED
+test failed_backup_keeps_the_original_slot_and_reports_an_error ... FAILED
+
+failures:
+
+---- failed_delete_does_not_claim_success_or_forget_the_slot stdout ----
+
+thread 'failed_delete_does_not_claim_success_or_forget_the_slot' panicked at tests/save_failure.rs:49:5:
+must report delete failure, got [MooVN Engine::Save] 删除存档 'Manual' (结果=true)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- failed_disk_write_is_reported_and_not_kept_as_a_successful_slot stdout ----
+
+thread 'failed_disk_write_is_reported_and_not_kept_as_a_successful_slot' panicked at tests/save_failure.rs:18:5:
+must report write error, got [MooVN Engine::Save] 已创建存档 'Manual' (checksum=ab7ed3bf35ea3d14, node=node-1)
+
+---- failed_backup_keeps_the_original_slot_and_reports_an_error stdout ----
+
+thread 'failed_backup_keeps_the_original_slot_and_reports_an_error' panicked at tests/save_failure.rs:34:5:
+must report backup failure, got [MooVN Engine::Save] 已创建存档 'Manual' (checksum=a6428e6528b70e0b, node=new-node)
+
+
+failures:
+    failed_backup_keeps_the_original_slot_and_reports_an_error
+    failed_delete_does_not_claim_success_or_forget_the_slot
+    failed_disk_write_is_reported_and_not_kept_as_a_successful_slot
+
+test result: FAILED. 0 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `--test save_failure`

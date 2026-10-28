@@ -1,0 +1,22 @@
+   Compiling moovn-engine v0.1.0 (/home/user/MooVN/MooVN Engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.29s
+     Running tests/save_failure.rs (MooVN Engine/target/debug/deps/save_failure-6a3d66b39b97888f)
+
+running 1 test
+test dotted_variable_keys_survive_real_disk_round_trip ... FAILED
+
+failures:
+
+---- dotted_variable_keys_survive_real_disk_round_trip stdout ----
+
+thread 'dotted_variable_keys_survive_real_disk_round_trip' panicked at tests/save_failure.rs:176:61:
+a saved slot must reopen successfully: "ERR_SAVE_CHECKSUM_MISMATCH: Save slot failed FNV-1a integrity check"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    dotted_variable_keys_survive_real_disk_round_trip
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `--test save_failure`

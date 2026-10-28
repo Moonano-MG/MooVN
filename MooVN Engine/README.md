@@ -6,6 +6,8 @@ Rust runtime and intermediate representation, using [GPL-3.0](../LICENSE) as its
 - The former TypeScript binding used fabricated in-memory snapshots and has been removed. A real TypeScript binding is **not provided**. The C# binding currently exposes only limited save operations; it does not implement the full API dialect.
 - The C++ component is an experimental software framebuffer/compositing bridge, not an implemented Vulkan or DirectX renderer.
 - FNV-1a on engine save records is a non-cryptographic check for some accidental corruption, **not tamper protection**. Canonical representations are not yet interoperable across all clients.
+- `SaveManager::create_save` and `delete_save` return `Result` so disk errors cannot be mistaken for success; callers using the older signatures must handle failures. Cross-process races, backup durability and Windows replacement semantics are not yet fully verified.
+- Newly written v2 engine saves escape `.` in variable keys to avoid confusing it with the on-disk separator. Old saves already written with unescaped dotted keys may fail their checksum and are not automatically recovered.
 - Live2D/Spine runtime integration is not provided.
 
-`cargo test` runs the Rust tests. Check the source interfaces before integrating; API syntax recognized by the translator does not imply that a host-language binding exists.
+The `moovn-engine-cli` executable is a fixed in-memory API demo, **not** a project-file player or game builder; `--help` describes its limits. `cargo test` runs the Rust tests. Check the source interfaces before integrating; API syntax recognized by the translator does not imply that a host-language binding exists.

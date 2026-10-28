@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { NODE_REGISTRY } from '../data/nodeRegistry.ts';
 import { AUDIO_ASSETS, BACKGROUND_ASSETS, CHARACTER_ASSETS } from '../data/assets.ts';
-import type { NestedChildNode, VNProject } from '../types.ts';
+import type { NestedChildNode, SceneNode, StoryChapter, VNProject } from '../types.ts';
 
 const id = z.string().min(1).max(200).refine((value) => value.trim().length > 0, '标识符不能为空');
 const text = z.string().max(1_000_000);
@@ -176,10 +176,42 @@ const projectSchema = z.object({
   scriptFiles: z.array(z.object({ id, fileName: smallText, content: text, linkedNodeId: smallText.optional(), updatedAt: smallText.optional() }).strict()).max(1000).optional(),
 }).strict();
 
+/** Validate a standalone chapter without assuming cross-chapter targets are local. */
+export function validateChapterPackageData(chapterInput: unknown, nodesInput: unknown):
+  { ok: true; chapter: StoryChapter; nodes: SceneNode[] } | { ok: false; error: string } {
+  const safetyError = validateObjectSafety({ chapter: chapterInput, nodes: nodesInput });
+  if (safetyError) return { ok: false, error: safetyError };
+  const chapterResult = chapter.safeParse(chapterInput);
+  if (!chapterResult.success) return { ok: false, error: 'ERR_MSVN_CHAPTER: 章节信息无效' };
+  const nodesResult = z.array(node).max(5000).safeParse(nodesInput);
+  if (!nodesResult.success) return { ok: false, error: 'ERR_MSVN_NODES: 节点数据无效' };
+  for (const item of nodesResult.data) {
+    if (item.chapterId !== chapterResult.data.id) {
+      return { ok: false, error: 'ERR_MSVN_CHAPTER: 节点不属于此章节' };
+    }
+  }
+  const groups = [
+    nodesResult.data,
+    nodesResult.data.flatMap((item) => item.dialogues),
+    nodesResult.data.flatMap((item) => item.choices),
+    nodesResult.data.flatMap((item) => item.characters),
+    nodesResult.data.flatMap((item) => item.visualBlocks),
+  ];
+  for (const group of groups) {
+    const ids = new Set<string>();
+    for (const item of group) {
+      if (ids.has(item.id)) return { ok: false, error: 'ERR_MSVN_NODES: 标识符重复' };
+      ids.add(item.id);
+    }
+  }
+  // The exact original values passed the same chapter and node schemas as projects.
+  return { ok: true, chapter: chapterInput as StoryChapter, nodes: nodesInput as SceneNode[] };
+}
+
 export type ProjectValidationResult = { ok: true; project: VNProject } | { ok: false; error: string };
 
-/** Check an existing object without adding defaults or modifying any input value. */
-export function validateVNProjectShape(input: unknown): ProjectValidationResult {
+/** Bound traversal before passing untrusted JSON to recursive schemas. */
+export function validateObjectSafety(input: unknown): string | undefined {
   const stack: { value: unknown; depth: number; exit?: boolean }[] = [{ value: input, depth: 0 }];
   const active = new WeakSet<object>();
   const completed = new WeakSet<object>();
@@ -188,18 +220,25 @@ export function validateVNProjectShape(input: unknown): ProjectValidationResult 
     const { value, depth, exit } = stack.pop()!;
     if (!value || typeof value !== 'object') continue;
     if (exit) { active.delete(value); completed.add(value); continue; }
-    if (active.has(value)) return { ok: false, error: 'ERR_SCHEMA_CYCLE: 工程对象包含循环引用' };
+    if (active.has(value)) return 'ERR_SCHEMA_CYCLE: 工程对象包含循环引用';
     if (completed.has(value)) continue;
-    if (depth > 64 || ++objects > 100_000) return { ok: false, error: 'ERR_SCHEMA_COMPLEXITY: 对象嵌套或数量超过限制' };
+    if (depth > 64 || ++objects > 100_000) return 'ERR_SCHEMA_COMPLEXITY: 对象嵌套或数量超过限制';
     active.add(value);
     stack.push({ value, depth, exit: true });
     for (const [key, child] of Object.entries(value)) {
       if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
-        return { ok: false, error: `ERR_PROTOTYPE_POLLUTION: 非法字段 ${key}` };
+        return `ERR_PROTOTYPE_POLLUTION: 非法字段 ${key}`;
       }
       stack.push({ value: child, depth: depth + 1 });
     }
   }
+  return undefined;
+}
+
+/** Check an existing object without adding defaults or modifying any input value. */
+export function validateVNProjectShape(input: unknown): ProjectValidationResult {
+  const safetyError = validateObjectSafety(input);
+  if (safetyError) return { ok: false, error: safetyError };
   const parsed = projectSchema.safeParse(input);
   if (!parsed.success) {
     const issue = parsed.error.issues[0];

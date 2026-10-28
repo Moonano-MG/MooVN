@@ -1,0 +1,17 @@
+   Compiling moovn-engine v0.1.0 (/home/user/MooVN/MooVN Engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.68s
+     Running tests/save_failure.rs (MooVN Engine/target/debug/deps/save_failure-6a3d66b39b97888f)
+
+running 10 tests
+test c_abi_reports_save_failure_and_missing_load ... ok
+test colliding_slot_names_never_overwrite_or_delete_each_other ... ok
+test dotted_variable_keys_survive_real_disk_round_trip ... ok
+test failed_backup_keeps_the_original_slot_and_reports_an_error ... ok
+test failed_disk_write_is_reported_and_not_kept_as_a_successful_slot ... ok
+test failed_delete_does_not_claim_success_or_forget_the_slot ... ok
+test reload_rejects_duplicate_records_and_missing_directory_without_losing_memory ... ok
+test reload_is_transactional_and_removes_slots_no_longer_on_disk ... ok
+test script_stops_after_save_failure_but_reports_previous_effects ... ok
+test save_and_backup_symlinks_are_rejected_without_touching_targets ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s

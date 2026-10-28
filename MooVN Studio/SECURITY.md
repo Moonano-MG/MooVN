@@ -17,13 +17,23 @@ then rename it into place. If a previous project exists, the previous contents
 are first copied through the same writer into a `.bak`; this is not an atomic
 two-file transaction. The Rust Engine has a separate save implementation. Crash
 recovery and replacement behaviour, particularly on Windows, still require
-platform tests; failed operations must be reported to the user.
+platform tests; failed operations must be reported to the user. Engine save,
+backup and delete failures now return errors without updating in-memory slots;
+this does not prove cross-process race resistance or backup durability.
 
 `.mpvn` is a JSON project package with size, dangerous-key and shape checks on
-its parsing path. It currently has **no integrity checksum or authentication**.
-Runtime save-slot FNV checks are corruption checks only: anyone who changes a
-save can recompute the checksum. Rust and TypeScript v2 canonicalization do not
-yet match for all inputs, and no cross-language v3 has been established.
+its parsing path. New version 2 envelopes carry an unkeyed SHA-256 checksum of
+the JSON payload: it detects accidental changes but anyone can recompute or
+remove it. Legacy project files have no checksum and are opened with a warning.
+New `.msvn` chapter envelopes use the same unkeyed SHA-256 check over metadata
+and compressed nodes. The chapter parser returns `legacy-unchecked` for older
+packages; no UI or HTML runtime currently loads them. Neither format authenticates
+the author or prevents deliberate tampering.
+The Rust Engine's save-slot FNV check detects some corruption only: anyone who
+changes a save can recompute it. The TypeScript v2 helper is not wired into the
+Studio preview or standalone HTML save paths, which currently have no save-slot
+checksum. Rust and TypeScript v2 canonicalization do not match for all inputs,
+and no cross-language v3 has been established.
 
 ## CSP and HTML exports
 

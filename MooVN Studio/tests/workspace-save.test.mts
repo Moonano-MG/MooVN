@@ -151,6 +151,7 @@ test('native 1.0 load, save and reopen migrates coordinates only once', async ()
   });
   const first = await loadProjectFromTauri('legacy.mpvn');
   assert.equal(first.ok, true);
+  assert.equal(first.integrity, 'legacy-unchecked');
   assert.equal(first.migrated, true);
   assert.equal(first.migratedPlacements, 1);
   assert.ok(first.data);
@@ -161,6 +162,7 @@ test('native 1.0 load, save and reopen migrates coordinates only once', async ()
   assert.equal(written.project.schemaVersion, '1.1.0');
   const reopened = await loadProjectFromTauri('legacy.mpvn');
   assert.equal(reopened.ok, true);
+  assert.equal(reopened.integrity, 'sha256');
   assert.equal(reopened.migrated, false);
   assert.equal(reopened.data?.nodes[0].characters[0].y, 69);
 });
@@ -191,4 +193,23 @@ test('overlapping saves are serialized and the newer revision is written last', 
   assert.equal((await first).ok, true);
   assert.equal((await second).ok, true);
   assert.deepEqual(writes, ['older', 'newer']);
+});
+
+test('checksum-corrupted primary falls back to a valid backup', async () => {
+  const valid = serializeMpvnProject(structuredClone(DEFAULT_PROJECT));
+  const modified = JSON.parse(valid);
+  modified.project.title = 'changed without checksum';
+  const requests: boolean[] = [];
+  mockTauri(async (command, args) => {
+    if (command !== 'load_project_json') throw new Error(`Unexpected command ${command}`);
+    const backup = Boolean(args.preferBackup);
+    requests.push(backup);
+    return { payload: backup ? valid : JSON.stringify(modified), path: `${paths.projectsDirectoryPath}/checksum.mpvn`, recovered_from_backup: backup };
+  });
+  const loaded = await loadProjectFromTauri('checksum.mpvn');
+  assert.equal(loaded.ok, true);
+  assert.equal(loaded.recoveredFromBackup, true);
+  assert.equal(loaded.integrity, 'sha256');
+  assert.equal(loaded.data?.title, DEFAULT_PROJECT.title);
+  assert.deepEqual(requests, [false, true]);
 });

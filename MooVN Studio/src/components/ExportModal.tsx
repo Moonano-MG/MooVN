@@ -118,7 +118,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ project, onClose, onLo
           </div>}
 
           {activeTab === 'msvn' && <div className="space-y-2">
-            <p className="text-zinc-400">章节文件包含节点数据与素材清单；外置素材的可移植打包及 HTML 运行时的章节加载尚未实现。</p>
+            <p className="text-zinc-400">章节文件包含节点数据与素材清单；新版文件含损坏自检，但不能防止人为篡改。外置素材的可移植打包及 HTML 运行时的章节加载尚未实现。</p>
             {project.chapters.map((chapter) => <div key={chapter.id} className="p-2.5 rounded bg-[#1c1c20] border border-[#27272c] flex items-center justify-between gap-3">
               <span>{chapter.title} · {project.nodes.filter((node) => node.chapterId === chapter.id).length} 节点</span>
               <button type="button" disabled={busy} onClick={() => void runExport(async () => {
@@ -130,7 +130,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ project, onClose, onLo
           </div>}
 
           {activeTab === 'mpvn' && <div className="p-4 rounded bg-[#1c1c20] border border-[#27272c] space-y-2">
-            <p className="text-zinc-300">导出工程 JSON。若工程引用外置素材，请备份整个工作区；独立工程与素材打包尚未实现。</p>
+            <p className="text-zinc-300">导出工程 JSON；新版文件含损坏自检，但不能防止人为篡改。若工程引用外置素材，请备份整个工作区；独立工程与素材打包尚未实现。</p>
             <button type="button" disabled={busy} onClick={() => void runExport(async () => {
               ensurePortableProjectExport();
               return `已发起工程下载：${await exportProjectAsMpvn(project)}`;

@@ -418,7 +418,8 @@ export const ScriptView: React.FC<ScriptViewProps> = ({
   const [renamingFileId, setRenamingFileId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState<string>('');
   const [copied, setCopied] = useState<boolean>(false);
-  const [statusNotice, setStatusNotice] = useState<string | null>(null);
+  const [statusNotice, setStatusNotice] = useState<{ message: string; kind: 'info' | 'error' } | null>(null);
+  const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [compileReport, setCompileReport] = useState<GraphCheckReport | null>(null);
   const [rewritePreview, setRewritePreview] = useState<{
     fileId: string; fileName: string; original: string; rewritten: string; count: number;
@@ -434,6 +435,18 @@ export const ScriptView: React.FC<ScriptViewProps> = ({
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const preRef = useRef<HTMLPreElement | null>(null);
   const gutterRef = useRef<HTMLDivElement | null>(null);
+
+  const showStatus = (message: string, kind: 'info' | 'error', durationMs = 0) => {
+    if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
+    statusTimerRef.current = null;
+    setStatusNotice({ message, kind });
+    if (durationMs > 0) {
+      statusTimerRef.current = setTimeout(() => { setStatusNotice(null); statusTimerRef.current = null; }, durationMs);
+    }
+  };
+  useEffect(() => () => {
+    if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
+  }, []);
 
   // Sync active node script tab when selectedNode changes
   useEffect(() => {
@@ -496,11 +509,14 @@ export const ScriptView: React.FC<ScriptViewProps> = ({
         customScript: activeFile.content,
       }));
     }
-    const path = await syncWriteToRealWorkspaceDisk(
-      'Scripts', activeFile.fileName, activeFile.content
-    );
-    setStatusNotice(path ? `已写入 ${path}` : '已更新工程内脚本；独立文件未写入，请保存工程或下载脚本');
-    setTimeout(() => setStatusNotice(null), 2200);
+    try {
+      const path = await syncWriteToRealWorkspaceDisk(
+        'Scripts', activeFile.fileName, activeFile.content
+      );
+      showStatus(path ? `已写入 ${path}` : '已更新工程内脚本；独立文件未写入，请保存工程或下载脚本', 'info', 2200);
+    } catch (error: unknown) {
+      showStatus(`工程内脚本已更新；独立文件写入失败：${error instanceof Error ? error.message : String(error)}`, 'error');
+    }
   };
 
   const handleCreateNewFile = () => {
@@ -568,11 +584,10 @@ export const ScriptView: React.FC<ScriptViewProps> = ({
     if (extMeta.engineLang !== 'yaml' && extMeta.engineLang !== 'json') {
       try {
         const res = await evalPolyglotScriptInEngineAsync(activeFile.content, extMeta.engineLang);
-        setStatusNotice(res.logs[0] || '没有可显示的 API 检查结果');
+        showStatus(res.logs[0] || '没有可显示的 API 检查结果', 'info', 5000);
       } catch (err: unknown) {
-        setStatusNotice(err instanceof Error ? err.message : '原生引擎请求失败，未执行');
+        showStatus(err instanceof Error ? err.message : '原生引擎请求失败，此前操作可能已执行', 'error');
       }
-      setTimeout(() => setStatusNotice(null), 5000);
     }
   };
 
@@ -600,7 +615,7 @@ export const ScriptView: React.FC<ScriptViewProps> = ({
     if (!lastRewrite || activeFile.id !== lastRewrite.fileId || activeFile.content !== lastRewrite.rewritten) return;
     handleCodeChange(lastRewrite.original);
     setLastRewrite(null);
-    setStatusNotice('已还原本次 API 改写前的内容');
+    showStatus('已还原本次 API 改写前的内容', 'info', 2200);
   };
 
   const handleDownloadFile = () => {
@@ -751,9 +766,9 @@ export const ScriptView: React.FC<ScriptViewProps> = ({
 
         {/* Right Compact Action Buttons */}
         <div className="flex items-center gap-1 shrink-0">
-          {statusNotice && (
-            <span className="text-[11px] text-emerald-400 px-1.5 truncate max-w-[180px]">
-              {statusNotice}
+          {statusNotice?.kind === 'info' && (
+            <span title={statusNotice.message} className="text-[11px] text-emerald-400 px-1.5 truncate max-w-[180px]">
+              {statusNotice.message}
             </span>
           )}
 
@@ -798,10 +813,14 @@ export const ScriptView: React.FC<ScriptViewProps> = ({
 
           <button
             type="button"
-            onClick={() => {
-              navigator.clipboard.writeText(code);
-              setCopied(true);
-              setTimeout(() => setCopied(false), 1500);
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(code);
+                setCopied(true);
+                setTimeout(() => setCopied(false), 1500);
+              } catch (error: unknown) {
+                showStatus(`复制失败：${error instanceof Error ? error.message : String(error)}`, 'error');
+              }
             }}
             className="icon-btn !w-6 !h-6"
             title="复制代码"
@@ -823,6 +842,13 @@ export const ScriptView: React.FC<ScriptViewProps> = ({
           </button>
         </div>
       </div>
+
+      {statusNotice?.kind === 'error' && (
+        <div role="alert" className="px-3 py-2 bg-rose-950/40 border-b border-rose-500/40 text-rose-200 text-xs flex items-start justify-between gap-2 shrink-0">
+          <span className="break-all select-text">{statusNotice.message}</span>
+          <button type="button" onClick={() => setStatusNotice(null)} className="underline shrink-0" aria-label="关闭脚本错误">关闭</button>
+        </div>
+      )}
 
       {/* New File Input Bar */}
       {isCreatingFile && (

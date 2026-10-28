@@ -104,7 +104,7 @@ impl MooVNEngineRuntime {
         }
     }
 
-    /// Creates a `MooVNEngineRuntime` whose `SaveManager` persists slots atomically to `dir` (`GPT-60`).
+    /// Creates a disk-backed runtime. Slot replacement uses a temporary file; crash durability and cross-process writes are not guaranteed.
     pub fn with_save_dir(dir: impl Into<std::path::PathBuf>) -> Result<Self, String> {
         let mut rt = Self::new();
         rt.saves = SaveManager::with_storage_dir(dir)?;
@@ -180,13 +180,18 @@ impl MooVNEngineRuntime {
             .unwrap_or(false)
     }
 
-    /// Evaluates a script written in JS, TS, C++, C#, or Rust.
+    /// Executes recognized MooVN API operations, not arbitrary host-language code.
+    /// Parsing diagnostics are currently not returned by this legacy API.
     pub fn eval_polyglot_script(&mut self, script: &str, lang: SourceLanguage) -> Vec<String> {
         let (program, _diags) = PolyglotTranslator::compile_to_ir(script, lang);
         let mut logs = Vec::new();
         for op in &program.operations {
             let msg = self.execute_op(op.clone());
+            let failed = msg.starts_with("ERR_SAVE");
             logs.push(msg);
+            // Previous operations may already have executed, but no later
+            // operation is run after a failed save or delete.
+            if failed { break; }
         }
         logs
     }
@@ -195,11 +200,13 @@ impl MooVNEngineRuntime {
         let log_line = match op {
             EngineOp::SaveCreate { slot_name } => {
                 let record = self.snapshot_to_save_record(&slot_name);
-                let saved = self.saves.create_save(record);
-                format!(
-                    "[MooVN Engine::Save] 已创建存档 '{}' (checksum={:016x}, node={})",
-                    saved.slot_name, saved.checksum_fnv1a, saved.node_id
-                )
+                match self.saves.create_save(record) {
+                    Ok(saved) => format!(
+                        "[MooVN Engine::Save] 已创建存档 '{}' (checksum={:016x}, node={})",
+                        saved.slot_name, saved.checksum_fnv1a, saved.node_id
+                    ),
+                    Err(error) => format!("ERR_SAVE_CREATE: {}", error),
+                }
             }
             EngineOp::SaveLoad { slot_name } => {
                 if let Some(rec) = self.saves.load_save(&slot_name).cloned() {
@@ -213,16 +220,17 @@ impl MooVNEngineRuntime {
                 }
             }
             EngineOp::SaveDelete { slot_name } => {
-                let removed = self.saves.delete_save(&slot_name);
-                format!(
-                    "[MooVN Engine::Save] 删除存档 '{}' (结果={})",
-                    slot_name, removed
-                )
+                match self.saves.delete_save(&slot_name) {
+                    Ok(removed) => format!("[MooVN Engine::Save] 删除存档 '{}' (结果={})", slot_name, removed),
+                    Err(error) => error,
+                }
             }
             EngineOp::SaveQuickSave => {
                 let record = self.snapshot_to_save_record("QuickSave_01");
-                self.saves.create_save(record);
-                "[MooVN Engine::Save] 已执行快速存档 (QuickSave_01)".to_string()
+                match self.saves.create_save(record) {
+                    Ok(_) => "[MooVN Engine::Save] 已执行快速存档 (QuickSave_01)".to_string(),
+                    Err(error) => format!("ERR_SAVE_QUICK: {}", error),
+                }
             }
             EngineOp::SaveQuickLoad => {
                 if let Some(rec) = self.saves.load_save("QuickSave_01").cloned() {
@@ -234,8 +242,10 @@ impl MooVNEngineRuntime {
             }
             EngineOp::SaveAutoSave => {
                 let record = self.snapshot_to_save_record("AutoSave_01");
-                self.saves.create_save(record);
-                "[MooVN Engine::Save] 已触发自动存档 (AutoSave_01)".to_string()
+                match self.saves.create_save(record) {
+                    Ok(_) => "[MooVN Engine::Save] 已触发自动存档 (AutoSave_01)".to_string(),
+                    Err(error) => format!("ERR_SAVE_AUTO: {}", error),
+                }
             }
             EngineOp::SaveList => {
                 let count = self.saves.list_saves().len();

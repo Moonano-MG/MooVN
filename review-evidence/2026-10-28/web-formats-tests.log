@@ -1,0 +1,385 @@
+
+> moovn-studio@0.1.0 build
+> tsc -b && vite build
+
+vite v6.4.5 building for production...
+transforming...
+../MooVN Studio/node_modules/zod/v4/core/util.js (400:0): A comment
+
+"// Wrapped in a `@__PURE__` IIFE: esbuild never tree-shakes a top-level initializer that contains a member access on `Number`, so the bare object literal survived into every bundle."
+
+in "../MooVN Studio/node_modules/zod/v4/core/util.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+../MooVN Studio/node_modules/zod/v4/core/regexes.js (74:0): A comment
+
+"/** Anchors a pattern source. The interpolation lives here rather than at the call site because
+ * esbuild will not drop a `@__PURE__` call whose own argument interpolates a variable, but it
+ * will drop `anchor(dateSource)`. Keeping it inline pinned `date` into every bundle. */"
+
+in "../MooVN Studio/node_modules/zod/v4/core/regexes.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+✓ 1800 modules transformed.
+rendering chunks...
+[plugin vite:reporter]
+(!) /home/user/MooVN/MooVN Studio/src/lib/mpvnFormat.ts is dynamically imported by /home/user/MooVN/MooVN Studio/src/lib/tauriBridge.ts, /home/user/MooVN/MooVN Studio/src/lib/workspaceManager.ts, /home/user/MooVN/MooVN Studio/src/lib/workspaceManager.ts, /home/user/MooVN/MooVN Studio/src/lib/workspaceManager.ts, /home/user/MooVN/MooVN Studio/src/lib/workspaceManager.ts but also statically imported by /home/user/MooVN/MooVN Studio/src/components/ExportModal.tsx, /home/user/MooVN/MooVN Studio/src/components/ProjectLauncher.tsx, dynamic import will not move module into another chunk.
+
+computing gzip size...
+dist/index.html                            0.62 kB │ gzip:   0.43 kB
+dist/studio.html                           0.65 kB │ gzip:   0.44 kB
+dist/assets/OfficialPortal-COlJYRa2.css    9.21 kB │ gzip:   2.77 kB
+dist/assets/main-Cx8Y-Aix.js               0.17 kB │ gzip:   0.16 kB
+dist/assets/OfficialPortal-BV2CMqwt.js   174.07 kB │ gzip:  53.46 kB
+dist/assets/studio-BtJASd0B.js           706.91 kB │ gzip: 203.46 kB
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 8.52s
+
+> moovn-studio@0.1.0 pretest
+> node ../"MooVN Studio"/scripts/check-node-version.mjs
+
+
+> moovn-studio@0.1.0 test
+> node --experimental-strip-types --test ../"MooVN Studio"/tests/*.test.mts
+
+TAP version 13
+# Subtest: all placement coordinates, scales and flips share a bottom-center anchor
+ok 1 - all placement coordinates, scales and flips share a bottom-center anchor
+  ---
+  duration_ms: 1.037627
+  type: 'test'
+  ...
+# Subtest: dragging preserves the grab offset and can move continuously across the full stage
+ok 2 - dragging preserves the grab offset and can move continuously across the full stage
+  ---
+  duration_ms: 0.888889
+  type: 'test'
+  ...
+# Subtest: new chapter output identifies the actual LZ77 codec and legacy labels remain readable
+ok 3 - new chapter output identifies the actual LZ77 codec and legacy labels remain readable
+  ---
+  duration_ms: 37.510647
+  type: 'test'
+  ...
+# Subtest: damaged or oversized compressed data is rejected rather than decoded silently
+ok 4 - damaged or oversized compressed data is rejected rather than decoded silently
+  ---
+  duration_ms: 0.375422
+  type: 'test'
+  ...
+# Subtest: legacy origin check rejects missing, cross-site, different port and loopback aliases
+ok 5 - legacy origin check rejects missing, cross-site, different port and loopback aliases
+  ---
+  duration_ms: 0.737507
+  type: 'test'
+  ...
+# Subtest: studio development server has no privileged mutation endpoints and blocks unknown hosts
+ok 6 - studio development server has no privileged mutation endpoints and blocks unknown hosts
+  ---
+  duration_ms: 214.566951
+  type: 'test'
+  ...
+# Subtest: web development server has no privileged mutation endpoints and blocks unknown hosts
+ok 7 - web development server has no privileged mutation endpoints and blocks unknown hosts
+  ---
+  duration_ms: 231.825313
+  type: 'test'
+  ...
+# Subtest: 1. Polyglot API & Transpiler: emits syntactically valid code per language, never emits moobn/sava, preserves unrecognized lines
+ok 8 - 1. Polyglot API & Transpiler: emits syntactically valid code per language, never emits moobn/sava, preserves unrecognized lines
+  ---
+  duration_ms: 10.618433
+  type: 'test'
+  ...
+# Subtest: 2. Security Guards: path traversal, customDir rejection, extension allowlist, and SSRF protection
+ok 9 - 2. Security Guards: path traversal, customDir rejection, extension allowlist, and SSRF protection
+  ---
+  duration_ms: 0.589102
+  type: 'test'
+  ...
+# Subtest: 3. Save Integrity & HTML Escaping & Real LZ77 Byte Compression
+ok 10 - 3. Save Integrity & HTML Escaping & Real LZ77 Byte Compression
+  ---
+  duration_ms: 3.855616
+  type: 'test'
+  ...
+# Subtest: 4. YAML Schema Round-Trip & TS String Escaping & Node Compiler Diagnostics
+ok 11 - 4. YAML Schema Round-Trip & TS String Escaping & Node Compiler Diagnostics
+  ---
+  duration_ms: 14.323432
+  type: 'test'
+  ...
+# Subtest: 5. MPVN Serialization & Validation: size guard, prototype pollution guard, schema validation
+ok 12 - 5. MPVN Serialization & Validation: size guard, prototype pollution guard, schema validation
+  ---
+  duration_ms: 14.87413
+  type: 'test'
+  ...
+# Subtest: 6. Layered Avatar L0 vs L1 Honesty & Live2D SDK Guard
+ok 13 - 6. Layered Avatar L0 vs L1 Honesty & Live2D SDK Guard
+  ---
+  duration_ms: 1.056401
+  type: 'test'
+  ...
+# Subtest: 7. Window Manager Clamping, Z-Index Normalization & Split Ratios
+ok 14 - 7. Window Manager Clamping, Z-Index Normalization & Split Ratios
+  ---
+  duration_ms: 0.539042
+  type: 'test'
+  ...
+# Subtest: 8. Shared i18n dictionary keys (not full panel translation)
+ok 15 - 8. Shared i18n dictionary keys (not full panel translation)
+  ---
+  duration_ms: 0.319804
+  type: 'test'
+  ...
+# Subtest: 9. Legacy TypeScript v2 canonical English sample (not cross-language parity)
+ok 16 - 9. Legacy TypeScript v2 canonical English sample (not cross-language parity)
+  ---
+  duration_ms: 0.385437
+  type: 'test'
+  ...
+# Subtest: 10. True Blank Project Purity, Feature Flags, CSRF Guard & Security Docs (GPT-18, GPT-53, GPT-57, GPT-58)
+ok 17 - 10. True Blank Project Purity, Feature Flags, CSRF Guard & Security Docs (GPT-18, GPT-53, GPT-57, GPT-58)
+  ---
+  duration_ms: 2.254038
+  type: 'test'
+  ...
+# Subtest: 1.0 envelope migrates each legacy center anchor exactly once and preserves the source
+ok 18 - 1.0 envelope migrates each legacy center anchor exactly once and preserves the source
+  ---
+  duration_ms: 26.139849
+  type: 'test'
+  ...
+# Subtest: unversioned snapshots and bare files migrate, but a new 1.1 snapshot never migrates again
+ok 19 - unversioned snapshots and bare files migrate, but a new 1.1 snapshot never migrates again
+  ---
+  duration_ms: 2.424404
+  type: 'test'
+  ...
+# Subtest: exporting an unversioned legacy object migrates before stamping the new envelope
+ok 20 - exporting an unversioned legacy object migrates before stamping the new envelope
+  ---
+  duration_ms: 1.107266
+  type: 'test'
+  ...
+# Subtest: 1.1 envelope alone marks coordinates as current and unsupported or conflicting versions fail
+ok 21 - 1.1 envelope alone marks coordinates as current and unsupported or conflicting versions fail
+  ---
+  duration_ms: 2.268201
+  type: 'test'
+  ...
+# Subtest: MPVN disk export and import preserves a real project and rejects a modified field
+ok 22 - MPVN disk export and import preserves a real project and rejects a modified field
+  ---
+  duration_ms: 43.21334
+  type: 'test'
+  ...
+# Subtest: MPVN preserves legacy imports, rejects missing v2 checksum and identifies MSVN
+ok 23 - MPVN preserves legacy imports, rejects missing v2 checksum and identifies MSVN
+  ---
+  duration_ms: 7.342091
+  type: 'test'
+  ...
+# Subtest: MSVN chapter export to disk round-trips levels 0, 5 and 9 and reports actual codec
+ok 24 - MSVN chapter export to disk round-trips levels 0, 5 and 9 and reports actual codec
+  ---
+  duration_ms: 20.707377
+  type: 'test'
+  ...
+# Subtest: MSVN rejects bad magic, corrupt content, non-node payloads and chapter mismatch
+ok 25 - MSVN rejects bad magic, corrupt content, non-node payloads and chapter mismatch
+  ---
+  duration_ms: 12.83445
+  type: 'test'
+  ...
+# Subtest: MPVN hash covers the envelope and is not an authentication mechanism
+ok 26 - MPVN hash covers the envelope and is not an authentication mechanism
+  ---
+  duration_ms: 2.628889
+  type: 'test'
+  ...
+# Subtest: MSVN validates metadata, IDs, compression and old codec labels
+ok 27 - MSVN validates metadata, IDs, compression and old codec labels
+  ---
+  duration_ms: 9.665581
+  type: 'test'
+  ...
+# Subtest: MSVN checksum covers chapter metadata and detects missing v2 checksum
+ok 28 - MSVN checksum covers chapter metadata and detects missing v2 checksum
+  ---
+  duration_ms: 3.049814
+  type: 'test'
+  ...
+# Subtest: blank and example projects satisfy the same runtime schema
+ok 29 - blank and example projects satisfy the same runtime schema
+  ---
+  duration_ms: 27.199131
+  type: 'test'
+  ...
+# Subtest: invalid enums and duplicated ids are rejected with a location
+ok 30 - invalid enums and duplicated ids are rejected with a location
+  ---
+  duration_ms: 3.551308
+  type: 'test'
+  ...
+# Subtest: dangling speakers, placements, choices, chapter and sprite references fail
+ok 31 - dangling speakers, placements, choices, chapter and sprite references fail
+  ---
+  duration_ms: 4.515821
+  type: 'test'
+  ...
+# Subtest: validation never repairs or modifies malformed input
+ok 32 - validation never repairs or modifies malformed input
+  ---
+  duration_ms: 4.874386
+  type: 'test'
+  ...
+# Subtest: deep prototype pollution, cyclic values, and unsupported versions are rejected
+ok 33 - deep prototype pollution, cyclic values, and unsupported versions are rejected
+  ---
+  duration_ms: 0.812924
+  type: 'test'
+  ...
+# Subtest: strict nested fields, types, ids and asset references are validated
+ok 34 - strict nested fields, types, ids and asset references are validated
+  ---
+  duration_ms: 8.288108
+  type: 'test'
+  ...
+# Subtest: legitimate custom sprite references are accepted when a media source is present
+ok 35 - legitimate custom sprite references are accepted when a media source is present
+  ---
+  duration_ms: 0.595937
+  type: 'test'
+  ...
+# Subtest: HTML builder accepts a minimal narrative but blocks every unsupported registered node
+ok 36 - HTML builder accepts a minimal narrative but blocks every unsupported registered node
+  ---
+  duration_ms: 5.27113
+  type: 'test'
+  ...
+# Subtest: HTML exporter fails closed for unsupported settings, conditions, dangling targets and audio
+ok 37 - HTML exporter fails closed for unsupported settings, conditions, dangling targets and audio
+  ---
+  duration_ms: 0.325809
+  type: 'test'
+  ...
+# Subtest: HTML export embeds untrusted project text safely inside the script
+ok 38 - HTML export embeds untrusted project text safely inside the script
+  ---
+  duration_ms: 0.338347
+  type: 'test'
+  ...
+# Subtest: API rewrite keeps comments, whitespace, CRLF, arguments and host statements verbatim
+ok 39 - API rewrite keeps comments, whitespace, CRLF, arguments and host statements verbatim
+  ---
+  duration_ms: 1.276894
+  type: 'test'
+  ...
+# Subtest: AI endpoint policy rejects credentials, query, fragments, unusual ports and redirects must be blocked in the client
+ok 40 - AI endpoint policy rejects credentials, query, fragments, unusual ports and redirects must be blocked in the client
+  ---
+  duration_ms: 35.012665
+  type: 'test'
+  ...
+# Subtest: static and layered avatars never stretch the body; missing layers do not erase neutral parts
+ok 41 - static and layered avatars never stretch the body; missing layers do not erase neutral parts
+  ---
+  duration_ms: 1.308161
+  type: 'test'
+  ...
+# Subtest: HTML low-level builder rejects unhydrated workspace image references
+ok 42 - HTML low-level builder rejects unhydrated workspace image references
+  ---
+  duration_ms: 0.410045
+  type: 'test'
+  ...
+# Subtest: native engine errors are not silently downgraded to a successful web check
+ok 43 - native engine errors are not silently downgraded to a successful web check
+  ---
+  duration_ms: 1.107915
+  type: 'test'
+  ...
+# Subtest: every checked-in GitHub workflow is manually triggered only
+ok 44 - every checked-in GitHub workflow is manually triggered only
+  ---
+  duration_ms: 25.639557
+  type: 'test'
+  ...
+# Subtest: release build jobs are restricted to v0.1.0-dev
+ok 45 - release build jobs are restricted to v0.1.0-dev
+  ---
+  duration_ms: 19.992476
+  type: 'test'
+  ...
+# Subtest: manual platform builds fail if required artifacts are missing
+ok 46 - manual platform builds fail if required artifacts are missing
+  ---
+  duration_ms: 15.455506
+  type: 'test'
+  ...
+# Subtest: desktop save propagates native errors and never attempts a second write
+ok 47 - desktop save propagates native errors and never attempts a second write
+  ---
+  duration_ms: 21.624567
+  type: 'test'
+  ...
+# Subtest: save twice and rename title uses one file and metadata only
+ok 48 - save twice and rename title uses one file and metadata only
+  ---
+  duration_ms: 19.739489
+  type: 'test'
+  ...
+# Subtest: oversized project is rejected before invoking a disk write
+ok 49 - oversized project is rejected before invoking a disk write
+  ---
+  duration_ms: 232.825889
+  type: 'test'
+  ...
+# Subtest: browser without mounted directory does not report a file write as successful
+ok 50 - browser without mounted directory does not report a file write as successful
+  ---
+  duration_ms: 1.857583
+  type: 'test'
+  ...
+# Subtest: 100,000 generated editor IDs are distinct
+ok 51 - 100,000 generated editor IDs are distinct
+  ---
+  duration_ms: 179.344165
+  type: 'test'
+  ...
+# Subtest: schema-invalid primary falls back to backup and retains that backup on the first save
+ok 52 - schema-invalid primary falls back to backup and retains that backup on the first save
+  ---
+  duration_ms: 6.618469
+  type: 'test'
+  ...
+# Subtest: native 1.0 load, save and reopen migrates coordinates only once
+ok 53 - native 1.0 load, save and reopen migrates coordinates only once
+  ---
+  duration_ms: 7.684135
+  type: 'test'
+  ...
+# Subtest: overlapping saves are serialized and the newer revision is written last
+ok 54 - overlapping saves are serialized and the newer revision is written last
+  ---
+  duration_ms: 5.974856
+  type: 'test'
+  ...
+# Subtest: checksum-corrupted primary falls back to a valid backup
+ok 55 - checksum-corrupted primary falls back to a valid backup
+  ---
+  duration_ms: 1.430541
+  type: 'test'
+  ...
+1..55
+# tests 55
+# suites 0
+# pass 55
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 4296.219155
+found 0 vulnerabilities

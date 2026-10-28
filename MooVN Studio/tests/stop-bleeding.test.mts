@@ -151,7 +151,15 @@ test('native engine errors are not silently downgraded to a successful web check
     Object.defineProperty(globalThis, 'window', { configurable: true, value: {
       __TAURI_INTERNALS__: { invoke: async () => { throw new Error('ERR_ENGINE_LOCK: unavailable'); } },
     }});
-    await assert.rejects(evalPolyglotScriptInEngineAsync('moovn.save.create("x");', 'typescript'), /未执行且未自动降级.*ERR_ENGINE_LOCK/);
+    await assert.rejects(evalPolyglotScriptInEngineAsync('moovn.save.create("x");', 'typescript'), /此前操作可能已执行，未自动降级.*ERR_ENGINE_LOCK/);
+    Object.defineProperty(globalThis, 'window', { configurable: true, value: {
+      __TAURI_INTERNALS__: { invoke: async () => { throw new Error('ERR_SAVE_CREATE: disk failed'); } },
+    }});
+    await assert.rejects(evalPolyglotScriptInEngineAsync('moovn.save.create("x");', 'typescript'), /此前操作可能已执行，未自动降级.*ERR_SAVE_CREATE/);
+    Object.defineProperty(globalThis, 'window', { configurable: true, value: {
+      __TAURI_INTERNALS__: { invoke: async () => ['ERR_SAVE_BACKUP: disk failed'] },
+    }});
+    await assert.rejects(evalPolyglotScriptInEngineAsync('moovn.save.create("x");', 'typescript'), /此前操作可能已执行，未自动降级.*ERR_SAVE_BACKUP/);
   } finally {
     if (oldWindow === undefined) Reflect.deleteProperty(globalThis, 'window');
     else Object.defineProperty(globalThis, 'window', { configurable: true, value: oldWindow });

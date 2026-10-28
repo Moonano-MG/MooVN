@@ -468,7 +468,7 @@ export async function migrateLegacyRecentProjects(): Promise<SavedProjectMeta[]>
 
 export async function openSavedProject(meta: SavedProjectMeta): Promise<{
   ok: boolean; project?: VNProject; error?: string; recoveredFromBackup?: boolean;
-  migrated?: boolean; migratedPlacements?: number;
+  migrated?: boolean; migratedPlacements?: number; integrity?: 'sha256' | 'legacy-unchecked';
 }> {
   let nativeError: string | undefined;
   if (isTauriEnvironment()) {
@@ -476,7 +476,7 @@ export async function openSavedProject(meta: SavedProjectMeta): Promise<{
     if (result.ok && result.data) {
       return {
         ok: true, project: result.data, recoveredFromBackup: result.recoveredFromBackup,
-        migrated: result.migrated, migratedPlacements: result.migratedPlacements,
+        migrated: result.migrated, migratedPlacements: result.migratedPlacements, integrity: result.integrity,
       };
     }
     nativeError = result.error || '工程文件读取失败';

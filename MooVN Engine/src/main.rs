@@ -1,8 +1,17 @@
-//! MooVN Engine CLI & Polyglot Verification Runner.
+//! Fixed in-memory API demo; this is not a project-file player.
 
 use moovn_engine::{MooVNEngineRuntime, PolyglotTranslator, SourceLanguage};
 
 fn main() {
+    let mut args = std::env::args().skip(1);
+    if let Some(arg) = args.next() {
+        if (arg == "--help" || arg == "-h") && args.next().is_none() {
+            println!("MooVN Engine API demo\nUsage: moovn-engine-cli [--help]\n\nRuns a fixed in-memory example. It does not load .mpvn/.msvn projects, compile host languages, or build games.");
+            return;
+        }
+        eprintln!("Unsupported argument: {arg}. Run moovn-engine-cli --help for usage.");
+        std::process::exit(2);
+    }
     let mut engine = MooVNEngineRuntime::new();
 
     // 1. C# fast API script (`moovn.save:create(NAME)`)
@@ -31,7 +40,8 @@ fn main() {
         moovn::save::create("Astral_Save_Slot_03");
     "#;
 
-    println!("=== MooVN Engine v0.1.0 Polyglot Runtime ===");
+    println!("=== MooVN Engine v0.1.0 API demo (fixed in-memory example) ===");
+    println!("Recognized MooVN API calls only; this is not a host-language compiler or project player.");
     for (lang, code) in [
         (SourceLanguage::CSharp, csharp_script),
         (SourceLanguage::JavaScript, js_script),
@@ -45,7 +55,7 @@ fn main() {
 
     // Demonstrate cross-language transpilation
     let (ir, _) = PolyglotTranslator::compile_to_ir(csharp_script, SourceLanguage::CSharp);
-    println!("\n--- Transpiled to JavaScript ---\n{}", PolyglotTranslator::transpile(&ir, SourceLanguage::JavaScript));
-    println!("--- Transpiled to C# ---\n{}", PolyglotTranslator::transpile(&ir, SourceLanguage::CSharp));
-    println!("--- Transpiled to Rust ---\n{}", PolyglotTranslator::transpile(&ir, SourceLanguage::Rust));
+    println!("\n--- Recognized API operations formatted for JavaScript ---\n{}", PolyglotTranslator::transpile(&ir, SourceLanguage::JavaScript));
+    println!("--- Recognized API operations formatted for C# ---\n{}", PolyglotTranslator::transpile(&ir, SourceLanguage::CSharp));
+    println!("--- Recognized API operations formatted for Rust ---\n{}", PolyglotTranslator::transpile(&ir, SourceLanguage::Rust));
 }

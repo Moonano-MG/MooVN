@@ -88,6 +88,23 @@ try {
   assert.equal(await code.inputValue(), original);
   mark('script rename, preview, apply and protected restore');
 
+  // Simulate a native error through the real browser bridge and make sure it
+  // remains readable rather than being shown as a short-lived green success.
+  await activePage.evaluate(() => {
+    window.__TAURI_INTERNALS__ = { invoke: async () => { throw new Error('ERR_SAVE_CREATE: simulated disk failure'); } };
+  });
+  await activePage.getByRole('button', { name: '解析 / 引擎' }).click();
+  const scriptError = activePage.getByRole('alert');
+  await scriptError.waitFor();
+  assert.match(await scriptError.innerText(), /此前操作可能已执行.*ERR_SAVE_CREATE/);
+  await activePage.evaluate(() => { delete window.__TAURI_INTERNALS__; });
+  await activePage.waitForTimeout(5200);
+  assert(await scriptError.isVisible(), 'native failure must stay visible until dismissed');
+  await screenshot('02-script-native-error');
+  await activePage.getByRole('button', { name: '关闭脚本错误' }).click();
+  assert.equal(await scriptError.count(), 0);
+  mark('native script error remains visible and is explicitly dismissed (mock IPC)');
+
   // AI is intercepted: no real credentials or external provider requests.
   await rail('AI 助手').click();
   await activePage.getByRole('button', { name: '接口设置' }).click();

@@ -4,14 +4,14 @@ name: MooVN Multi-Platform Build (v0.1.0-dev)
 # 仅针对 v0.1.0-dev 及开发分支生效，绝不覆盖或触发 main 分支（main 仅放介绍文件）
 # 仅支持手动触发 (workflow_dispatch)，推送代码时不自动触发编译
 # 同分支并发控制：若同一分支开启新 Action 且上个 Action 仍在跑，立即停止上个 Action
-# 输出产物：Web (包含 PC 和 Mobile)、Android、Windows、iOS、macOS
+# 输出产物：Engine、Web、Linux、Android、Windows、iOS、macOS；移动端签名须另行配置
 # ============================================================================
 
 on:
   workflow_dispatch:
     inputs:
       build_target:
-        description: "选择编译目标平台 (all / engine / web / windows / android / ios / macos)"
+        description: "选择编译目标平台 (all / engine / web / linux / windows / android / ios / macos)"
         required: false
         default: "all"
         type: choice
@@ -19,6 +19,7 @@ on:
           - all
           - engine
           - web
+          - linux
           - windows
           - android
           - ios
@@ -63,6 +64,24 @@ jobs:
       - name: Compile C++20 Renderer Bridge
         run: g++ -std=c++20 -Wall -Wextra -Icpp/include -c cpp/src/moovn_renderer_bridge.cpp -o moovn_renderer_bridge.o
 
+      - name: Require Linux engine outputs
+        run: |
+          test -s target/release/moovn-engine-cli
+          test -s target/release/libmoovn_engine.so
+          test -s target/release/libmoovn_engine.a
+          test -s moovn_renderer_bridge.o
+
+      - name: Upload Linux engine binaries (not the desktop editor)
+        uses: actions/upload-artifact@v4
+        with:
+          name: MooVN-Engine-Linux-x86_64
+          path: |
+            MooVN Engine/target/release/moovn-engine-cli
+            MooVN Engine/target/release/libmoovn_engine.so
+            MooVN Engine/target/release/libmoovn_engine.a
+            MooVN Engine/moovn_renderer_bridge.o
+          if-no-files-found: error
+
   # ============================================================================
   # 1. MooVN Web 构建 (同时包含 PC 桌面端与 Mobile 移动端响应式 Web 编译包)
   # ============================================================================
@@ -98,6 +117,53 @@ jobs:
         with:
           name: MooVN-Web-PC-and-Mobile
           path: "MooVN Web/dist/"
+          if-no-files-found: error
+
+  # ============================================================================
+  # Linux 桌面编辑器（不是 Engine CLI，也不是移动 Web）
+  # ============================================================================
+  build-linux:
+    name: Build Linux desktop (AppImage & deb)
+    if: ${{ github.ref == 'refs/heads/v0.1.0-dev' && (inputs.build_target == 'all' || inputs.build_target == 'linux') }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: MooVN Studio/package-lock.json
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install Linux desktop dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      - name: Install frontend dependencies
+        run: npm ci
+      - name: Generate Tauri icons
+        run: npx tauri icon public/icon.png
+      - name: Build Linux desktop packages
+        run: npx tauri build --bundles appimage,deb
+      - name: Require both Linux packages
+        shell: bash
+        run: |
+          shopt -s nullglob
+          appimages=(src-tauri/target/release/bundle/appimage/*.AppImage)
+          debs=(src-tauri/target/release/bundle/deb/*.deb)
+          if (( ${#appimages[@]} == 0 || ${#debs[@]} == 0 )); then
+            echo '::error::Expected both an AppImage and a deb package.'
+            exit 1
+          fi
+      - name: Upload Linux desktop packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: MooVN-Linux-x86_64
+          path: |
+            MooVN Studio/src-tauri/target/release/bundle/appimage/*.AppImage
+            MooVN Studio/src-tauri/target/release/bundle/deb/*.deb
           if-no-files-found: error
 
   # ============================================================================
@@ -137,6 +203,13 @@ jobs:
       - name: Build Windows Application (NSIS & MSI)
         run: npx tauri build --target x86_64-pc-windows-msvc --bundles nsis,msi
 
+      - name: Require both Windows installer formats
+        shell: pwsh
+        run: |
+          $msi = Get-ChildItem 'src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi' -ErrorAction SilentlyContinue
+          $nsis = Get-ChildItem 'src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe' -ErrorAction SilentlyContinue
+          if (-not $msi -or -not $nsis) { throw 'Expected both MSI and NSIS installers.' }
+
       - name: Upload Windows Installer Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -145,6 +218,7 @@ jobs:
             MooVN Studio/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
             MooVN Studio/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
             MooVN Studio/src-tauri/target/x86_64-pc-windows-msvc/release/moovn.exe
+          if-no-files-found: error
 
   # ============================================================================
   # 3. macOS 编译器构建 (.dmg & .app)
@@ -183,19 +257,27 @@ jobs:
       - name: Build macOS Universal Application
         run: npx tauri build --target universal-apple-darwin --bundles dmg,app
 
-      - name: Zip macOS .app bundle for artifact preservation
+      - name: Require and package macOS DMG and app
+        shell: bash
         run: |
-          mkdir -p release/macos
-          cp src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg release/macos/ || true
-          if [ -d "src-tauri/target/universal-apple-darwin/release/bundle/macos/MooVN.app" ]; then
-            ditto -c -k --keepParent "src-tauri/target/universal-apple-darwin/release/bundle/macos/MooVN.app" "release/macos/MooVN-macOS-Universal.app.zip"
+          set -euo pipefail
+          shopt -s nullglob
+          dmgs=(src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg)
+          apps=(src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app)
+          if (( ${#dmgs[@]} == 0 || ${#apps[@]} != 1 )); then
+            echo '::error::Expected a DMG and exactly one universal macOS app.'
+            exit 1
           fi
+          mkdir -p release/macos
+          cp "${dmgs[@]}" release/macos/
+          ditto -c -k --keepParent "${apps[0]}" "release/macos/MooVN-macOS-Universal.app.zip"
 
       - name: Upload macOS Artifact
         uses: actions/upload-artifact@v4
         with:
           name: MooVN-macOS-Universal
           path: MooVN Studio/release/macos/*
+          if-no-files-found: error
 
   # ============================================================================
   # 4. Android 编译器构建 (APK)
@@ -271,6 +353,7 @@ jobs:
           name: MooVN-Android-APK
           path: |
             MooVN Studio/src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
 
   # ============================================================================
   # 5. iOS 编译器构建 (Xcode App / IPA & Project Bundle)
@@ -313,23 +396,36 @@ jobs:
         working-directory: "MooVN Studio/src-tauri"
         run: npx tauri ios init
 
-      - name: Build iOS App (unsigned CI build + Xcode project archive)
+      # Development IPA export needs Apple signing configuration. No claim of
+      # an installable device build is made merely by uploading an Xcode project.
+      - name: Build iOS app (development export requires signing)
         working-directory: "MooVN Studio/src-tauri"
         run: npx tauri ios build --export-method development --ci
 
-      - name: Package iOS Artifacts
+      - name: Require iOS app or IPA and package artifacts
+        shell: bash
         run: |
+          set -euo pipefail
           mkdir -p release/ios
-          if [ -d "src-tauri/gen/apple/build" ]; then
-            find src-tauri/gen/apple/build -name "*.ipa" -exec cp {} release/ios/ \; || true
-            find src-tauri/gen/apple/build -name "*.app" -exec ditto -c -k --keepParent {} release/ios/MooVN-iOS.app.zip \; || true
+          test -d src-tauri/gen/apple/build
+          count=0
+          while IFS= read -r -d '' ipa; do
+            cp "$ipa" "release/ios/"
+            count=$((count + 1))
+          done < <(find src-tauri/gen/apple/build -type f -name '*.ipa' -print0)
+          while IFS= read -r -d '' app; do
+            count=$((count + 1))
+            ditto -c -k --keepParent "$app" "release/ios/MooVN-iOS-${count}.app.zip"
+          done < <(find src-tauri/gen/apple/build -type d -name '*.app' -print0)
+          if (( count == 0 )); then
+            echo '::error::No iOS app or IPA was produced; the Xcode project alone is not a build.'
+            exit 1
           fi
-          if [ -d "src-tauri/gen/apple" ]; then
-            ditto -c -k --keepParent src-tauri/gen/apple release/ios/MooVN-iOS-XcodeProject.zip
-          fi
+          ditto -c -k --keepParent src-tauri/gen/apple release/ios/MooVN-iOS-XcodeProject.zip
 
       - name: Upload iOS Artifact
         uses: actions/upload-artifact@v4
         with:
           name: MooVN-iOS-Build
           path: MooVN Studio/release/ios/*
+          if-no-files-found: error

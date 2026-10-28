@@ -8,6 +8,7 @@ The repository uses [GPL-3.0](../LICENSE) as its base license. The root LICENSE 
 - Lucide React — ISC, Lucide contributors.
 - Tailwind CSS — MIT, Tailwind Labs and contributors.
 - yaml — ISC, Eemeli Aro.
+- @noble/hashes — MIT, Paul Miller and contributors; used for unkeyed SHA-256 project and chapter checksums.
 - Tauri v2 — Apache-2.0 OR MIT, The Commons Conservancy and contributors.
 - Serde and serde_json — Apache-2.0 OR MIT, respective contributors.
 

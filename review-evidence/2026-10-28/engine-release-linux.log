@@ -1,0 +1,64 @@
+Toolchain: npm @rustbin (source not independently verified)
+rustc 1.88.0 (6b00bc388 2025-06-23)
+cargo 1.88.0 (873a06493 2025-05-10)
+Native Linux Engine tests:
+   Compiling moovn-engine v0.1.0 (/home/user/MooVN/MooVN Engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 6.00s
+     Running unittests src/lib.rs (target/debug/deps/moovn_engine-25459c31af68eec1)
+
+running 3 tests
+test save::tests::checksum_does_not_authenticate_changes_or_cover_timestamp ... ok
+test save::tests::test_legacy_v2_ascii_payload ... ok
+test save::tests::test_persistent_save_manager_roundtrip_and_tamper_detection ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (target/debug/deps/moovn_engine_cli-dfc61715c5df4c81)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/cli.rs (target/debug/deps/cli-c4c47a9c37133b14)
+
+running 2 tests
+test help_describes_the_fixed_demo_without_running_it ... ok
+test unknown_arguments_fail_and_demo_is_labelled_as_an_example ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/save_failure.rs (target/debug/deps/save_failure-6a3d66b39b97888f)
+
+running 10 tests
+test c_abi_reports_save_failure_and_missing_load ... ok
+test colliding_slot_names_never_overwrite_or_delete_each_other ... ok
+test dotted_variable_keys_survive_real_disk_round_trip ... ok
+test failed_backup_keeps_the_original_slot_and_reports_an_error ... ok
+test failed_disk_write_is_reported_and_not_kept_as_a_successful_slot ... ok
+test failed_delete_does_not_claim_success_or_forget_the_slot ... ok
+test reload_is_transactional_and_removes_slots_no_longer_on_disk ... ok
+test reload_rejects_duplicate_records_and_missing_directory_without_losing_memory ... ok
+test script_stops_after_save_failure_but_reports_previous_effects ... ok
+test save_and_backup_symlinks_are_rejected_without_touching_targets ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+   Doc-tests moovn_engine
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+Native Linux Engine release build:
+   Compiling moovn-engine v0.1.0 (/home/user/MooVN/MooVN Engine)
+    Finished `release` profile [optimized] target(s) in 2.18s
+Required engine outputs:
+-rw-r--r-- 1 user user 148K Oct 28 10:24 /home/user/.arena/moovn_renderer_bridge.o
+-rw-r--r-- 2 user user  20M Oct 28 10:24 target/release/libmoovn_engine.a
+-rwxr-xr-x 2 user user 686K Oct 28 10:24 target/release/libmoovn_engine.so
+-rwxr-xr-x 2 user user 741K Oct 28 10:24 target/release/moovn-engine-cli
+Engine CLI --help:
+MooVN Engine API demo
+Usage: moovn-engine-cli [--help]
+
+Runs a fixed in-memory example. It does not load .mpvn/.msvn projects, compile host languages, or build games.

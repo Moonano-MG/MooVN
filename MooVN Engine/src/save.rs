@@ -10,9 +10,12 @@
 //! using `temp -> sync_all -> backup -> rename`.
 
 use std::collections::HashMap;
-use std::fs::{self, File};
+use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static SAVE_TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SaveSlotRecord {
@@ -129,7 +132,10 @@ impl SaveSlotRecord {
         var_keys.sort();
         for k in var_keys {
             if let Some(v) = self.variables.get(k) {
-                lines.push(format!("var.{}.{}", percent_encode(k), percent_encode(v)));
+                // The first literal dot separates the key from the value. Escaping
+                // dots in keys preserves the v2 wire format without ambiguity.
+                let encoded_key = percent_encode(k).replace('.', "%2E");
+                lines.push(format!("var.{}.{}", encoded_key, percent_encode(v)));
             }
         }
 
@@ -247,7 +253,7 @@ impl SaveManager {
         }
     }
 
-    /// Creates a disk-backed `SaveManager` (`GPT-60`) and loads all valid `.msave` files from `dir`.
+    /// Creates a disk-backed manager and loads all `.msave` files, or fails without a partial reload.
     pub fn with_storage_dir(dir: impl Into<PathBuf>) -> Result<Self, String> {
         let dir_path = dir.into();
         fs::create_dir_all(&dir_path)
@@ -291,25 +297,70 @@ impl SaveManager {
         dir.join(format!("{}.msave", if safe_name.is_empty() { "slot" } else { &safe_name }))
     }
 
+    /// The lossy legacy filename scheme can map different names to one path.
+    /// Check the saved record before replacing or deleting it; do not silently
+    /// overwrite a corrupt file or a different slot. Cross-process races remain.
+    fn verify_slot_file_owner(path: &Path, slot_name: &str) -> Result<(), String> {
+        let metadata = fs::symlink_metadata(path).map_err(|e| format!("ERR_SAVE_TARGET: {}", e))?;
+        if !metadata.file_type().is_file() {
+            return Err("ERR_SAVE_TARGET: 存档目标不是普通文件".to_string());
+        }
+        let contents = fs::read_to_string(path).map_err(|e| format!("ERR_SAVE_READ_FILE: {}", e))?;
+        let existing = SaveSlotRecord::from_disk_string(&contents)
+            .map_err(|e| format!("ERR_SAVE_EXISTING_INVALID: {}", e))?;
+        if existing.slot_name != slot_name {
+            return Err(format!("ERR_SAVE_SLOT_COLLISION: '{}' 与已有存档映射到同一文件", slot_name));
+        }
+        Ok(())
+    }
+
     fn atomic_write_slot_file(target_path: &Path, content: &str) -> Result<(), String> {
-        let tmp_path = target_path.with_extension("msave.tmp");
+        // A unique, create-new temporary file prevents two saves from sharing
+        // or truncating a pre-existing temporary file. It is in the same directory.
+        let sequence = SAVE_TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let tmp_path = target_path.with_extension(format!("msave.{}.{}.tmp", std::process::id(), sequence));
         let bak_path = target_path.with_extension("msave.bak");
-
-        {
-            let mut file = File::create(&tmp_path)
+        let mut created = false;
+        let result = (|| -> Result<(), String> {
+            let mut file = OpenOptions::new().write(true).create_new(true).open(&tmp_path)
                 .map_err(|e| format!("ERR_SAVE_TEMP_CREATE: {}", e))?;
-            file.write_all(content.as_bytes())
-                .map_err(|e| format!("ERR_SAVE_TEMP_WRITE: {}", e))?;
-            file.sync_all()
-                .map_err(|e| format!("ERR_SAVE_FSYNC: {}", e))?;
-        }
+            created = true;
+            file.write_all(content.as_bytes()).map_err(|e| format!("ERR_SAVE_TEMP_WRITE: {}", e))?;
+            file.sync_all().map_err(|e| format!("ERR_SAVE_FSYNC: {}", e))?;
+            drop(file);
 
-        if target_path.exists() {
-            let _ = fs::copy(target_path, &bak_path);
+            match fs::symlink_metadata(target_path) {
+                Ok(metadata) => {
+                    if !metadata.file_type().is_file() {
+                        return Err("ERR_SAVE_TARGET: 存档目标不是普通文件".to_string());
+                    }
+                    match fs::symlink_metadata(&bak_path) {
+                        Ok(backup) if !backup.file_type().is_file() => {
+                            return Err("ERR_SAVE_BACKUP: 备份目标不是普通文件".to_string());
+                        }
+                        Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
+                            return Err(format!("ERR_SAVE_BACKUP: {}", error));
+                        }
+                        _ => {}
+                    }
+                    fs::copy(target_path, &bak_path).map_err(|e| format!("ERR_SAVE_BACKUP: {}", e))?;
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(format!("ERR_SAVE_TARGET: {}", error)),
+            }
+            fs::rename(&tmp_path, target_path).map_err(|e| format!("ERR_SAVE_ATOMIC_RENAME: {}", e))?;
+            Ok(())
+        })();
+        if let Err(error) = result {
+            if created {
+                match fs::remove_file(&tmp_path) {
+                    Ok(()) => {}
+                    Err(cleanup) if cleanup.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(cleanup) => return Err(format!("{}; ERR_SAVE_TEMP_CLEANUP: {}", error, cleanup)),
+                }
+            }
+            return Err(error);
         }
-
-        fs::rename(&tmp_path, target_path)
-            .map_err(|e| format!("ERR_SAVE_ATOMIC_RENAME: {}", e))?;
         Ok(())
     }
 
@@ -318,48 +369,50 @@ impl SaveManager {
         let Some(ref dir) = self.storage_dir else {
             return Ok(0);
         };
-        if !dir.exists() {
-            return Ok(0);
-        }
         let entries = fs::read_dir(dir)
             .map_err(|e| format!("ERR_SAVE_READ_DIR: {}", e))?;
-        let mut loaded = 0;
-        for entry in entries.flatten() {
+        let mut loaded_slots = HashMap::new();
+        for entry in entries {
+            let entry = entry.map_err(|e| format!("ERR_SAVE_READ_DIR_ENTRY: {}", e))?;
             let path = entry.path();
             if path.extension().and_then(|s| s.to_str()) != Some("msave") {
                 continue;
             }
+            if !entry.file_type().map_err(|e| format!("ERR_SAVE_TARGET: {}", e))?.is_file() {
+                return Err(format!("ERR_SAVE_TARGET: 不是普通存档文件: {}", path.display()));
+            }
             let raw = fs::read_to_string(&path)
                 .map_err(|e| format!("ERR_SAVE_READ_FILE: {}", e))?;
             let rec = SaveSlotRecord::from_disk_string(&raw)?;
-            self.slots.insert(rec.slot_name.clone(), rec);
-            loaded += 1;
+            if loaded_slots.insert(rec.slot_name.clone(), rec).is_some() {
+                return Err("ERR_SAVE_DUPLICATE_SLOT: 多个文件声明同一存档名".to_string());
+            }
         }
+        let loaded = loaded_slots.len();
+        self.slots = loaded_slots;
         Ok(loaded)
     }
 
-    /// Creates or overwrites a save slot (`moovn.save.create(NAME)`), persisting to disk if configured.
-    pub fn create_save(&mut self, mut record: SaveSlotRecord) -> &SaveSlotRecord {
+    /// Creates or overwrites a slot; failures leave the in-memory slot unchanged.
+    pub fn create_save(&mut self, mut record: SaveSlotRecord) -> Result<&SaveSlotRecord, String> {
         record.checksum_fnv1a = record.compute_canonical_checksum();
         if let Some(ref dir) = self.storage_dir {
             let path = Self::slot_file_path(dir, &record.slot_name);
-            let _ = Self::atomic_write_slot_file(&path, &record.to_disk_string());
-        }
-        let key = record.slot_name.clone();
-        self.slots.insert(key.clone(), record);
-        self.slots.get(&key).expect("just inserted")
-    }
-
-    /// Creates a save slot and returns an explicit `Result` if disk persistence fails (`GPT-60`).
-    pub fn create_save_checked(&mut self, mut record: SaveSlotRecord) -> Result<&SaveSlotRecord, String> {
-        record.checksum_fnv1a = record.compute_canonical_checksum();
-        if let Some(ref dir) = self.storage_dir {
-            let path = Self::slot_file_path(dir, &record.slot_name);
+            match fs::symlink_metadata(&path) {
+                Ok(_) => Self::verify_slot_file_owner(&path, &record.slot_name)?,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(format!("ERR_SAVE_TARGET: {}", error)),
+            }
             Self::atomic_write_slot_file(&path, &record.to_disk_string())?;
         }
         let key = record.slot_name.clone();
         self.slots.insert(key.clone(), record);
         Ok(self.slots.get(&key).expect("just inserted"))
+    }
+
+    /// Backwards-compatible name for the checked save operation.
+    pub fn create_save_checked(&mut self, record: SaveSlotRecord) -> Result<&SaveSlotRecord, String> {
+        self.create_save(record)
     }
 
     /// Loads and verifies a save slot by name (`moovn.save.load(NAME)`).
@@ -373,12 +426,14 @@ impl SaveManager {
     }
 
     /// Deletes a save slot by name (`moovn.save.delete(NAME)`), removing its disk file if present.
-    pub fn delete_save(&mut self, slot_name: &str) -> bool {
+    pub fn delete_save(&mut self, slot_name: &str) -> Result<bool, String> {
+        if !self.slots.contains_key(slot_name) { return Ok(false); }
         if let Some(ref dir) = self.storage_dir {
             let path = Self::slot_file_path(dir, slot_name);
-            let _ = fs::remove_file(path);
+            Self::verify_slot_file_owner(&path, slot_name)?;
+            fs::remove_file(path).map_err(|e| format!("ERR_SAVE_DELETE: {}", e))?;
         }
-        self.slots.remove(slot_name).is_some()
+        Ok(self.slots.remove(slot_name).is_some())
     }
 
     pub fn list_saves(&self) -> Vec<&SaveSlotRecord> {

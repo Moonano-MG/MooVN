@@ -1,0 +1,210 @@
+{
+  "magic": "MPVN_STUDIO_PROJECT",
+  "format": "mpvn",
+  "envelopeVersion": 2,
+  "schemaVersion": "1.1.0",
+  "studioName": "MooVN Studio",
+  "exportedAt": "2026-10-28T09:52:58.547Z",
+  "projectMeta": {
+    "id": "sample-fe1aff63-258e-43c0-89f9-9c55dc6895f1",
+    "title": "入门示例工程：放学后的教室",
+    "author": "MooVN Studio Developer",
+    "version": "0.1.0",
+    "chaptersCount": 1,
+    "nodesCount": 2,
+    "charactersCount": 1
+  },
+  "project": {
+    "schemaVersion": "1.1.0",
+    "id": "sample-fe1aff63-258e-43c0-89f9-9c55dc6895f1",
+    "title": "入门示例工程：放学后的教室",
+    "author": "MooVN Studio Developer",
+    "version": "0.1.0",
+    "resolution": {
+      "width": 1920,
+      "height": 1080
+    },
+    "defaultLanguage": "typescript",
+    "startNodeId": "scene-start-01",
+    "uiConfig": {
+      "presetId": "classic_blue",
+      "dialogueBox": {
+        "bottomOffset": 24,
+        "widthPercent": 92,
+        "heightPx": 176,
+        "paddingPx": 24,
+        "bgColor": "#040c1f",
+        "bgOpacity": 0.88,
+        "borderColor": "#1e3a8a",
+        "borderWidth": 1,
+        "borderRadius": 12,
+        "backdropBlur": true,
+        "speakerFontSize": 20,
+        "speakerTagMode": "inside",
+        "textFontSize": 18,
+        "textColor": "#f1f5f9",
+        "lineHeight": 1.75,
+        "controlPosition": "bottom_right",
+        "visibleControls": {
+          "back": true,
+          "auto": true,
+          "skip": true,
+          "hide": true,
+          "settings": true
+        }
+      },
+      "choiceBox": {
+        "position": "above_left",
+        "bgColor": "#020617",
+        "bgOpacity": 0.92,
+        "borderColor": "#1e3a8a",
+        "hoverAccentColor": "#38bdf8",
+        "textColor": "#f8fafc",
+        "fontSize": 15,
+        "borderRadius": 8
+      },
+      "mainMenu": {
+        "layout": "left_panel",
+        "panelColor": "#040c1f",
+        "accentColor": "#38bdf8",
+        "titleColor": "#ffffff",
+        "backgroundId": "",
+        "showHeroCharacter": false,
+        "heroCharacterSpriteId": "",
+        "subtitleText": ""
+      }
+    },
+    "chapters": [
+      {
+        "id": "chapter-1",
+        "index": 1,
+        "title": "第一章：序章",
+        "subtitle": "Chapter 01",
+        "yamlFileName": "chapter_01.yaml",
+        "description": "新建章节（可在左侧章节面板新增章节或导入 .mpvn 项目文件）",
+        "minCharacterAffection": {}
+      }
+    ],
+    "characters": [
+      {
+        "id": "char-sample-1",
+        "name": "示例角色",
+        "titleRole": "主角",
+        "color": "#38bdf8",
+        "spriteId": "char-yukina-1",
+        "initialAffection": 50,
+        "maxAffection": 100,
+        "bio": "用于演示角色立绘差分与好感度分支的示例角色。",
+        "customAttributes": [],
+        "expressions": [
+          {
+            "id": "expr-default",
+            "label": "微笑",
+            "spriteId": "char-yukina-1"
+          },
+          {
+            "id": "expr-shy",
+            "label": "害羞",
+            "spriteId": "char-yukina-2"
+          }
+        ]
+      }
+    ],
+    "variables": [
+      {
+        "key": "chapterIndex",
+        "label": "当前章节序号",
+        "type": "number",
+        "value": 1
+      }
+    ],
+    "nodes": [
+      {
+        "id": "scene-start-01",
+        "chapterId": "chapter-1",
+        "type": "dialogue",
+        "title": "序幕：夕阳教室",
+        "position": {
+          "x": 120,
+          "y": 140
+        },
+        "backgroundId": "bg-classroom-day",
+        "bgmId": "bgm-spring-breeze",
+        "transition": "fade",
+        "weatherEffect": "none",
+        "colorFilter": "none",
+        "characters": [
+          {
+            "id": "place-sample-1",
+            "characterId": "char-sample-1",
+            "name": "示例角色",
+            "spriteId": "char-yukina-1",
+            "expressionLabel": "微笑",
+            "x": 50,
+            "y": 88,
+            "scale": 1,
+            "enterAnimation": "fade"
+          }
+        ],
+        "dialogues": [
+          {
+            "id": "line-sample-1",
+            "speakerId": "char-sample-1",
+            "speakerName": "示例角色",
+            "speakerColor": "#38bdf8",
+            "text": "这是一个入门示例工程，演示如何布置场景立绘、对白与分支选项。"
+          }
+        ],
+        "choices": [
+          {
+            "id": "choice-sample-1",
+            "text": "继续前进",
+            "targetNodeId": "scene-start-02"
+          }
+        ],
+        "visualBlocks": [],
+        "childrenNodes": [],
+        "nextNodeId": "scene-start-02"
+      },
+      {
+        "id": "scene-start-02",
+        "chapterId": "chapter-1",
+        "type": "end",
+        "title": "尾声：放学铃声",
+        "position": {
+          "x": 460,
+          "y": 140
+        },
+        "backgroundId": "bg-classroom-sunset",
+        "bgmId": "bgm-spring-breeze",
+        "transition": "fade",
+        "weatherEffect": "none",
+        "colorFilter": "none",
+        "characters": [],
+        "dialogues": [
+          {
+            "id": "line-sample-2",
+            "speakerId": "narrator",
+            "speakerName": "旁白",
+            "speakerColor": "#94a3b8",
+            "text": "演示章节到此结束。"
+          }
+        ],
+        "choices": [],
+        "visualBlocks": [],
+        "childrenNodes": [],
+        "nextNodeId": null
+      }
+    ],
+    "isTemplatePreset": true,
+    "projectPath": "browser://MooVN_Workspace/Projects/Sample_Classroom.mpvn",
+    "performanceConfig": {
+      "compressionFormat": "moovn_lz77",
+      "compressionLevel": 5
+    }
+  },
+  "integrity": {
+    "algorithm": "sha256",
+    "digest": "5cb35d97f5dd0272c91334af750b20a724f0ced643af52fd6bc55870c0f84221"
+  }
+}

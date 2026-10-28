@@ -1,7 +1,8 @@
 //! Polyglot Translation Engine for MooVN Engine.
 //!
-//! Translates visual novel fast API calls from JavaScript, TypeScript, C++, C#, and Rust
-//! into canonical `EngineOp` IR instructions, and transpiles between any of those languages.
+//! Recognizes selected MooVN API-call lines and maps them to `EngineOp` values.
+//! Formatting those values for another API dialect does not compile, preserve, or
+//! migrate the surrounding JavaScript, TypeScript, C++, C#, or Rust program.
 //!
 //! Supported API dialects:
 //! - JavaScript: `moovn.save.create(NAME);`
@@ -22,7 +23,8 @@ pub struct TranslationDiagnostic {
 pub struct PolyglotTranslator;
 
 impl PolyglotTranslator {
-    /// Compile source code in JS/TS/C++/C#/Rust into canonical `EngineScriptProgram`.
+    /// Parse recognized MooVN API-call lines into `EngineScriptProgram` operations.
+    /// Other statements produce diagnostics; this does not compile the host language.
     pub fn compile_to_ir(
         source: &str,
         source_language: SourceLanguage,
@@ -90,8 +92,8 @@ impl PolyglotTranslator {
         )
     }
 
-    /// Transpile an `EngineScriptProgram` into target language source code
-    /// (`JavaScript`, `TypeScript`, `C#`, `C++`, or `Rust`).
+    /// Format recognized operations using a target API dialect. This output does
+    /// not include the rest of the source program and is not a language compiler.
     pub fn transpile(program: &EngineScriptProgram, target: SourceLanguage) -> String {
         let mut out = String::new();
         match target {

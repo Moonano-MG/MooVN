@@ -208,7 +208,11 @@ fn eval_engine_script(app: tauri::AppHandle, source_code: String, lang: String) 
         *guard = Some(rt);
     }
     let rt = guard.as_mut().expect("initialized");
-    Ok(rt.eval_polyglot_script(&source_code, SourceLanguage::from_tag(&lang)))
+    let logs = rt.eval_polyglot_script(&source_code, SourceLanguage::from_tag(&lang));
+    if let Some(error) = logs.iter().find(|line| line.starts_with("ERR_SAVE")) {
+        return Err(format!("{error}；此前操作可能已执行，后续操作已停止"));
+    }
+    Ok(logs)
 }
 
 #[tauri::command]
