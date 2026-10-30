@@ -92,7 +92,7 @@ export async function saveProjectToTauriDetailed(
 
 export async function loadProjectFromTauri(
   fileName: string
-): Promise<TauriOperationResult<VNProject> & { recoveredFromBackup?: boolean; migrated?: boolean; migratedPlacements?: number }> {
+): Promise<TauriOperationResult<VNProject> & { recoveredFromBackup?: boolean; migrated?: boolean; migratedPlacements?: number; integrity?: 'sha256' | 'legacy-unchecked' }> {
   type LoadResult = { payload: string; path: string; recovered_from_backup: boolean };
   let result = await invokeTauriCommand<LoadResult>('load_project_json', { fileName, preferBackup: false });
   if (!result.ok || !result.data) {
@@ -120,6 +120,7 @@ export async function loadProjectFromTauri(
     recoveredFromBackup: result.data.recovered_from_backup,
     migrated: parsed.migrated,
     migratedPlacements: parsed.migratedPlacements,
+    integrity: parsed.integrity,
   };
 }
 

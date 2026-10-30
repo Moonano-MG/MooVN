@@ -35,10 +35,10 @@ pub unsafe extern "C" fn moovn_engine_save_create(
     let Ok(name) = CStr::from_ptr(slot_name).to_str() else {
         return false;
     };
-    rt.execute_op(EngineOp::SaveCreate {
+    let result = rt.execute_op(EngineOp::SaveCreate {
         slot_name: name.to_string(),
     });
-    true
+    !result.starts_with("ERR_SAVE")
 }
 
 /// Executes `moovn.save:load(NAME)` from any FFI host.
@@ -54,6 +54,9 @@ pub unsafe extern "C" fn moovn_engine_save_load(
     let Ok(name) = CStr::from_ptr(slot_name).to_str() else {
         return false;
     };
+    if rt.saves.load_save(name).is_none() {
+        return false;
+    }
     rt.execute_op(EngineOp::SaveLoad {
         slot_name: name.to_string(),
     });
@@ -74,7 +77,7 @@ pub unsafe extern "C" fn moovn_engine_eval_script(
     let lang_str = CStr::from_ptr(lang_tag).to_str().unwrap_or("ts");
     let src_str = CStr::from_ptr(script_source).to_str().unwrap_or("");
     let logs = rt.eval_polyglot_script(src_str, SourceLanguage::from_tag(lang_str));
-    logs.len()
+    if logs.iter().any(|line| line.starts_with("ERR_SAVE")) { 0 } else { logs.len() }
 }
 
 /// Attaches the in-development C++ Renderer backend VTable to the Rust engine.

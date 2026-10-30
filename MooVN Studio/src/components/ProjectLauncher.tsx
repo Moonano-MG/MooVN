@@ -6,7 +6,7 @@ import {
   Settings,
   Download,
   Upload,
-  Check,
+  Info,
   Sparkles,
   FileCode,
   HardDrive,
@@ -106,7 +106,10 @@ export const ProjectLauncher: React.FC<ProjectLauncherProps> = ({
       if (result.migrated) {
         window.alert(`已将旧工程迁移至 1.1 脚底锚点（${result.migratedPlacements || 0} 处使用约 39% 的偏移）。请检查位置后手动保存；源文件在保存前不会改写。`);
       }
-      const needsReview = Boolean(result.recoveredFromBackup || result.migrated);
+      if (result.integrity === 'legacy-unchecked') {
+        window.alert('旧工程没有文件校验信息，无法判断是否损坏。请检查内容后手动保存；源文件在保存前不会改写。');
+      }
+      const needsReview = Boolean(result.recoveredFromBackup || result.migrated || result.integrity === 'legacy-unchecked');
       onOpenProject(result.project, needsReview ? undefined : IS_WEB_EDITION ? 'browser' : 'file', needsReview);
     } catch (error: unknown) {
       setNotice(error instanceof Error ? error.message : String(error));
@@ -130,6 +133,9 @@ export const ProjectLauncher: React.FC<ProjectLauncherProps> = ({
     reader.onload = () => {
       const res = parseMpvnProject(String(reader.result));
       if (res.ok && res.project) {
+        if (res.integrity === 'legacy-unchecked') {
+          window.alert('旧工程没有文件校验信息，无法判断是否损坏。导入后请检查内容并另存。');
+        }
         if (res.migrated) {
           window.alert(`已将旧工程迁移至 1.1 脚底锚点（${res.migratedPlacements || 0} 处使用约 39% 的偏移）。请检查位置后手动保存。`);
         }
@@ -291,9 +297,9 @@ export const ProjectLauncher: React.FC<ProjectLauncherProps> = ({
       {/* Main Content */}
       <div className="flex-1 overflow-y-auto p-6 max-w-5xl w-full mx-auto">
         {notice && (
-          <div className="mb-4 px-3 py-2 rounded-md bg-[#1c1c20] border border-[#2e2e36] text-xs text-zinc-200 flex items-center justify-between">
+          <div role="status" className="mb-4 px-3 py-2 rounded-md bg-[#1c1c20] border border-[#2e2e36] text-xs text-zinc-200 flex items-center justify-between">
             <span className="flex items-center gap-1.5">
-              <Check className="w-3.5 h-3.5" strokeWidth={1.8} />
+              <Info className="w-3.5 h-3.5" strokeWidth={1.8} />
               {notice}
             </span>
             <button

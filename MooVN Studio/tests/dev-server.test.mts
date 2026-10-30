@@ -26,12 +26,17 @@ for (const [edition, root] of [['studio', studioRoot], ['web', webRoot]] as cons
       root,
       configFile: path.join(root, 'vite.config.ts'),
       logLevel: 'silent',
+      // Use each edition's actual entry when this test runs from another cwd.
+      optimizeDeps: { entries: [edition === 'web' ? 'studio.html' : 'index.html'] },
       server: { port: 0 },
     });
     try {
       assert.equal(server.config.server.host, '127.0.0.1');
       assert.notEqual(server.config.server.allowedHosts, true);
       await server.listen();
+      // Let Vite finish its dependency scan before shutdown rather than
+      // canceling an active build during this server-security test.
+      await server.environments.client.depsOptimizer?.scanProcessing;
       const address = server.httpServer?.address() as AddressInfo | null;
       assert.ok(address);
       const base = `http://127.0.0.1:${address.port}`;

@@ -1,0 +1,11 @@
+
+> moovn-studio@0.1.0 test:formats:e2e
+> node --experimental-strip-types tests/browser-formats.mjs
+
+✓ studio: downloaded .mpvn and .msvn parsed from disk (2 chapter nodes); modified chapter metadata rejected
+✓ studio: modified .mpvn rejected; original imported through file picker
+✓ studio: legacy .mpvn opens only after warning
+✓ web: downloaded .mpvn and .msvn parsed from disk (2 chapter nodes); modified chapter metadata rejected
+✓ web: modified .mpvn rejected; original imported through file picker
+✓ web: legacy .mpvn opens only after warning
+Browser format checks passed; files and screenshots: /home/user/MooVN/review-evidence/2026-10-28/real-formats-browser

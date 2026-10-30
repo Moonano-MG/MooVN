@@ -507,7 +507,11 @@ export async function evalPolyglotScriptInEngineAsync(
   const staticRes = evalPolyglotScriptInEngine(source, lang);
   if (isTauriEnvironment()) {
     const tauriRes = await evalScriptViaTauriEngine(source, lang);
-    if (tauriRes.ok && Array.isArray(tauriRes.data)) {
+    if (tauriRes.ok && Array.isArray(tauriRes.data) && tauriRes.data.every((line) => typeof line === 'string')) {
+      const saveError = tauriRes.data.find((line) => line.startsWith('ERR_SAVE'));
+      if (saveError) {
+        throw new Error(`原生引擎请求失败，此前操作可能已执行，未自动降级：${saveError}`);
+      }
       return {
         mode: 'tauri_native',
         instructions: staticRes.instructions,
@@ -518,7 +522,7 @@ export async function evalPolyglotScriptInEngineAsync(
         ],
       };
     }
-    throw new Error(`原生引擎请求失败，未执行且未自动降级：${tauriRes.error || '响应格式无效'}`);
+    throw new Error(`原生引擎请求失败，此前操作可能已执行，未自动降级：${tauriRes.error || '响应格式无效'}`);
   }
   return {
     mode: 'web_static',

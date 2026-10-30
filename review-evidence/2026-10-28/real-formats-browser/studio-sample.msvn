@@ -1,0 +1,47 @@
+{
+  "magic": "MSVN_CHAPTER_PACKAGE_V1",
+  "envelopeVersion": 2,
+  "projectId": "sample-687bb036-917e-4ced-93a0-919c14013014",
+  "projectTitle": "入门示例工程：放学后的教室",
+  "exportedAt": "2026-10-28T09:52:51.811Z",
+  "compressionFormat": "moovn_lz77",
+  "compressionLevel": 5,
+  "chapter": {
+    "id": "chapter-1",
+    "index": 1,
+    "title": "第一章：序章",
+    "subtitle": "Chapter 01",
+    "yamlFileName": "chapter_01.yaml",
+    "description": "新建章节（可在左侧章节面板新增章节或导入 .mpvn 项目文件）",
+    "minCharacterAffection": {}
+  },
+  "minCharacterAffection": {},
+  "minVariables": {},
+  "compressedNodesEnvelope": {
+    "magic": "MOOVN_CMP_V1",
+    "format": "moovn_lz77",
+    "level": 5,
+    "originalBytes": 1304,
+    "compressedBytes": 762,
+    "checksum": "d7c41213d859ca04",
+    "payloadBase64": "IFt7ImlkIjoic2NlbmUtc3RhcnQtMDEiLCJjaGFwdGVySYAAHYMADAAtgAAYDnR5cGUiOiJkaWFsb2d1ZYAAEgJpdGyAABM+5bqP5bmV77ya5aSV6Ziz5pWZ5a6kIiwicG9zaXRpb24iOnsieCI6MTIwLCJ5IjoxNDB9LCJiYWNrZ3JvdW5kgQBqFWJnLWNsYXNzcm9vbS1kYXkiLCJiZ22DABsNbS1zcHJpbmctYnJlZXqBAHsCcmFuhABdAyJmYWSAABQSd2VhdGhlckVmZmVjdCI6Im5vboAAFwpjb2xvckZpbHRlcocAFQpoYXJhY3RlcnMiOoQBCgtwbGFjZS1zYW1wbGWBAPKFACWEAQwAcogAHgJuYW2AAP0O56S65L6L6KeS6ImyIiwigACpAXRlhgAxBXl1a2luYYEAMQ5leHByZXNzaW9uTGFiZWyAATkGvq7nrJEiLIABHgA1ggEdBjg4LCJzY2GAAVgMMSwiZW50ZXJBbmltYYgA6wJ9XSyFAYeHAMABbGmAAcmGAKEEc3BlYWuTAL2DABwATpMAxIEAHQBDgAE5CSI6IiMzOGJkZjiAAXYBZXiAAVkR6L+Z5piv5LiA5Liq5YWl6ZeoggBBQeW3peeoi++8jOa8lOekuuWmguS9leW4g+e9ruWcuuaZr+eri+e7mOOAgeWvueeZveS4juWIhuaUr+mAiemhueOAgoEA2wRjaG9pY4gA2YIAEYgAv4MAiQvnu6fnu63liY3ov5uAABYHYXJnZXROb2SCAYCJAtoAMoEAWwp2aXN1YWxCbG9ja4AAYIEAbQVpbGRyZW6AADaDABMCbmV4lgBFACyQAzcAMp4DNwJlbmSIAzITsL7lo7DvvJrmlL7lrabpk4Plo7COAzIBNDakAzIFc3Vuc2V06AM1ngKEgAEWiAKEB25hcnJhdG9yjQJ/BeaXgeeZvY8CeQQ5NGEzYocCeYICWBHnq6DoioLliLDmraTnu5PmnZ+OAjqwAewFbnVsbH1d"
+  },
+  "assetManifest": [
+    {
+      "id": "bg-classroom-day",
+      "path": "/images/backgrounds/bg-classroom-day.jpg"
+    },
+    {
+      "id": "char-yukina-1",
+      "path": "/images/characters/char-yukina-1.png"
+    },
+    {
+      "id": "bg-classroom-sunset",
+      "path": "/images/backgrounds/bg-classroom-sunset.jpg"
+    }
+  ],
+  "integrity": {
+    "algorithm": "sha256",
+    "digest": "daa84423ce0a0aa7ebb44da3b795b2420c3feae421c2cd41d60953f3640a49a1"
+  }
+}

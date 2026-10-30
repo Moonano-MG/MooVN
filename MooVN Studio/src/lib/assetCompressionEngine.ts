@@ -7,6 +7,18 @@ import type {
 } from '../types';
 import { BACKGROUND_ASSETS, CHARACTER_ASSETS } from '../data/assets.ts';
 import { computeFnv1a64Hex } from './vnRuntimeCore.ts';
+import { validateChapterPackageData, validateObjectSafety, validateVNProjectShape } from './projectSchema.ts';
+import { sha256Json } from './jsonChecksum.ts';
+
+const MAX_DECOMPRESSED_BYTES = 16 * 1024 * 1024;
+const MAX_COMPRESSED_BYTES = 32 * 1024 * 1024;
+const MAX_MSVN_PACKAGE_BYTES = 48 * 1024 * 1024;
+
+const isObject = (item: unknown): item is Record<string, unknown> =>
+  Boolean(item && typeof item === 'object' && !Array.isArray(item));
+const isFiniteMetadataMap = (item: unknown): boolean => isObject(item) && Object.keys(item).length <= 10000 &&
+  Object.entries(item).every(([key, value]) => key.length <= 200 && !['__proto__', 'constructor', 'prototype'].includes(key) &&
+    typeof value === 'number' && Number.isFinite(value));
 
 export const DEFAULT_PERFORMANCE_CONFIG: GamePerformanceConfig = {
   compressionFormat: 'moovn_lz77',
@@ -163,9 +175,14 @@ export class MooVNBuiltInCodec {
     level: number,
     assetHintPath = ''
   ): CompressedChunkEnvelope {
+    if (!Number.isInteger(level) || level < 0 || level > 9) {
+      throw new Error('ERR_COMPRESSION_LEVEL: 压缩级别必须是 0 到 9 的整数');
+    }
+    if (rawText.length > MAX_DECOMPRESSED_BYTES) throw new Error('ERR_COMPRESSION_SIZE: 原始数据过大');
     const encoder = new TextEncoder();
     const rawBytes = encoder.encode(rawText);
     const originalBytes = rawBytes.byteLength;
+    if (originalBytes > MAX_DECOMPRESSED_BYTES) throw new Error('ERR_COMPRESSION_SIZE: 原始数据过大');
     const checksum = this.computeChecksum(rawText);
 
     if (isAlreadyCompressedAssetPath(assetHintPath) || level === 0) {
@@ -208,14 +225,26 @@ export class MooVNBuiltInCodec {
   }
 
   static decompressSync(envelope: CompressedChunkEnvelope): string {
-    if (envelope.magic !== 'MOOVN_CMP_V1' || !Number.isSafeInteger(envelope.originalBytes) ||
-        envelope.originalBytes < 0 || envelope.originalBytes > 16 * 1024 * 1024) {
+    if (!envelope || typeof envelope !== 'object' || envelope.magic !== 'MOOVN_CMP_V1' ||
+        !Number.isSafeInteger(envelope.originalBytes) ||
+        envelope.originalBytes < 0 || envelope.originalBytes > MAX_DECOMPRESSED_BYTES) {
       throw new Error('ERR_COMPRESSION_SIZE: invalid decompressed size');
     }
     if (!['raw_passthrough', 'moovn_lz77', 'xz', '7z', 'brotli'].includes(envelope.format)) {
       throw new Error('ERR_COMPRESSION_FORMAT: unsupported format');
     }
-    const bytes = base64ToUint8(envelope.payloadBase64);
+    if (!Number.isInteger(envelope.level) || envelope.level < 0 || envelope.level > 9 ||
+        (envelope.format === 'raw_passthrough' && envelope.level !== 0)) {
+      throw new Error('ERR_COMPRESSION_LEVEL: invalid compression level');
+    }
+    if (!Number.isSafeInteger(envelope.compressedBytes) || envelope.compressedBytes < 0 ||
+        envelope.compressedBytes > MAX_COMPRESSED_BYTES || typeof envelope.payloadBase64 !== 'string' ||
+        envelope.payloadBase64.length !== Math.ceil(envelope.compressedBytes / 3) * 4) {
+      throw new Error('ERR_COMPRESSION_SIZE: compressed size mismatch');
+    }
+    let bytes: Uint8Array;
+    try { bytes = base64ToUint8(envelope.payloadBase64); }
+    catch { throw new Error('ERR_COMPRESSION_DATA: invalid base64'); }
     if (bytes.length !== envelope.compressedBytes) throw new Error('ERR_COMPRESSION_SIZE: compressed size mismatch');
     // Legacy files were labeled xz/7z/brotli but actually contained this LZ77 stream.
     const decodedBytes = envelope.format === 'raw_passthrough'
@@ -234,6 +263,9 @@ export class MooVNBuiltInCodec {
 /** A chapter's node data and referenced built-in asset manifest. Assets are not included. */
 export interface MsvnChapterPackage {
   magic: 'MSVN_CHAPTER_PACKAGE_V1';
+  /** Version 2 adds an unkeyed checksum over the whole chapter envelope. */
+  envelopeVersion?: 2;
+  integrity?: { algorithm: 'sha256'; digest: string };
   projectId: string;
   projectTitle: string;
   exportedAt: string;
@@ -254,8 +286,13 @@ export function buildChapterMsvnPackage(
   chapterId: string,
   perfConfig: GamePerformanceConfig = project.performanceConfig || DEFAULT_PERFORMANCE_CONFIG
 ): MsvnChapterPackage {
+  const validation = validateVNProjectShape(project);
+  if (!validation.ok) throw new Error(validation.error);
   const chapter = project.chapters.find((c) => c.id === chapterId);
   if (!chapter) throw new Error(`ERR_CHAPTER_NOT_FOUND: ${chapterId}`);
+  if (!isFiniteMetadataMap(chapter.minCharacterAffection || {}) || !isFiniteMetadataMap(chapter.minVariables || {})) {
+    throw new Error('ERR_MSVN_FORMAT: 章节解锁信息超过格式限制');
+  }
   const chapterNodes = project.nodes.filter((n) => n.chapterId === chapter.id);
 
   // Collect references; the referenced asset bytes are not included.
@@ -285,8 +322,9 @@ export function buildChapterMsvnPackage(
     perfConfig.compressionLevel
   );
 
-  return {
+  const payload: Omit<MsvnChapterPackage, 'integrity'> = {
     magic: 'MSVN_CHAPTER_PACKAGE_V1',
+    envelopeVersion: 2,
     projectId: project.id,
     projectTitle: project.title,
     exportedAt: new Date().toISOString(),
@@ -301,6 +339,7 @@ export function buildChapterMsvnPackage(
     compressedNodesEnvelope,
     assetManifest: Array.from(assetMap.values()),
   };
+  return { ...payload, integrity: { algorithm: 'sha256', digest: sha256Json(payload) } };
 }
 
 export function downloadChapterMsvnFile(
@@ -311,7 +350,8 @@ export function downloadChapterMsvnFile(
   const pkg = buildChapterMsvnPackage(project, chapterId, perfConfig);
   const content = JSON.stringify(pkg, null, 2);
   const safeChapterId = pkg.chapter.id.replace(/[^a-zA-Z0-9_-]/g, '_');
-  const filename = `${project.id}_${safeChapterId}_ch${pkg.chapter.index}.msvn`;
+  const safeProjectId = project.id.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const filename = `${safeProjectId}_${safeChapterId}_ch${pkg.chapter.index}.msvn`;
 
   const blob = new Blob([content], { type: 'application/octet-stream' });
   const url = URL.createObjectURL(blob);
@@ -328,12 +368,71 @@ export async function parseAndDecompressMsvnPackage(
 ): Promise<{
   pkg: MsvnChapterPackage;
   nodes: SceneNode[];
+  integrity: 'sha256' | 'legacy-unchecked';
 }> {
-  const pkg = JSON.parse(rawJsonText) as MsvnChapterPackage;
-  if (pkg.magic !== 'MSVN_CHAPTER_PACKAGE_V1') {
-    throw new Error('无效的 .msvn 章节包文件');
+  if (typeof rawJsonText !== 'string' || rawJsonText.length > MAX_MSVN_PACKAGE_BYTES ||
+      new TextEncoder().encode(rawJsonText).byteLength > MAX_MSVN_PACKAGE_BYTES) {
+    throw new Error('ERR_MSVN_SIZE: 章节文件超过大小上限');
   }
-  const nodesRaw = await MooVNBuiltInCodec.decompressChunkAsync(pkg.compressedNodesEnvelope);
-  const nodes = JSON.parse(nodesRaw) as SceneNode[];
-  return { pkg, nodes };
+  let value: unknown;
+  try { value = JSON.parse(rawJsonText); }
+  catch { throw new Error('ERR_MSVN_FORMAT: 章节文件不是有效 JSON'); }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('ERR_MSVN_FORMAT: 无效的 .msvn 章节包文件');
+  }
+  const safetyError = validateObjectSafety(value);
+  if (safetyError) throw new Error(safetyError);
+  const data = value as Record<string, unknown>;
+  if (data.magic !== 'MSVN_CHAPTER_PACKAGE_V1') {
+    throw new Error('ERR_MSVN_FORMAT: 无效的 .msvn 章节包文件');
+  }
+  let integrity: 'sha256' | 'legacy-unchecked' = 'legacy-unchecked';
+  if (data.envelopeVersion !== undefined || data.integrity !== undefined) {
+    if (data.envelopeVersion !== 2 || !isObject(data.integrity) || data.integrity.algorithm !== 'sha256' ||
+        typeof data.integrity.digest !== 'string' || !/^[a-f0-9]{64}$/.test(data.integrity.digest)) {
+      throw new Error('ERR_MSVN_CHECKSUM: 新版章节校验信息缺失或无效');
+    }
+    const { integrity: _excluded, ...payload } = data;
+    if (sha256Json(payload) !== data.integrity.digest) {
+      throw new Error('ERR_MSVN_CHECKSUM: 章节包内容已损坏或发生变化');
+    }
+    integrity = 'sha256';
+  }
+  if (typeof data.projectId !== 'string' || !data.projectId.trim() || data.projectId.length > 200 ||
+      typeof data.projectTitle !== 'string' || data.projectTitle.length > 4096 ||
+      typeof data.exportedAt !== 'string' || data.exportedAt.length > 100 ||
+      !isObject(data.chapter) || !isFiniteMetadataMap(data.minCharacterAffection) || !isFiniteMetadataMap(data.minVariables) ||
+      !Array.isArray(data.assetManifest) || data.assetManifest.length > 10000 ||
+      !data.assetManifest.every((item: unknown) => isObject(item) && typeof item.id === 'string' && item.id.length <= 200 &&
+        typeof item.path === 'string' && item.path.length <= 4096) || !isObject(data.compressedNodesEnvelope)) {
+    throw new Error('ERR_MSVN_FORMAT: 章节包信息无效');
+  }
+  const manifestIds = new Set<string>();
+  for (const entry of data.assetManifest) {
+    if (!isObject(entry) || typeof entry.id !== 'string' || !entry.id.trim() || manifestIds.has(entry.id)) {
+      throw new Error('ERR_MSVN_FORMAT: 素材清单标识无效或重复');
+    }
+    manifestIds.add(entry.id);
+  }
+  const envelope = data.compressedNodesEnvelope as unknown as CompressedChunkEnvelope;
+  if (data.compressionFormat !== envelope.format || data.compressionLevel !== envelope.level) {
+    throw new Error('ERR_MSVN_FORMAT: 压缩信息不一致');
+  }
+  const nodesRaw = await MooVNBuiltInCodec.decompressChunkAsync(envelope);
+  let nodes: unknown;
+  try { nodes = JSON.parse(nodesRaw); }
+  catch { throw new Error('ERR_MSVN_NODES: 节点数据不是有效 JSON'); }
+  const validated = validateChapterPackageData(data.chapter, nodes);
+  if (!validated.ok) throw new Error(validated.error);
+  const sameMap = (actual: unknown, expected: Record<string, number> | undefined): boolean => {
+    if (!isObject(actual)) return false;
+    const source = expected || {};
+    return Object.keys(actual).length === Object.keys(source).length &&
+      Object.entries(source).every(([key, number]) => Object.prototype.hasOwnProperty.call(actual, key) && actual[key] === number);
+  };
+  if (!sameMap(data.minCharacterAffection, validated.chapter.minCharacterAffection) ||
+      !sameMap(data.minVariables, validated.chapter.minVariables)) {
+    throw new Error('ERR_MSVN_CHAPTER: 章节解锁信息不一致');
+  }
+  return { pkg: data as unknown as MsvnChapterPackage, nodes: validated.nodes, integrity };
 }

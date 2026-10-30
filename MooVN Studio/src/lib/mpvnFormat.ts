@@ -1,5 +1,6 @@
 import type { VNProject } from '../types.ts';
 import { validateVNProjectShape } from './projectSchema.ts';
+import { sha256Json } from './jsonChecksum.ts';
 
 export const MAX_MPVN_PROJECT_BYTES = 16 * 1024 * 1024; // 16 MiB limit
 export const MAX_MPVN_NODES_COUNT = 5000;
@@ -53,6 +54,8 @@ export function upgradeProjectCoordinates(project: VNProject, envelopeVersion?: 
 export interface MpvnProjectPackage {
   magic: 'MPVN_STUDIO_PROJECT';
   format: 'mpvn';
+  envelopeVersion: 2;
+  integrity: { algorithm: 'sha256'; digest: string };
   schemaVersion: typeof CURRENT_PROJECT_SCHEMA_VERSION;
   studioName: 'MooVN Studio';
   exportedAt: string;
@@ -91,9 +94,15 @@ function hasDangerousKeys(obj: unknown, depth = 0): boolean {
  */
 export function serializeMpvnProject(project: VNProject): string {
   const currentProject = upgradeProjectCoordinates(project).project;
-  const pkg: MpvnProjectPackage = {
+  if (new TextEncoder().encode(JSON.stringify(currentProject)).byteLength > MAX_MPVN_PROJECT_BYTES) {
+    throw new Error('ERR_PAYLOAD_TOO_LARGE: 工程文件超过 16 MiB');
+  }
+  const validation = validateVNProjectShape(currentProject);
+  if (!validation.ok) throw new Error(validation.error);
+  const payload: Omit<MpvnProjectPackage, 'integrity'> = {
     magic: 'MPVN_STUDIO_PROJECT',
     format: 'mpvn',
+    envelopeVersion: 2,
     schemaVersion: CURRENT_PROJECT_SCHEMA_VERSION,
     studioName: 'MooVN Studio',
     exportedAt: new Date().toISOString(),
@@ -108,7 +117,15 @@ export function serializeMpvnProject(project: VNProject): string {
     },
     project: currentProject,
   };
-  return JSON.stringify(pkg, null, 2);
+  // The hash covers the JSON payload, not formatting whitespace or the hash field.
+  // SHA-256 here is unkeyed: it can detect accidental changes, not authenticate a file.
+  const digest = sha256Json(payload);
+  const pkg: MpvnProjectPackage = { ...payload, integrity: { algorithm: 'sha256', digest } };
+  const result = JSON.stringify(pkg, null, 2);
+  if (new TextEncoder().encode(result).byteLength > MAX_MPVN_PROJECT_BYTES) {
+    throw new Error('ERR_PAYLOAD_TOO_LARGE: 工程文件超过 16 MiB');
+  }
+  return result;
 }
 
 /**
@@ -120,6 +137,7 @@ export function parseMpvnProject(rawText: string): {
   error?: string;
   migrated?: boolean;
   migratedPlacements?: number;
+  integrity?: 'sha256' | 'legacy-unchecked';
 } {
   if (typeof rawText !== 'string' || !rawText.trim()) {
     return { ok: false, error: 'ERR_EMPTY_FILE: .mpvn 文件内容为空' };
@@ -132,11 +150,12 @@ export function parseMpvnProject(rawText: string): {
   }
 
   try {
-    const parsed = JSON.parse(rawText);
-    if (!parsed || typeof parsed !== 'object') {
+    const value: unknown = JSON.parse(rawText);
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
       return { ok: false, error: 'ERR_INVALID_JSON: 无效的 .mpvn 项目文件格式' };
     }
 
+    const parsed = value as Record<string, unknown>;
     if (hasDangerousKeys(parsed)) {
       return {
         ok: false,
@@ -157,24 +176,42 @@ export function parseMpvnProject(rawText: string): {
     }
 
     if (parsed.project && typeof parsed.project === 'object') {
-      if (parsed.magic && !['MPVN_STUDIO_PROJECT', 'MOOVN_PROJECT_MPVN_V1'].includes(parsed.magic)) {
+      if (parsed.magic !== undefined && (typeof parsed.magic !== 'string' || !['MPVN_STUDIO_PROJECT', 'MOOVN_PROJECT_MPVN_V1'].includes(parsed.magic))) {
         return { ok: false, error: 'ERR_UNSUPPORTED_FORMAT: 不支持的工程标识' };
       }
-      if (parsed.format && parsed.format !== 'mpvn') {
+      if (parsed.format !== undefined && parsed.format !== 'mpvn') {
         return { ok: false, error: 'ERR_UNSUPPORTED_FORMAT: 不支持的工程格式' };
       }
-      // Check the envelope version before schema validation so unknown versions
-      // are not accidentally interpreted as legacy coordinates.
+      // Check the project schema before the package checksum, so future files
+      // are never interpreted with the legacy placement migration.
       normalizeSchemaVersion(parsed.schemaVersion);
+      const version = parsed.envelopeVersion;
+      const checksum = parsed.integrity;
+      let integrity: 'sha256' | 'legacy-unchecked' = 'legacy-unchecked';
+      if (version !== undefined || checksum !== undefined) {
+        if (version !== 2 || !checksum || typeof checksum !== 'object' || Array.isArray(checksum)) {
+          return { ok: false, error: 'ERR_MPVN_CHECKSUM: 新版工程校验信息缺失或不支持' };
+        }
+        const field = checksum as Record<string, unknown>;
+        if (field.algorithm !== 'sha256' || typeof field.digest !== 'string' || !/^[a-f0-9]{64}$/.test(field.digest)) {
+          return { ok: false, error: 'ERR_MPVN_CHECKSUM: 工程校验信息无效' };
+        }
+        const { integrity: _excluded, ...payload } = parsed;
+        const expected = sha256Json(payload);
+        if (field.digest !== expected) {
+          return { ok: false, error: 'ERR_MPVN_CHECKSUM: 工程内容已损坏或发生变化' };
+        }
+        integrity = 'sha256';
+      }
       const validation = validateVNProjectShape(parsed.project);
       if (!validation.ok) return validation;
-      return { ok: true, ...upgradeProjectCoordinates(validation.project, parsed.schemaVersion) };
+      return { ok: true, ...upgradeProjectCoordinates(validation.project, parsed.schemaVersion), integrity };
     }
     // Browser snapshots and older files are bare projects, not envelopes.
     normalizeSchemaVersion(parsed.schemaVersion);
     const validation = validateVNProjectShape(parsed);
     if (!validation.ok) return validation;
-    return { ok: true, ...upgradeProjectCoordinates(validation.project) };
+    return { ok: true, ...upgradeProjectCoordinates(validation.project), integrity: 'legacy-unchecked' };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return {

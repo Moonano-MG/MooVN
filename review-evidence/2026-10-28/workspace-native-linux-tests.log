@@ -1,0 +1,9 @@
+
+running 5 tests
+test asset_io::tests::rejects_oversize_invalid_names_incomplete_uploads_and_traversal ... ok
+test asset_io::tests::stores_and_reads_50_mib_without_embedding_in_a_project ... ok
+test workspace_io::tests::refuses_symlinked_file_and_directory_escape ... ok
+test workspace_io::tests::rejects_traversal_unsupported_extension_and_unwritable_root ... ok
+test workspace_io::tests::saves_one_file_and_previous_backup_and_survives_failed_write ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
