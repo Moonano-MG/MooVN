@@ -17,6 +17,7 @@ import { soundEngine } from '../lib/soundEngine';
 import { CharacterMediaRenderer } from './CharacterMediaRenderer';
 import { characterPlacementStyle } from '../lib/characterPlacement';
 import { useReducedMotion } from '../lib/useReducedMotion';
+import { getUnsupportedBranchIssue } from '../lib/branchSupport';
 
 interface PreviewPlayerProps {
   project: VNProject;
@@ -127,6 +128,7 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
 
   const currentNode =
     project.nodes.find((n) => n.id === currentNodeId) || project.nodes[0];
+  const branchIssue = getUnsupportedBranchIssue(currentNode);
   const currentChapter =
     project.chapters.find((c) => c.id === currentNode.chapterId) || project.chapters[0];
   const bg = getBackgroundById(currentNode.backgroundId);
@@ -184,7 +186,7 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
 
   // Unlock clue automatically when visiting a clue_unlock node
   useEffect(() => {
-    if (screenMode === 'playing' && currentNode?.unlockedClueTitle) {
+    if (screenMode === 'playing' && !branchIssue && currentNode?.unlockedClueTitle) {
       setUnlockedClues((prev) => {
         if (prev.some((c) => c.title === currentNode.unlockedClueTitle)) return prev;
         return [
@@ -196,11 +198,11 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
         ];
       });
     }
-  }, [screenMode, currentNode?.id, currentNode?.unlockedClueTitle, currentNode?.unlockedClueDesc]);
+  }, [screenMode, currentNode?.id, currentNode?.unlockedClueTitle, currentNode?.unlockedClueDesc, branchIssue?.code]);
 
   // Apply supported scene settings and chapter state changes.
   useEffect(() => {
-    if (screenMode !== 'playing' || !currentNode) return;
+    if (screenMode !== 'playing' || !currentNode || branchIssue) return;
 
     if (currentNode.customScript) {
       if (
@@ -245,12 +247,21 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
         [currentNode.variableKey!]: currentNode.variableValue ?? 1,
       }));
     }
-  }, [screenMode, currentNode?.id]);
+  }, [screenMode, currentNode?.id, branchIssue?.code]);
+
+  // Pause autoplay/skip as soon as an unsupported branch is encountered.
+  useEffect(() => {
+    if (screenMode === 'playing' && branchIssue) {
+      setIsAutoPlay(false);
+      setIsSkipMode(false);
+    }
+  }, [screenMode, currentNodeId, branchIssue?.code]);
 
   // Timed choice countdown
   useEffect(() => {
     if (
       screenMode === 'playing' &&
+      !branchIssue &&
       currentNode?.type === 'timed_choice' &&
       dialogueIndex === currentNode.dialogues.length - 1
     ) {
@@ -275,14 +286,14 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
     } else {
       setTimedRemaining(null);
     }
-  }, [screenMode, currentNode, dialogueIndex, project.startNodeId]);
+  }, [screenMode, currentNode, dialogueIndex, project.startNodeId, branchIssue?.code]);
 
-  // Auto-save
+  // Keep the last valid checkpoint when playback is blocked before a node executes.
   useEffect(() => {
-    if (screenMode === 'playing' && currentNode) {
+    if (screenMode === 'playing' && currentNode && !branchIssue) {
       persistSaveSlot('auto', 1);
     }
-  }, [currentNodeId, screenMode, currentNode, persistSaveSlot]);
+  }, [currentNodeId, screenMode, currentNode, persistSaveSlot, branchIssue?.code]);
 
   // Hide UI hint fade in once then fade out
   useEffect(() => {
@@ -301,7 +312,7 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
 
   // Play BGM
   useEffect(() => {
-    if (screenMode === 'playing' && !isMuted && bgm) {
+    if (screenMode === 'playing' && !branchIssue && !isMuted && bgm) {
       soundEngine.playBgm(bgm);
     } else {
       soundEngine.stopBgm();
@@ -309,7 +320,7 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
     return () => {
       soundEngine.stopBgm();
     };
-  }, [currentNode?.bgmId, isMuted, bgm, screenMode]);
+  }, [currentNode?.bgmId, isMuted, bgm, screenMode, branchIssue?.code]);
 
   // Typewriter effect (skipped immediately in 快进 mode)
   useEffect(() => {
@@ -386,6 +397,8 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
       return;
     }
 
+    if (branchIssue) return;
+
     if (dialogueIndex < currentNode.dialogues.length - 1) {
       setHistoryStack((h) => [...h, { nodeId: currentNodeId, dialogueIndex }]);
       setDialogueIndex((i) => i + 1);
@@ -393,10 +406,7 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
     }
 
     if (
-      (currentNode.type === 'choice' ||
-        currentNode.type === 'timed_choice' ||
-        currentNode.type === 'switch_branch' ||
-        currentNode.type === 'random_branch') &&
+      (currentNode.type === 'choice' || currentNode.type === 'timed_choice') &&
       currentNode.choices.length > 0
     ) {
       return;
@@ -426,12 +436,13 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
     dialogueIndex,
     currentNode,
     currentNodeId,
+    branchIssue,
     evaluateCondition,
   ]);
 
   // Auto-play / Skip-mode timer
   useEffect(() => {
-    if (screenMode !== 'playing' || (!isAutoPlay && !isSkipMode) || isTyping) return;
+    if (screenMode !== 'playing' || branchIssue || (!isAutoPlay && !isSkipMode) || isTyping) return;
     const isChoicePause =
       (currentNode.type === 'choice' || currentNode.type === 'timed_choice') &&
       dialogueIndex === currentNode.dialogues.length - 1;
@@ -442,7 +453,7 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
       advance();
     }, delay);
     return () => clearTimeout(t);
-  }, [screenMode, isAutoPlay, isSkipMode, isTyping, advance, currentNode.type, dialogueIndex, currentNode.dialogues.length]);
+  }, [screenMode, isAutoPlay, isSkipMode, isTyping, advance, currentNode.type, dialogueIndex, currentNode.dialogues.length, branchIssue?.code]);
 
   const stepBack = () => {
     if (historyStack.length === 0) return;
@@ -561,6 +572,12 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
       </div>
 
       {saveError && <div role="alert" className="px-3 py-1 text-xs text-rose-200 bg-rose-950">{saveError}</div>}
+      {screenMode === 'playing' && branchIssue && (
+        <div role="alert" className="shrink-0 max-h-32 overflow-auto px-3 py-2 text-xs text-amber-100 bg-amber-950 border-b border-amber-500/50 break-words">
+          <div><strong>{branchIssue.code}：预览已暂停。</strong> 节点「{currentNode.title}」（{currentNode.id}）：{branchIssue.message}</div>
+          <button type="button" onClick={onClose} className="mt-1 underline">返回编辑器</button>
+        </div>
+      )}
 
       {/* Main Viewport */}
       <div
@@ -856,9 +873,8 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
 
             {/* Choice Overlay (Single-line unless exceeding screen width + Timed Countdown Bar) */}
             {!isUiHidden &&
-              (currentNode.type === 'choice' ||
-                currentNode.type === 'timed_choice' ||
-                currentNode.type === 'switch_branch') &&
+              !branchIssue &&
+              (currentNode.type === 'choice' || currentNode.type === 'timed_choice') &&
               dialogueIndex === currentNode.dialogues.length - 1 &&
               currentNode.choices.length > 0 && (
                 <div
@@ -1021,8 +1037,10 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
                     )}
                     {ui.dialogueBox.visibleControls.auto && (
                       <button
+                        disabled={Boolean(branchIssue)}
+                        title={branchIssue ? '当前分支未实现，自动播放已暂停' : undefined}
                         onClick={() => setIsAutoPlay((a) => !a)}
-                        className={`px-3 py-1 rounded border text-xs transition ${
+                        className={`px-3 py-1 rounded border text-xs transition disabled:opacity-35 ${
                           isAutoPlay
                             ? 'bg-sky-500/30 border-sky-400 text-white'
                             : 'bg-[#0f2246]/80 hover:bg-[#163263] border-sky-400/25 text-slate-200'
@@ -1033,8 +1051,10 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
                     )}
                     {ui.dialogueBox.visibleControls.skip && (
                       <button
+                        disabled={Boolean(branchIssue)}
+                        title={branchIssue ? '当前分支未实现，快进已暂停' : undefined}
                         onClick={() => setIsSkipMode((s) => !s)}
-                        className={`px-3 py-1 rounded border text-xs transition ${
+                        className={`px-3 py-1 rounded border text-xs transition disabled:opacity-35 ${
                           isSkipMode
                             ? 'bg-amber-500/30 border-amber-400 text-white'
                             : 'bg-[#0f2246]/80 hover:bg-[#163263] border-sky-400/25 text-slate-200'

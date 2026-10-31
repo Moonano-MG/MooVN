@@ -193,13 +193,14 @@ export const AiAssistantPanel: React.FC<AiAssistantPanelProps> = ({
     try {
       const contextSummary = buildAiProjectContext(project, selectedNode, agentMode, shareProjectContext);
       const agentInstruction = agentMode === 'agent'
-        ? `\n当前为【AI Agent 模式】。可使用 moovn-agent JSON 动作块提出建议；update_dialogue 必须含 dialogueId 和 text；set_expression 必须含 characterId、spriteId，重复角色需 placementId。不得猜测目标 ID，不知道就先询问。create_node 仅可创建独立对白或旁白节点，不覆盖已有连接，其他类型请提醒用户手动创建。所有操作由用户查看差异后确认。`
+        ? `\n当前为【AI Agent 模式】。可使用 moovn-agent JSON 动作块提出建议；update_dialogue 必须含 dialogueId 和 text；set_expression 必须含 characterId、spriteId，重复角色需 placementId。不得猜测目标 ID，不知道就先询问。create_node 仅可创建独立对白或旁白节点，不覆盖已有连接，其他类型以节点库的可用项为准。所有操作由用户查看差异后确认。`
         : `\n当前为【纯对话模式】：仅回答文本与代码建议，不要输出动作块。`;
+      const capabilityLimits = '\n随机分支、多路路由和选项条件表达式目前不支持运行；不要声称已实现。';
 
       const apiMessages = [
         {
           role: 'system',
-          content: `${config.customSystemPrompt}\n${contextSummary}${agentInstruction}`,
+          content: `${config.customSystemPrompt}\n${contextSummary}${agentInstruction}${capabilityLimits}`,
         },
         ...messages
           .filter((m) => m.id !== 'welcome-1')

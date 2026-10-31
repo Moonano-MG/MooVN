@@ -74,7 +74,7 @@ export const NODE_REGISTRY: NodeTypeMeta[] = [
     category: 'control',
     categoryLabel: '控制',
     title: '玩家选项',
-    description: '多分支剧情选择与条件过滤',
+    description: '多分支剧情选择；选项条件表达式暂不支持。',
     ...CAT_STYLE.control,
   },
   {
@@ -98,7 +98,7 @@ export const NODE_REGISTRY: NodeTypeMeta[] = [
     category: 'control',
     categoryLabel: '控制',
     title: '多路路由',
-    description: 'switch-case 多出口分发',
+    description: '未实现：不会按 switch-case 自动分发。旧数据可检查或改为玩家选项。',
     ...CAT_STYLE.control,
   },
   {
@@ -122,7 +122,7 @@ export const NODE_REGISTRY: NodeTypeMeta[] = [
     category: 'control',
     categoryLabel: '控制',
     title: '随机分支',
-    description: '按概率随机抽取下一分支',
+    description: '未实现：概率和权重尚未定义，旧节点可检查但不能执行。',
     ...CAT_STYLE.control,
   },
   {
@@ -558,5 +558,5 @@ export function getNodeMeta(type: WorkflowNodeType): NodeTypeMeta {
 
 /** Kept in the registry so old projects can be inspected, but not added as working nodes. */
 export function isUnsupportedNode(type: WorkflowNodeType): boolean {
-  return type === 'stream_preload_hint' || type === 'msvn_chapter_load' || type === 'weather_particles';
+  return type === 'random_branch' || type === 'switch_branch' || type === 'stream_preload_hint' || type === 'msvn_chapter_load' || type === 'weather_particles';
 }

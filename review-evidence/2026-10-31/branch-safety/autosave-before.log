@@ -1,0 +1,74 @@
+
+> moovn-studio@0.1.0 test:branches:e2e
+> node --experimental-strip-types tests/browser-branch-safety.mjs
+
+node:internal/modules/run_main:123
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: a blocked node must not overwrite the last good auto-save
++ actual - expected
+
+  {
+    affectionSnapshot: {},
+    backgroundId: '',
+    chapterTitle: '第一章：序章',
+    customAttrSnapshot: {},
+    dialogueIndex: 0,
++   nodeId: 'scene-start-01',
++   nodeTitle: 'Branch random_branch',
++   savedAt: '2026/10/31 01:50:57',
+-   nodeId: 'intro',
+-   nodeTitle: '初始场景 01',
+-   savedAt: '2026/10/31 01:50:55',
+    slotIndex: 1,
+    slotKey: 'auto-1',
+    speakerName: '旁白',
+    tabId: 'auto',
++   textPreview: 'ROOT_BRANCH',
+-   textPreview: 'INTRO_LINE',
+    variablesSnapshot: {
+      chapterIndex: 1
+    }
+  }
+
+    at file:///home/user/MooVN/MooVN%20Studio/tests/browser-branch-safety.mjs:151:10 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: {
+    slotKey: 'auto-1',
+    tabId: 'auto',
+    slotIndex: 1,
+    savedAt: '2026/10/31 01:50:57',
+    chapterTitle: '第一章：序章',
+    nodeId: 'scene-start-01',
+    nodeTitle: 'Branch random_branch',
+    dialogueIndex: 0,
+    speakerName: '旁白',
+    textPreview: 'ROOT_BRANCH',
+    backgroundId: '',
+    affectionSnapshot: {},
+    customAttrSnapshot: {},
+    variablesSnapshot: { chapterIndex: 1 }
+  },
+  expected: {
+    slotKey: 'auto-1',
+    tabId: 'auto',
+    slotIndex: 1,
+    savedAt: '2026/10/31 01:50:55',
+    chapterTitle: '第一章：序章',
+    nodeId: 'intro',
+    nodeTitle: '初始场景 01',
+    dialogueIndex: 0,
+    speakerName: '旁白',
+    textPreview: 'INTRO_LINE',
+    backgroundId: '',
+    affectionSnapshot: {},
+    customAttrSnapshot: {},
+    variablesSnapshot: { chapterIndex: 1 }
+  },
+  operator: 'deepStrictEqual',
+  diff: 'simple'
+}
+
+Node.js v22.22.3

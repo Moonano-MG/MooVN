@@ -5,6 +5,7 @@ import type {
   WorkflowNodeType,
 } from '../types.ts';
 import { getNodeMeta, isUnsupportedNode } from '../data/nodeRegistry.ts';
+import { getUnsupportedBranchIssue, getUnsupportedBranchIssues, RANDOM_BRANCH_UNSUPPORTED, SWITCH_BRANCH_UNSUPPORTED } from './branchSupport.ts';
 
 export interface GraphDiagnostic {
   id: string;
@@ -39,6 +40,14 @@ export function normalizeConditionForCtx(
       /\b(?<!ctx\.)affection\s*(>=|<=|===|==|!=|>|<)\s*(-?\d+(?:\.\d+)?)/g,
       `(ctx.affection[${JSON.stringify(defaultCharId)}] ?? 0) $1 $2`
     );
+}
+
+function lineCommentText(value: string): string {
+  return value.replace(/[\r\n\u2028\u2029]/g, ' ');
+}
+
+function blockCommentText(value: string): string {
+  return lineCommentText(value).replace(/\*\//g, '* /');
 }
 
 type MathCodeConfig = {
@@ -98,8 +107,14 @@ function compileNestedChildNode(
   const isTs = lang === 'typescript';
   const lines: string[] = [];
 
+  const branchIssue = child.type === 'random_branch' ? RANDOM_BRANCH_UNSUPPORTED :
+    child.type === 'switch_branch' ? SWITCH_BRANCH_UNSUPPORTED : null;
+  if (branchIssue) {
+    lines.push(`${indent}throw new Error(${JSON.stringify(`${branchIssue.code}: ${branchIssue.message}`)});`);
+    return lines.join('\n');
+  }
   if (child.customCode && child.customCode.trim()) {
-    lines.push(`${indent}// [${child.title}] 自定义脚本`);
+    lines.push(`${indent}// [${lineCommentText(child.title)}] 自定义脚本`);
     for (const l of child.customCode.split('\n')) {
       lines.push(`${indent}${l}`);
     }
@@ -221,8 +236,8 @@ function compileNestedChildNode(
 }
 
 /**
- * 为任意单个节点生成对应的 TypeScript 或 JavaScript 脚本代码
- * 每一个节点都代表一段真实的 TS/JS 函数实现。
+ * 为单个节点生成 TypeScript 或 JavaScript 草稿。
+ * 不支持的分支显式抛错；其他节点的生成结果不代表运行时已实现。
  */
 export function generateSingleNodeCode(
   node: SceneNode,
@@ -237,8 +252,15 @@ export function generateSingleNodeCode(
     : `export async function ${fnName}(ctx)`;
 
   const body: string[] = [];
-  body.push(`// [${meta.categoryLabel}] ${node.title} (${node.type})`);
+  body.push(`// [${meta.categoryLabel}] ${lineCommentText(node.title)} (${node.type})`);
   body.push(`${sig} {`);
+
+  const branchIssue = getUnsupportedBranchIssue(node);
+  if (branchIssue) {
+    body.push(`  throw new Error(${JSON.stringify(`${branchIssue.code}: ${branchIssue.message}`)});`);
+    body.push('}');
+    return body.join('\n');
+  }
 
   // 如果开发者编写了自定义脚本，优先嵌入自定义脚本
   if (node.customScript && node.customScript.trim() && node.type === 'script') {
@@ -559,7 +581,7 @@ export function generateFullProjectCode(
   const header: string[] = [];
 
   header.push(
-    `/**\n * MooVN generated ${isTs ? 'TypeScript' : 'JavaScript'} draft (not type-checked or guaranteed executable)\n * Project: ${project.title} (v${project.version})\n * Nodes: ${project.nodes.length} | Chapters: ${project.chapters.length}\n */`
+    `/**\n * MooVN generated ${isTs ? 'TypeScript' : 'JavaScript'} draft (not type-checked or guaranteed executable)\n * Project: ${blockCommentText(project.title)} (v${blockCommentText(project.version)})\n * Nodes: ${project.nodes.length} | Chapters: ${project.chapters.length}\n */`
   );
 
   if (isTs) {
@@ -705,9 +727,18 @@ export function checkProjectGraph(project: VNProject): GraphCheckReport {
       }
     }
 
+    // Unsupported branching must not be reported as a usable graph.
+    getUnsupportedBranchIssues(node).forEach((issue, index) => {
+      diagnostics.push({
+        id: `diag-branch-${node.id}-${index}`, code: 'MVN106', severity: 'error',
+        nodeId: node.id, nodeTitle: node.title, line: lineBase + 1,
+        message: `${issue.code}: ${issue.message}`,
+      });
+    });
+
     // 4. 检查容器节点是否为空
     const meta = getNodeMeta(node.type);
-    if (isUnsupportedNode(node.type)) {
+    if (isUnsupportedNode(node.type) && node.type !== 'random_branch' && node.type !== 'switch_branch') {
       diagnostics.push({
         id: `diag-unsupported-${node.id}`, code: 'MVN205', severity: 'warning',
         nodeId: node.id, nodeTitle: node.title, line: lineBase + 1,
