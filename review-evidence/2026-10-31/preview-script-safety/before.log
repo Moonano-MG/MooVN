@@ -1,0 +1,90 @@
+  line-comment slots=["auto-0","auto-1"]
+✗ line-comment: AssertionError [ERR_ASSERTION]: comments must not trigger a script save in auto-0
+    at file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-script-safety.mjs:131:7
+    at async runCase (file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-script-safety.mjs:102:5)
+    at async file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-script-safety.mjs:127:5
+  block-comment slots=["auto-0","auto-1"]
+✗ block-comment: AssertionError [ERR_ASSERTION]: comments must not trigger a script save in auto-0
+    at file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-script-safety.mjs:131:7
+    at async runCase (file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-script-safety.mjs:102:5)
+    at async file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-script-safety.mjs:127:5
+  nested-rust-comment slots=["auto-0","auto-1"]
+✗ nested-rust-comment: AssertionError [ERR_ASSERTION]: comments must not trigger a script save in auto-0
+    at file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-script-safety.mjs:131:7
+    at async runCase (file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-script-safety.mjs:102:5)
+    at async file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-script-safety.mjs:127:5
+  default-standard-api slots=["auto-1"]; script warning=0
+✗ default-standard-api: AssertionError [ERR_ASSERTION]: unsupported script must show ERR_PREVIEW_SCRIPT_UNSUPPORTED
+    at assertStopped (file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-script-safety.mjs:90:3)
+    at async file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-script-safety.mjs:149:7
+    at async runCase (file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-script-safety.mjs:102:5)
+    at async file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-script-safety.mjs:145:5
+  string-literal slots=["auto-0","auto-1"]; script warning=0
+✗ string-literal: AssertionError [ERR_ASSERTION]: unsupported script must show ERR_PREVIEW_SCRIPT_UNSUPPORTED
+    at assertStopped (file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-script-safety.mjs:90:3)
+    at async file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-script-safety.mjs:149:7
+    at async runCase (file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-script-safety.mjs:102:5)
+    at async file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-script-safety.mjs:145:5
+  unreachable-host-code slots=["auto-0","auto-1"]; script warning=0
+✗ unreachable-host-code: AssertionError [ERR_ASSERTION]: unsupported script must show ERR_PREVIEW_SCRIPT_UNSUPPORTED
+    at assertStopped (file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-script-safety.mjs:90:3)
+    at async file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-script-safety.mjs:149:7
+    at async runCase (file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-script-safety.mjs:102:5)
+    at async file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-script-safety.mjs:145:5
+  unterminated-comment slots=["auto-0","auto-1"]; script warning=0
+✗ unterminated-comment: AssertionError [ERR_ASSERTION]: unsupported script must show ERR_PREVIEW_SCRIPT_UNSUPPORTED
+    at assertStopped (file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-script-safety.mjs:90:3)
+    at async file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-script-safety.mjs:149:7
+    at async runCase (file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-script-safety.mjs:102:5)
+    at async file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-script-safety.mjs:145:5
+  unknown-instruction slots=["auto-1"]; script warning=0
+✗ unknown-instruction: AssertionError [ERR_ASSERTION]: unsupported script must show ERR_PREVIEW_SCRIPT_UNSUPPORTED
+    at assertStopped (file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-script-safety.mjs:90:3)
+    at async file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-script-safety.mjs:149:7
+    at async runCase (file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-script-safety.mjs:102:5)
+    at async file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-script-safety.mjs:145:5
+✗ function-call: AssertionError [ERR_ASSERTION]: unsupported script must show ERR_PREVIEW_SCRIPT_UNSUPPORTED
+    at assertStopped (file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-script-safety.mjs:90:3)
+    at async file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-script-safety.mjs:159:5
+    at async runCase (file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-script-safety.mjs:102:5)
+    at async file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-script-safety.mjs:155:3
+✗ nested-custom-code: AssertionError [ERR_ASSERTION]: unsupported script must show ERR_PREVIEW_SCRIPT_UNSUPPORTED
+    at assertStopped (file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-script-safety.mjs:90:3)
+    at async file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-script-safety.mjs:167:5
+    at async runCase (file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-script-safety.mjs:102:5)
+    at async file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-script-safety.mjs:163:3
+✗ visual-bridge-block: AssertionError [ERR_ASSERTION]: unsupported script must show ERR_PREVIEW_SCRIPT_UNSUPPORTED
+    at assertStopped (file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-script-safety.mjs:90:3)
+    at async file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-script-safety.mjs:176:5
+    at async runCase (file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-script-safety.mjs:102:5)
+    at async file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-script-safety.mjs:172:3
+  before={"node":"intro","chapterIndex":1}; after={"node":"script-node","chapterIndex":101,"clues":[{"title":"MUST_NOT_UNLOCK","desc":""}],"oscillator":1}
+✗ last-good-checkpoint-and-back: AssertionError [ERR_ASSERTION]: unsupported script must show ERR_PREVIEW_SCRIPT_UNSUPPORTED
+    at assertStopped (file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-script-safety.mjs:90:3)
+    at async file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-script-safety.mjs:201:5
+    at async runCase (file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-script-safety.mjs:102:5)
+    at async file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-script-safety.mjs:180:3
+✗ narrow-warning: AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:
+
+  assert(await alert.isVisible())
+
+    at file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-script-safety.mjs:221:5
+    at async runCase (file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-script-safety.mjs:102:5)
+    at async file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-script-safety.mjs:218:3
+
+13 case(s) failed:
+- line-comment: comments must not trigger a script save in auto-0
+- block-comment: comments must not trigger a script save in auto-0
+- nested-rust-comment: comments must not trigger a script save in auto-0
+- default-standard-api: unsupported script must show ERR_PREVIEW_SCRIPT_UNSUPPORTED
+- string-literal: unsupported script must show ERR_PREVIEW_SCRIPT_UNSUPPORTED
+- unreachable-host-code: unsupported script must show ERR_PREVIEW_SCRIPT_UNSUPPORTED
+- unterminated-comment: unsupported script must show ERR_PREVIEW_SCRIPT_UNSUPPORTED
+- unknown-instruction: unsupported script must show ERR_PREVIEW_SCRIPT_UNSUPPORTED
+- function-call: unsupported script must show ERR_PREVIEW_SCRIPT_UNSUPPORTED
+- nested-custom-code: unsupported script must show ERR_PREVIEW_SCRIPT_UNSUPPORTED
+- visual-bridge-block: unsupported script must show ERR_PREVIEW_SCRIPT_UNSUPPORTED
+- last-good-checkpoint-and-back: unsupported script must show ERR_PREVIEW_SCRIPT_UNSUPPORTED
+- narrow-warning: The expression evaluated to a falsy value:
+
+  assert(await alert.isVisible())

@@ -1,5 +1,5 @@
 import type { ChoiceOption, SaveSlotData, SceneNode, VNProject } from '../types.ts';
-import { getUnsupportedBranchIssue } from './branchSupport.ts';
+import { getUnsupportedPreviewIssue } from './previewSupport.ts';
 
 type Primitive = string | number | boolean;
 export interface PreviewClue {
@@ -34,7 +34,7 @@ function findNode(project: VNProject, nodeId: string): SceneNode {
 }
 
 function initialTimer(node: SceneNode, dialogueIndex: number): number | null {
-  if (getUnsupportedBranchIssue(node)) return null;
+  if (getUnsupportedPreviewIssue(node)) return null;
   return node.type === 'timed_choice' && dialogueIndex === node.dialogues.length - 1
     ? Math.max(1, node.timedChoiceSeconds || 12)
     : null;
@@ -49,7 +49,7 @@ function enterNode(project: VNProject, snapshot: PreviewSnapshot, nodeId: string
     dialogueIndex: 0,
     timedRemaining: initialTimer(node, 0),
   };
-  if (getUnsupportedBranchIssue(node)) return next;
+  if (getUnsupportedPreviewIssue(node)) return next;
 
   if (node.unlockedClueTitle && !next.clues.some((clue) => clue.title === node.unlockedClueTitle)) {
     next = { ...next, clues: [...next.clues, { title: node.unlockedClueTitle, desc: node.unlockedClueDesc || '' }] };

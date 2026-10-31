@@ -1,0 +1,31 @@
+
+> moovn-studio@0.1.0 test:preview-script:e2e
+> node --experimental-strip-types tests/browser-preview-script-safety.mjs
+
+  line-comment slots=["auto-1"]
+✓ line-comment
+  block-comment slots=["auto-1"]
+✓ block-comment
+  nested-rust-comment slots=["auto-1"]
+✓ nested-rust-comment
+  default-standard-api slots=[]; script warning=1
+✓ default-standard-api
+  string-literal slots=[]; script warning=1
+✓ string-literal
+  unreachable-host-code slots=[]; script warning=1
+✓ unreachable-host-code
+  unterminated-comment slots=[]; script warning=1
+✓ unterminated-comment
+  unknown-instruction slots=[]; script warning=1
+✓ unknown-instruction
+✓ function-call
+✓ nested-custom-code
+✓ warning-escapes-untrusted-identifiers
+✓ empty-nested-script
+✓ visual-bridge-block
+  before={"node":"intro","chapterIndex":1}; after={"node":"intro","chapterIndex":1,"clues":[],"oscillator":0}
+✓ last-good-checkpoint-and-back
+✓ timer-and-empty-dialogue
+✓ existing-auto-zero-preserved
+✓ load-existing-blocked-slot
+✓ narrow-warning
