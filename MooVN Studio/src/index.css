@@ -1,4 +1,6 @@
 @import "tailwindcss";
+/* The Web entry consumes this shared stylesheet from a different Vite root. */
+@source "./";
 
 :root {
   color-scheme: dark;

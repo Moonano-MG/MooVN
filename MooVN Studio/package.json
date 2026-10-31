@@ -21,6 +21,10 @@
     "pretauri:dev": "node scripts/sync-tauri-csp.mjs",
     "pretauri:build": "node scripts/sync-tauri-csp.mjs",
     "test:e2e": "node --experimental-strip-types tests/browser-smoke.mjs",
+    "test:p0:e2e": "node --experimental-strip-types tests/browser-p0.mjs",
+    "test:assets:e2e": "node --experimental-strip-types tests/browser-asset-export.mjs",
+    "test:math-input:e2e": "node --experimental-strip-types tests/browser-math-input.mjs",
+    "test:containers:e2e": "node --experimental-strip-types tests/browser-empty-container.mjs",
     "test:formats:e2e": "node --experimental-strip-types tests/browser-formats.mjs"
   },
   "dependencies": {
@@ -37,6 +41,7 @@
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
+    "fake-indexeddb": "^6.2.7",
     "playwright-core": "^1.64.1",
     "tailwindcss": "^4.3.3",
     "typescript": "~5.6.2",

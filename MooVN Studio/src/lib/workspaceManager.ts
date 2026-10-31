@@ -21,6 +21,11 @@ import { migrateEmbeddedProjectMedia, verifyProjectAssets } from './assetStore.t
 const SETTINGS_STORAGE_KEY = 'moovn_studio_settings_v3';
 const PROJECTS_STORAGE_KEY = 'moovn_studio_projects_v3';
 
+/** Import is always a separate, unsaved project; keep all internal graph IDs intact. */
+export function makeImportedProjectCopy(project: VNProject): VNProject {
+  return { ...project, id: newId('project'), projectPath: undefined };
+}
+
 /** Browser previews do not have desktop filesystem privileges, even in a Studio build. */
 export const IS_WEB_EDITION = !isTauriEnvironment();
 let resolvedDesktopPaths: WorkspacePaths | null = null;

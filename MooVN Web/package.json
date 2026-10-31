@@ -9,6 +9,7 @@
     "dev": "vite --port 5173",
     "build": "tsc -b && vite build",
     "test": "node --experimental-strip-types --test ../\"MooVN Studio\"/tests/*.test.mts",
+    "test:e2e": "node --experimental-strip-types ../\"MooVN Studio\"/tests/browser-smoke.mjs --web",
     "preview": "vite preview --host 127.0.0.1 --port 5173",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",

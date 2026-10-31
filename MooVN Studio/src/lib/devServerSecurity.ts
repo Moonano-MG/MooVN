@@ -147,6 +147,10 @@ export function validateSafeAiProxyEndpoint(
     };
   }
 
+  if (rawEndpoint.trim().length > 2048) {
+    return { ok: false, code: 'ERR_AI_ENDPOINT_TOO_LONG', error: '服务地址过长，请检查接口设置。' };
+  }
+
   let parsed: URL;
   try {
     parsed = new URL(rawEndpoint.trim());
@@ -211,7 +215,7 @@ export function validateSafeAiProxyEndpoint(
     return {
       ok: false,
       code: 'ERR_UPSTREAM_HOST_NOT_ALLOWED',
-      error: `服务商 ${host} 不在允许列表中；请求未发送。`,
+      error: '服务商不在允许列表中；请求未发送。',
     };
   }
 

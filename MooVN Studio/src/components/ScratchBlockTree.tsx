@@ -60,16 +60,7 @@ export function createDefaultScratchChild(type: WorkflowNodeType): NestedChildNo
     type,
     title: meta.title,
     params: { ...baseParams },
-    childrenNodes: meta.isContainer
-      ? [
-          {
-            id: newId('sb-inner'),
-            type: 'dialogue',
-            title: '角色对白',
-            params: { speaker: '旁白', text: '' },
-          },
-        ]
-      : undefined,
+    childrenNodes: meta.isContainer ? [] : undefined,
     elseChildrenNodes: meta.hasDualSlots ? [] : undefined,
   };
 }
