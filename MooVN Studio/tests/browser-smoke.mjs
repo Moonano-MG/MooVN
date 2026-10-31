@@ -10,7 +10,9 @@ import { createServer } from 'vite';
 import { DEFAULT_PROJECT } from '../src/data/defaultProject.ts';
 import { buildStandaloneGameHtml } from '../src/lib/gamePackager.ts';
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const webEntry = process.argv.includes('--web');
+const root = resolve(process.env.MOOVN_E2E_ROOT || resolve(dirname(fileURLToPath(import.meta.url)), webEntry ? '../../MooVN Web' : '..'));
+const entry = process.env.MOOVN_E2E_ENTRY || (webEntry ? '/studio.html' : '/');
 const output = resolve(process.env.MOOVN_E2E_ARTIFACT_DIR || resolve(root, 'test-results/browser-smoke'));
 await mkdir(output, { recursive: true });
 const server = await createServer({ root, configFile: resolve(root, 'vite.config.ts'), logLevel: 'error', server: { host: '127.0.0.1', port: 0, strictPort: false } });
@@ -29,7 +31,7 @@ async function context(options = {}) {
   return ctx;
 }
 async function openSample() {
-  await activePage.goto(origin);
+  await activePage.goto(`${origin}${entry}`);
   await activePage.getByText('打开入门示例工程', { exact: true }).first().click();
 }
 function rail(name) { return activePage.locator(`button[title^="${name} (左键"]`); }
@@ -158,6 +160,7 @@ try {
     return Number(parent?.style.zIndex);
   }));
   assert(zIndices.every((value) => value >= 100 && value <= 299));
+  await screenshot('03-layout-four-floats');
   await activePage.getByRole('button', { name: '导出游戏', exact: true }).click();
   const modalZ = await activePage.getByRole('button', { name: '关闭导出' }).evaluate((button) => {
     let parent = button;

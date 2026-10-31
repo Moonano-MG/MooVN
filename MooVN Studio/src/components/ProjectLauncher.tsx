@@ -23,6 +23,7 @@ import {
   deleteSavedProject,
   exportSettingsFileJson,
   loadSavedProjectsList,
+  makeImportedProjectCopy,
   migrateLegacyRecentProjects,
   loadSystemSettings,
   openSavedProject,
@@ -139,8 +140,8 @@ export const ProjectLauncher: React.FC<ProjectLauncherProps> = ({
         if (res.migrated) {
           window.alert(`已将旧工程迁移至 1.1 脚底锚点（${res.migratedPlacements || 0} 处使用约 39% 的偏移）。请检查位置后手动保存。`);
         }
-        // Import is a copy. Do not let autosave overwrite an existing project with the same ID.
-        onOpenProject({ ...res.project, projectPath: undefined }, undefined, true);
+        // Imported files are independent copies, including their storage identity.
+        onOpenProject(makeImportedProjectCopy(res.project), undefined, true);
       } else {
         setNotice(res.error || '项目文件解析失败');
       }

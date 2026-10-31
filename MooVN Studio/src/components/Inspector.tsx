@@ -1,5 +1,5 @@
 import { newId } from '../lib/ids';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Plus,
   Trash2,
@@ -102,6 +102,44 @@ const NESTED_ADD_OPTIONS: {
     isContainer: true,
   },
 ];
+
+function MathOperandInput({ value, onChange }: { value: string | number; onChange: (value: number) => void }) {
+  const [draft, setDraft] = useState(String(value));
+  const [editing, setEditing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => { if (!editing) setDraft(String(value)); }, [value, editing]);
+  const numeric = (text: string): number | null => {
+    if (!text.trim()) return null;
+    const result = Number(text);
+    return Number.isFinite(result) ? result : null;
+  };
+  return (
+    <>
+      <input
+        type="text"
+        inputMode="decimal"
+        value={draft}
+        onFocus={() => setEditing(true)}
+        onChange={(event) => {
+          const next = event.target.value;
+          setDraft(next);
+          const parsed = numeric(next);
+          if (parsed !== null) { setError(null); onChange(parsed); }
+        }}
+        onBlur={() => {
+          setEditing(false);
+          if (numeric(draft) === null) {
+            setDraft(String(value));
+            setError('数值无效，已保留上一次有效值。');
+          }
+        }}
+        aria-invalid={Boolean(error)}
+        className="w-full px-2 py-1 font-mono"
+      />
+      {error && <div role="alert" className="text-amber-300 text-[10px]">{error}</div>}
+    </>
+  );
+}
 
 export const Inspector: React.FC<InspectorProps> = ({
   node,
@@ -1188,36 +1226,46 @@ export const Inspector: React.FC<InspectorProps> = ({
                           ? '传入参数列表'
                           : '运算数值 / 元素内容'}
                       </label>
-                      <input
-                        type={node.type === 'math_operation' ? 'number' : 'text'}
-                        value={
-                          node.type === 'string_format'
+                      {node.type === 'math_operation' ? (
+                        <MathOperandInput
+                          key={node.id}
+                          value={node.logicConfig?.operandValue ?? 1}
+                          onChange={(value) => onUpdateNode((prev) => ({
+                            ...prev,
+                            logicConfig: {
+                              targetVar: prev.logicConfig?.targetVar || 'clueCount',
+                              ...(prev.logicConfig || {}),
+                              operandValue: value,
+                            },
+                          }))}
+                        />
+                      ) : (
+                        <input
+                          type="text"
+                          value={node.type === 'string_format'
                             ? node.logicConfig?.formatTemplate || ''
                             : node.type === 'function_call'
                             ? node.logicConfig?.functionArgs || 'ctx'
-                            : String(node.logicConfig?.operandValue ?? 1)
-                        }
-                        onChange={(e) =>
-                          onUpdateNode((prev) => ({
-                            ...prev,
-                            logicConfig: {
-                              targetVar:
-                                prev.logicConfig?.targetVar || 'clueCount',
-                              operandValue:
-                                node.type === 'math_operation'
-                                  ? Number(e.target.value)
-                                  : e.target.value,
-                              ...(prev.logicConfig || {}),
-                              ...(node.type === 'string_format'
-                                ? { formatTemplate: e.target.value }
-                                : node.type === 'function_call'
-                                ? { functionArgs: e.target.value }
-                                : {}),
-                            },
-                          }))
-                        }
-                        className="w-full px-2 py-1 font-mono"
-                      />
+                            : String(node.logicConfig?.operandValue ?? '')}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            onUpdateNode((prev) => ({
+                              ...prev,
+                              logicConfig: {
+                                targetVar: prev.logicConfig?.targetVar || 'clueCount',
+                                operandValue: prev.logicConfig?.operandValue ?? '',
+                                ...(prev.logicConfig || {}),
+                                ...(node.type === 'string_format'
+                                  ? { formatTemplate: value }
+                                  : node.type === 'function_call'
+                                  ? { functionArgs: value }
+                                  : { operandValue: value }),
+                              },
+                            }));
+                          }}
+                          className="w-full px-2 py-1 font-mono"
+                        />
+                      )}
                     </div>
                   </div>
                 )}

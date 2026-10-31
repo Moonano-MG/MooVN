@@ -137,10 +137,32 @@ export function useEditor() {
 
   const updateNode = useCallback(
     (nodeId: string, updater: (node: SceneNode) => SceneNode) => {
-      commitProject((prev) => ({
-        ...prev,
-        nodes: prev.nodes.map((n) => (n.id === nodeId ? updater(n) : n)),
-      }));
+      commitProject((prev) => {
+        const index = prev.nodes.findIndex((node) => node.id === nodeId);
+        if (index < 0) return prev;
+        const updated = updater(prev.nodes[index]);
+        if (updated === prev.nodes[index]) return prev;
+        const nodes = [...prev.nodes];
+        nodes[index] = updated;
+        return { ...prev, nodes };
+      });
+    },
+    [commitProject]
+  );
+
+  // The comparison runs inside the same project-state transaction as the update.
+  const updateNodeIfProjectMatches = useCallback(
+    (expected: VNProject, nodeId: string, updater: (node: SceneNode) => SceneNode) => {
+      commitProject((prev) => {
+        if (prev !== expected) return prev;
+        const index = prev.nodes.findIndex((node) => node.id === nodeId);
+        if (index < 0) return prev;
+        const updated = updater(prev.nodes[index]);
+        if (updated === prev.nodes[index]) return prev;
+        const nodes = [...prev.nodes];
+        nodes[index] = updated;
+        return { ...prev, nodes };
+      });
     },
     [commitProject]
   );
@@ -202,7 +224,11 @@ export function useEditor() {
   );
 
   const addNode = useCallback(
-    (type: WorkflowNodeType, customPosition?: { x: number; y: number }) => {
+    (
+      type: WorkflowNodeType,
+      customPosition?: { x: number; y: number },
+      options?: { initial?: Partial<SceneNode>; expectedProject?: VNProject; selectCreated?: boolean },
+    ) => {
       const id = newId('node');
       const count = project.nodes.length + 1;
       const activeChapterId = selectedNode?.chapterId || selectedChapterId || project.chapters[0].id;
@@ -217,13 +243,14 @@ export function useEditor() {
           x: (selectedNode?.position.x ?? 200) + 310,
           y: (selectedNode?.position.y ?? 160) + (count % 2 === 0 ? 40 : -20),
         },
-        backgroundId: selectedNode?.backgroundId ?? '',
-        bgmId: selectedNode?.bgmId ?? '',
+        backgroundId: meta.isContainer ? '' : (selectedNode?.backgroundId ?? ''),
+        bgmId: meta.isContainer ? '' : (selectedNode?.bgmId ?? ''),
         transition: 'fade',
         weatherEffect: type === 'weather_particles' ? 'sakura' : 'none',
         colorFilter: type === 'color_filter' ? 'sepia' : 'none',
-        characters:
-          selectedNode?.characters.map((c) => ({ ...c, id: newId('pl') })) || [],
+        characters: meta.isContainer
+          ? []
+          : selectedNode?.characters.map((c) => ({ ...c, id: newId('pl') })) || [],
         dialogues:
           type === 'dialogue' ||
           type === 'narration' ||
@@ -393,42 +420,8 @@ export function useEditor() {
                 functionArgs: type === 'function_call' ? 'ctx' : undefined,
               }
             : undefined,
-        childrenNodes:
-          type === 'repeat_loop' ||
-          type === 'while_loop' ||
-          type === 'for_each_loop' ||
-          type === 'if_else_container' ||
-          type === 'parallel_container' ||
-          type === 'try_catch_container'
-            ? [
-                {
-                  id: newId('child'),
-                  type: 'camera_shake',
-                  title: '镜头震动',
-                  params: { intensity: 'medium', durationMs: 400 },
-                },
-                {
-                  id: newId('child'),
-                  type: 'dialogue',
-                  title: '子块对白',
-                  params: {
-                    speaker: project.characters[0]?.name || '旁白',
-                    text: '在此输入容器内部子块台词……',
-                  },
-                },
-              ]
-            : undefined,
-        elseChildrenNodes:
-          type === 'if_else_container' || type === 'try_catch_container'
-            ? [
-                {
-                  id: newId('else'),
-                  type: 'dialogue',
-                  title: '否则分支对白',
-                  params: { speaker: '旁白', text: '在此输入条件未满足时的分支台词。' },
-                },
-              ]
-            : undefined,
+        childrenNodes: meta.isContainer ? [] : undefined,
+        elseChildrenNodes: meta.hasDualSlots ? [] : undefined,
         visualBlocks: [],
         nextNodeId: null,
         endingType: type === 'end' ? 'good' : undefined,
@@ -440,12 +433,18 @@ export function useEditor() {
             : undefined,
       };
 
-      commitProject((prev) => ({
-        ...prev,
-        nodes: [...prev.nodes, newNode],
-      }));
-      setSelectedNodeId(id);
-      setSelectedDialogueIndex(0);
+      const initialNode: SceneNode = {
+        ...newNode, ...options?.initial, id: newNode.id,
+        chapterId: newNode.chapterId, position: newNode.position,
+      };
+      commitProject((prev) => {
+        if (options?.expectedProject && prev !== options.expectedProject) return prev;
+        return { ...prev, nodes: [...prev.nodes, initialNode] };
+      });
+      if (options?.selectCreated !== false) {
+        setSelectedNodeId(id);
+        setSelectedDialogueIndex(0);
+      }
       return id;
     },
     [project.nodes.length, project.startNodeId, project.characters, selectedNode, selectedChapterId, commitProject]
@@ -691,6 +690,7 @@ export function useEditor() {
     setSelectedCharacterPlacementId,
     updateUIConfig,
     updateNode,
+    updateNodeIfProjectMatches,
     addChapter,
     updateChapter,
     addCharacterProfile,

@@ -41,6 +41,52 @@ export function normalizeConditionForCtx(
     );
 }
 
+type MathCodeConfig = {
+  targetVar?: unknown; mathOp?: unknown; operandValue?: unknown; clampMin?: unknown; clampMax?: unknown;
+};
+
+/** Use the same safe generator for top-level and nested math nodes. */
+function generateMathStatement(config: MathCodeConfig, indent: string): string {
+  const fail = (reason: string) => `${indent}throw new Error(${JSON.stringify(`ERR_MATH: ${reason}`)});`;
+  const target = typeof config.targetVar === 'string' ? config.targetVar.trim() : '';
+  const op = config.mathOp === undefined ? '+=' : config.mathOp;
+  if (!target) return fail('目标变量名不能为空');
+  if (typeof op !== 'string') return fail('不支持的运算符');
+  const key = JSON.stringify(target);
+  if (op === 'clamp') {
+    const min = Number(config.clampMin ?? 0);
+    const max = Number(config.clampMax ?? 100);
+    if (!Number.isFinite(min) || !Number.isFinite(max) || min > max) return fail('范围无效');
+    return [
+      `${indent}{`,
+      `${indent}  const current = Number(ctx.getVar(${key}) ?? 0);`,
+      `${indent}  if (!Number.isFinite(current)) throw new Error("ERR_MATH: 目标变量不是有限数值");`,
+      `${indent}  ctx.setVar(${key}, Math.min(${max}, Math.max(${min}, current)));`,
+      `${indent}}`,
+    ].join('\n');
+  }
+  const rawOperand = config.operandValue ?? (op === 'random' ? 100 : 1);
+  const operand = typeof rawOperand === 'number' || typeof rawOperand === 'string' ? Number(rawOperand) : NaN;
+  if (!Number.isFinite(operand) || (typeof rawOperand === 'string' && !rawOperand.trim())) return fail('运算数值无效');
+  if (op === 'random') {
+    if (!Number.isSafeInteger(operand) || operand <= 0) return fail('随机上限必须是正整数');
+    return `${indent}ctx.setVar(${key}, Math.floor(Math.random() * ${operand}));`;
+  }
+  if (!['+=', '-=', '*=', '/=', '%=', '='].includes(op)) return fail('不支持的运算符');
+  if ((op === '/=' || op === '%=') && operand === 0) return fail('除数不能为零');
+  if (op === '=') return `${indent}ctx.setVar(${key}, ${operand});`;
+  const expression = `current ${op.slice(0, 1)} ${operand}`;
+  return [
+    `${indent}{`,
+    `${indent}  const current = Number(ctx.getVar(${key}) ?? 0);`,
+    `${indent}  if (!Number.isFinite(current)) throw new Error("ERR_MATH: 目标变量不是有限数值");`,
+    `${indent}  const value = ${expression};`,
+    `${indent}  if (!Number.isFinite(value)) throw new Error("ERR_MATH: 计算结果不是有限数值");`,
+    `${indent}  ctx.setVar(${key}, value);`,
+    `${indent}}`,
+  ].join('\n');
+}
+
 /**
  * 递归编译容器节点内部的嵌套子节点（支持多重嵌套：如 repeat_loop 内套 if_else_container，再套其他节点）
  */
@@ -66,12 +112,8 @@ function compileNestedChildNode(
       const idxDecl = isTs ? 'let i: number = 0' : 'let i = 0';
       lines.push(`${indent}for (${idxDecl}; i < ${count}; i++) {`);
       const sub = child.childrenNodes || [];
-      if (sub.length === 0) {
-        lines.push(`${indent}  await ctx.tickFrame();`);
-      } else {
-        for (const s of sub) {
-          lines.push(compileNestedChildNode(s, lang, indent + '  '));
-        }
+      for (const s of sub) {
+        lines.push(compileNestedChildNode(s, lang, indent + '  '));
       }
       lines.push(`${indent}}`);
       break;
@@ -123,11 +165,7 @@ function compileNestedChildNode(
       );
       break;
     case 'math_operation':
-      lines.push(
-        `${indent}ctx.vars[${JSON.stringify(
-          String(child.params.targetVar || 'day_count')
-        )}] ${String(child.params.mathOp || '+=')} ${Number(child.params.operandValue ?? 1)};`
-      );
+      lines.push(generateMathStatement({ ...child.params, targetVar: child.params.targetVar ?? 'day_count' }, indent));
       break;
     case 'affection_change':
       lines.push(
@@ -387,25 +425,7 @@ export function generateSingleNodeCode(
         mathOp: '+=',
         operandValue: 1,
       };
-      if (cfg.mathOp === 'random') {
-        body.push(
-          `  ctx.setVar(${JSON.stringify(cfg.targetVar)}, Math.floor(Math.random() * ${Number(
-            cfg.operandValue || 100
-          )}));`
-        );
-      } else if (cfg.mathOp === 'clamp') {
-        body.push(
-          `  ctx.setVar(${JSON.stringify(cfg.targetVar)}, Math.min(${cfg.clampMax ?? 100}, Math.max(${
-            cfg.clampMin ?? 0
-          }, Number(ctx.getVar(${JSON.stringify(cfg.targetVar)})))));`
-        );
-      } else {
-        body.push(
-          `  ctx.vars[${JSON.stringify(cfg.targetVar)}] ${cfg.mathOp || '+='} ${Number(
-            cfg.operandValue ?? 1
-          )};`
-        );
-      }
+      body.push(generateMathStatement(cfg, '  '));
       break;
     }
 

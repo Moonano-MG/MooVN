@@ -1,4 +1,4 @@
-import type { VNProject } from '../types.ts';
+import type { AvatarLayerTextureMap, VNProject } from '../types.ts';
 import { isTauriEnvironment, readAssetViaTauri, storeAssetViaTauri } from './tauriBridge.ts';
 
 export const MAX_ASSET_BYTES = 100 * 1024 * 1024;
@@ -104,58 +104,72 @@ function extensionForMime(mime: string): string | undefined {
   return Object.keys(MIME_BY_EXTENSION).find((key) => MIME_BY_EXTENSION[key] === mime);
 }
 
+type MediaOwner = { mediaUrl?: string; videoUrl?: string; layerTextures?: AvatarLayerTextureMap };
+
+/** Visit only schema-defined media fields; dialogue, scripts and variable text are never URLs here. */
+function forEachProjectMedia(project: VNProject, visit: (value: string, replace: (value: string) => void) => void): void {
+  const seen = new WeakSet<object>();
+  const owner = (source: MediaOwner) => {
+    if (seen.has(source)) return;
+    seen.add(source);
+    for (const key of ['mediaUrl', 'videoUrl'] as const) {
+      const value = source[key];
+      if (typeof value === 'string') visit(value, (next) => { source[key] = next; });
+    }
+    if (source.layerTextures) {
+      const layers = source.layerTextures;
+      for (const key of Object.keys(layers) as (keyof AvatarLayerTextureMap)[]) {
+        const value = layers[key];
+        if (typeof value === 'string') visit(value, (next) => { layers[key] = next; });
+      }
+    }
+  };
+  for (const character of project.characters) {
+    owner(character);
+    for (const expression of character.expressions || []) owner(expression);
+  }
+  for (const node of project.nodes) {
+    for (const placement of node.characters) owner(placement);
+    if (node.mediaAnimation) owner(node.mediaAnimation);
+  }
+}
+
+export function getProjectWorkspaceAssetReferences(project: VNProject): string[] {
+  const refs = new Set<string>();
+  forEachProjectMedia(project, (value) => { if (value.startsWith(ASSET_PREFIX)) refs.add(value); });
+  return [...refs];
+}
+
 /** Convert legacy embedded media to workspace assets on a cloned project before saving. */
 export async function migrateEmbeddedProjectMedia(project: VNProject): Promise<VNProject> {
   const copy = structuredClone(project);
   let migration: Promise<void> = Promise.resolve();
-  const seen = new WeakSet<object>();
-  const visit = (value: unknown, parentKey = '') => {
-    if (!value || typeof value !== 'object' || seen.has(value)) return;
-    seen.add(value);
-    for (const [key, child] of Object.entries(value)) {
-      const isMedia = key === 'mediaUrl' || key === 'videoUrl' || parentKey === 'layerTextures';
-      if (isMedia && typeof child === 'string' && child.startsWith('data:')) {
-        const match = /^data:([^;,]+)[;,]/.exec(child);
-        const ext = match && extensionForMime(match[1]);
-        if (!ext) throw new Error('ERR_ASSET_TYPE: 工程中的内嵌媒体格式不受支持');
-        migration = migration.then(async () => {
-          const comma = child.indexOf(',');
-          if (comma < 0 || !child.slice(0, comma).endsWith(';base64')) {
-            throw new Error('ERR_ASSET_FORMAT: 只支持 base64 编码的旧内嵌媒体');
-          }
-          const encoded = child.slice(comma + 1);
-          if (encoded.length > Math.ceil(MAX_ASSET_BYTES * 4 / 3) + 4) throw new Error('ERR_ASSET_SIZE: 旧内嵌媒体超限');
-          const binary = atob(encoded);
-          const bytes = new Uint8Array(binary.length);
-          for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-          const reference = await importAsset(new File([bytes], `imported.${ext}`, { type: match[1] }));
-          (value as Record<string, unknown>)[key] = reference;
-        });
-      } else {
-        visit(child, key);
+  forEachProjectMedia(copy, (value, replace) => {
+    if (!value.startsWith('data:')) return;
+    const match = /^data:([^;,]+)[;,]/.exec(value);
+    const ext = match && extensionForMime(match[1]);
+    if (!ext) throw new Error('ERR_ASSET_TYPE: 工程中的内嵌媒体格式不受支持');
+    migration = migration.then(async () => {
+      const comma = value.indexOf(',');
+      if (comma < 0 || !value.slice(0, comma).endsWith(';base64')) {
+        throw new Error('ERR_ASSET_FORMAT: 只支持 base64 编码的旧内嵌媒体');
       }
-    }
-  };
-  visit(copy);
+      const encoded = value.slice(comma + 1);
+      if (encoded.length > Math.ceil(MAX_ASSET_BYTES * 4 / 3) + 4) throw new Error('ERR_ASSET_SIZE: 旧内嵌媒体超限');
+      const binary = atob(encoded);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      const reference = await importAsset(new File([bytes], `imported.${ext}`, { type: match[1] }));
+      replace(reference);
+    });
+  });
   await migration;
   return copy;
 }
 
 /** Refuse to save a project whose content-addressed resources are missing or damaged. */
 export async function verifyProjectAssets(project: VNProject): Promise<void> {
-  const refs = new Set<string>();
-  const seen = new WeakSet<object>();
-  const visit = (value: unknown, parentKey = '') => {
-    if (!value || typeof value !== 'object' || seen.has(value)) return;
-    seen.add(value);
-    for (const [key, child] of Object.entries(value)) {
-      const isMedia = key === 'mediaUrl' || key === 'videoUrl' || parentKey === 'layerTextures';
-      if (isMedia && typeof child === 'string' && child.startsWith(ASSET_PREFIX)) refs.add(child);
-      else visit(child, key);
-    }
-  };
-  visit(project);
-  for (const ref of refs) await readAsset(ref);
+  for (const ref of getProjectWorkspaceAssetReferences(project)) await readAsset(ref);
 }
 
 function blobToDataUrl(blob: Blob): Promise<string> {
@@ -172,33 +186,25 @@ export async function hydrateAssetsForHtmlExport(project: VNProject): Promise<VN
   const copy = structuredClone(project);
   const refs = new Map<string, Promise<string>>();
   const pending: Promise<void>[] = [];
-  const seen = new WeakSet<object>();
-  const visit = (value: unknown, parentKey = '') => {
-    if (!value || typeof value !== 'object' || seen.has(value)) return;
-    seen.add(value);
-    for (const [key, child] of Object.entries(value)) {
-      const isMedia = key === 'mediaUrl' || key === 'videoUrl' || parentKey === 'layerTextures';
-      if (isMedia && typeof child === 'string' && /^https?:\/\//i.test(child)) {
-        throw new Error('ERR_EXPORT_EXTERNAL_MEDIA: 请先将远程媒体导入工程，再生成离线 HTML。');
-      }
-      if (typeof child === 'string' && (child.startsWith(ASSET_PREFIX) || (isMedia && child.startsWith('/images/')))) {
-        let data = refs.get(child);
-        if (!data) {
-          data = child.startsWith(ASSET_PREFIX)
-            ? readAsset(child).then(blobToDataUrl)
-            : fetch(child).then(async (response) => {
-                if (!response.ok) throw new Error(`ERR_EXPORT_ASSET: 无法读取 ${child}`);
-                const blob = await response.blob();
-                if (!blob.type.startsWith('image/') && !blob.type.startsWith('video/')) throw new Error(`ERR_EXPORT_ASSET: 无效媒体 ${child}`);
-                return blobToDataUrl(blob);
-              });
-          refs.set(child, data);
-        }
-        pending.push(data.then((url) => { (value as Record<string, unknown>)[key] = url; }));
-      } else visit(child, key);
+  forEachProjectMedia(copy, (value, replace) => {
+    if (/^https?:\/\//i.test(value)) {
+      throw new Error('ERR_EXPORT_EXTERNAL_MEDIA: 请先将远程媒体导入工程，再生成离线 HTML。');
     }
-  };
-  visit(copy);
+    if (!value.startsWith(ASSET_PREFIX) && !value.startsWith('/images/')) return;
+    let data = refs.get(value);
+    if (!data) {
+      data = value.startsWith(ASSET_PREFIX)
+        ? readAsset(value).then(blobToDataUrl)
+        : fetch(value).then(async (response) => {
+            if (!response.ok) throw new Error(`ERR_EXPORT_ASSET: 无法读取 ${value}`);
+            const blob = await response.blob();
+            if (!blob.type.startsWith('image/') && !blob.type.startsWith('video/')) throw new Error(`ERR_EXPORT_ASSET: 无效媒体 ${value}`);
+            return blobToDataUrl(blob);
+          });
+      refs.set(value, data);
+    }
+    pending.push(data.then(replace));
+  });
   await Promise.all(pending);
   return copy;
 }

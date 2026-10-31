@@ -65,7 +65,17 @@ import {
   setFeatureFlag,
   Z_INDEX_TOKENS,
 } from './lib/featureFlags';
-import type { VNProject, WorkflowNodeType } from './types';
+import {
+  WORKSPACE_LAYOUT_KEY,
+  parseWorkspaceLayout,
+  saveWorkspaceLayout,
+  type EditorGroupLeaf,
+  type EditorSplitNode,
+  type FloatingWindowState,
+  type WorkspaceLayout,
+} from './lib/workspaceLayout';
+import { DEFAULT_AI_CONFIG, loadAiEndpointConfig, saveAiEndpointConfig } from './lib/aiEndpointConfig';
+import type { VNProject } from './types';
 
 const PANEL_TITLES: Record<PanelId, string> = {
   explorer: '工程资源与章节',
@@ -165,38 +175,7 @@ const ACTIVITY_RAIL_ITEMS: {
   },
 ];
 
-export interface FloatingWindowState {
-  id: PanelId;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  zIndex: number;
-}
-
 type DropZonePosition = 'top' | 'bottom' | 'left' | 'right' | 'center';
-
-// ============================================================================
-// True VS Code Recursive 2D Split Tree (`EditorSplitNode = Leaf | Branch`)
-// Supports arbitrary 2D layouts: [A | C] over [B | D], [A | C] over [B], etc.
-// ============================================================================
-export interface EditorGroupLeaf {
-  kind: 'leaf';
-  id: string;
-  tabs: PanelId[];
-  activeTab: PanelId;
-}
-
-export interface EditorSplitBranch {
-  kind: 'branch';
-  id: string;
-  direction: 'horizontal' | 'vertical';
-  ratio: number; // 0.15 .. 0.85
-  first: EditorSplitNode;
-  second: EditorSplitNode;
-}
-
-export type EditorSplitNode = EditorGroupLeaf | EditorSplitBranch;
 
 const createDefaultSplitTree = (): EditorSplitNode => ({
   kind: 'branch',
@@ -228,6 +207,42 @@ const createDefaultSplitTree = (): EditorSplitNode => ({
     },
   },
 });
+
+type InitialWorkspaceLayout = WorkspaceLayout & {
+  invalidRaw?: string;
+  warning: string | null;
+  storageReadable: boolean;
+};
+
+function loadInitialWorkspaceLayout(): InitialWorkspaceLayout {
+  const fallback: InitialWorkspaceLayout = {
+    splitRoot: createDefaultSplitTree(), floatingWindows: [], warning: null, storageReadable: true,
+  };
+  try {
+    const raw = localStorage.getItem(WORKSPACE_LAYOUT_KEY);
+    if (raw === null) return fallback;
+    const parsed = parseWorkspaceLayout(raw, [...ALL_WINDOW_IDS, 'characters']);
+    if (!parsed.ok) {
+      return {
+        ...fallback, invalidRaw: raw,
+        warning: `工作区布局无效（${parsed.error}），已使用默认布局；正在保留原始数据。`,
+      };
+    }
+    const viewport = typeof window === 'undefined'
+      ? { width: 1280, height: 800 }
+      : { width: window.innerWidth, height: window.innerHeight };
+    return {
+      ...fallback,
+      splitRoot: parsed.value.splitRoot,
+      floatingWindows: normalizeWindowZIndices(parsed.value.floatingWindows.map((entry) => ({
+        ...entry, ...clampFloatingRect(entry, viewport, 320, 220),
+      }))),
+    };
+  } catch (error: unknown) {
+    const detail = error instanceof Error ? error.message : '存储不可用';
+    return { ...fallback, storageReadable: false, warning: `无法读取布局：${detail}。本次布局不会保存。` };
+  }
+}
 
 function collectLeaves(node: EditorSplitNode | null): EditorGroupLeaf[] {
   if (!node) return [];
@@ -399,6 +414,7 @@ export function App({
     redo,
     updateUIConfig,
     updateNode,
+    updateNodeIfProjectMatches,
     addNode,
     deleteNode,
     addDialogueLine,
@@ -659,58 +675,42 @@ export function App({
     setSelectedCharacterPlacementId(null);
   };
 
-  // ==================== Recursive 2D Split Tree + Floating State ====================
-  const [splitRoot, setSplitRoot] = useState<EditorSplitNode | null>(() => {
-    try {
-      const raw = localStorage.getItem('moovn_workspace_layout_v2');
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (parsed && parsed.splitRoot) {
-          return parsed.splitRoot as EditorSplitNode;
-        }
-      }
-    } catch {
-      // ignore
-    }
-    return createDefaultSplitTree();
+  // Clean old persisted AI credentials at startup, even if the assistant is never opened.
+  const [initialAiConfig] = useState(() => {
+    try { return loadAiEndpointConfig(localStorage, ''); }
+    catch { return { config: DEFAULT_AI_CONFIG, needsScrubbing: false, warning: '无法读取旧接口配置，请检查浏览器存储权限。' }; }
   });
-  const [floatingWindows, setFloatingWindows] = useState<FloatingWindowState[]>(() => {
-    try {
-      const raw = localStorage.getItem('moovn_workspace_layout_v2');
-      if (raw && typeof window !== 'undefined') {
-        const parsed = JSON.parse(raw);
-        if (parsed && Array.isArray(parsed.floatingWindows)) {
-          const clamped: FloatingWindowState[] = parsed.floatingWindows.map(
-            (w: FloatingWindowState) => ({
-              ...w,
-              ...clampFloatingRect(
-                w,
-                { width: window.innerWidth, height: window.innerHeight },
-                320,
-                220
-              ),
-            })
-          );
-          return normalizeWindowZIndices(clamped);
-        }
-      }
-    } catch {
-      // ignore
-    }
-    return [];
-  });
-
-  // Persist layout state (`splitRoot` + `floatingWindows`) (`GPT-30`, `GPT-39`)
+  const [aiMigrationNotice, setAiMigrationNotice] = useState<string | null>(initialAiConfig.warning);
   useEffect(() => {
-    try {
-      localStorage.setItem(
-        'moovn_workspace_layout_v2',
-        JSON.stringify({ splitRoot, floatingWindows })
-      );
-    } catch {
-      // ignore quota errors
+    if (!initialAiConfig.needsScrubbing) return;
+    let warning: string | null;
+    try { warning = saveAiEndpointConfig(localStorage, initialAiConfig.config); }
+    catch { warning = '无法访问浏览器存储。'; }
+    setAiMigrationNotice(warning
+      ? `旧接口配置含不安全内容，但清理失败：${warning}`
+      : '已清理旧配置中的密钥或不安全地址。若真实密钥曾存入地址或配置，请考虑撤销并更换。');
+  }, [initialAiConfig]);
+
+  // Read and validate the same tree that the renderer consumes.
+  const [initialLayout] = useState(loadInitialWorkspaceLayout);
+  const [splitRoot, setSplitRoot] = useState<EditorSplitNode | null>(initialLayout.splitRoot);
+  const [floatingWindows, setFloatingWindows] = useState<FloatingWindowState[]>(initialLayout.floatingWindows);
+  const [layoutWarning, setLayoutWarning] = useState<string | null>(initialLayout.warning);
+  const invalidLayoutRef = useRef(initialLayout.invalidRaw);
+
+  useEffect(() => {
+    if (!initialLayout.storageReadable) return;
+    const wasInvalid = invalidLayoutRef.current !== undefined;
+    const result = saveWorkspaceLayout(localStorage, { splitRoot, floatingWindows }, invalidLayoutRef.current);
+    if (!result.ok) {
+      setLayoutWarning(`${result.error || '布局保存失败'} ${wasInvalid ? '本次未覆盖原始布局，可下载备份。' : '本次布局仅在当前会话生效。'}`);
+      return;
     }
-  }, [splitRoot, floatingWindows]);
+    if (wasInvalid) {
+      invalidLayoutRef.current = undefined;
+      setLayoutWarning(`损坏的布局已备份为 ${result.backupKey}，当前使用默认布局。`);
+    }
+  }, [splitRoot, floatingWindows, initialLayout.storageReadable]);
 
   // Old persisted layouts may contain floating windows while the experiment is off.
   // Return those panels to the existing tree instead of discarding the user's layout.
@@ -1290,27 +1290,12 @@ export function App({
             project={project}
             selectedChapterId={selectedChapterId}
             selectedNode={selectedNode || undefined}
-            onCreateGeneratedNodes={(nodes, connectFromSelected) => {
-              nodes.forEach((partial) => {
-                const newId = addNode((partial.type as WorkflowNodeType) || 'dialogue');
-                updateNode(newId, (prev) => ({
-                  ...prev,
-                  ...partial,
-                  id: prev.id,
-                }));
-                if (connectFromSelected && selectedNode) {
-                  updateNode(selectedNode.id, (prev) => ({
-                    ...prev,
-                    nextNodeId: newId,
-                  }));
-                }
-              });
-            }}
-            onUpdateCurrentNode={(updater) => {
-              if (!selectedNode) return;
-              updateNode(selectedNode.id, updater);
-            }}
-            onUpdateProjectMeta={updateProjectMeta}
+            onCreateGeneratedNodes={(expectedProject, partial) =>
+              addNode(partial.type || 'dialogue', undefined, {
+                initial: partial, expectedProject, selectCreated: false,
+              })
+            }
+            onUpdateCurrentNode={updateNodeIfProjectMatches}
           />
         );
       case 'terminal':
@@ -2082,6 +2067,30 @@ export function App({
           onRetrySave={() => void saveCurrentProject()}
           onOpenWindowOverview={() => setIsWindowOverviewOpen(true)}
         />
+      )}
+
+      {aiMigrationNotice && (
+        <div role="alert" style={{ zIndex: Z_INDEX_TOKENS.toast }} className="fixed top-3 right-3 max-w-md bg-amber-950 border border-amber-500 rounded p-3 text-sm text-amber-100 shadow-xl">
+          <div className="break-words">{aiMigrationNotice}</div>
+          <button className="mt-2 underline" onClick={() => setAiMigrationNotice(null)}>关闭接口配置提示</button>
+        </div>
+      )}
+
+      {layoutWarning && (
+        <div role="alert" style={{ zIndex: Z_INDEX_TOKENS.toast }} className="fixed bottom-8 left-3 max-w-md bg-amber-950 border border-amber-500 rounded p-3 text-sm text-amber-100 shadow-xl">
+          <div className="break-words">{layoutWarning}</div>
+          {initialLayout.invalidRaw !== undefined && (
+            <button className="mt-2 underline" onClick={() => {
+              const url = URL.createObjectURL(new Blob([initialLayout.invalidRaw!], { type: 'application/json' }));
+              const link = document.createElement('a');
+              link.href = url;
+              link.download = 'moovn-workspace-layout-backup.json';
+              link.click();
+              window.setTimeout(() => URL.revokeObjectURL(url), 0);
+            }}>下载原始布局</button>
+          )}
+          <button className="mt-2 ml-3 underline" onClick={() => setLayoutWarning(null)}>关闭提示</button>
+        </div>
       )}
 
       {saveError && (

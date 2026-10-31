@@ -5,7 +5,7 @@ import { buildStandaloneGameHtml, createStandaloneAssetCatalog } from '../lib/ga
 import { DEFAULT_PERFORMANCE_CONFIG, downloadChapterMsvnFile } from '../lib/assetCompressionEngine';
 import { exportProjectAsMpvn } from '../lib/mpvnFormat';
 import { checkProjectGraph } from '../lib/nodeCodeCompiler';
-import { ASSET_PREFIX, hydrateAssetsForHtmlExport } from '../lib/assetStore';
+import { getProjectWorkspaceAssetReferences, hydrateAssetsForHtmlExport } from '../lib/assetStore';
 import { validateStandaloneHtmlProject } from '../lib/htmlExportValidation';
 
 interface ExportModalProps {
@@ -43,7 +43,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ project, onClose, onLo
 
   const ensurePortableProjectExport = () => {
     // A JSON project/section cannot carry the separate workspace asset directory yet.
-    if (JSON.stringify(project).includes(ASSET_PREFIX)) {
+    if (getProjectWorkspaceAssetReferences(project).length > 0) {
       throw new Error('工程引用外置素材；可移植工程包尚未实现，请备份整个工作区。');
     }
   };
