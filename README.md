@@ -20,9 +20,11 @@ MooVN 是开发中的视觉小说创作工具，包含 React/TypeScript 工作�
 
 随机分支、switch-case 多路路由和选项条件表达式尚未实现，不能作为已支持功能使用。旧工程仍可打开并保留原数据；预览遇到这些内容会暂停，工程图报错，相关生成的 JS/TS 函数执行时会报错，HTML 导出会阻止。检查器可明确移除旧选项条件并撤销，但移除会改变分支含义；无条件玩家选项在预览中仍可使用。
 
+Studio/Web 预览回退保存当前已模拟的变量、好感、角色属性、词条、文字速度和限时剩余；读档后此前的回退历史会清空。旧预览存档未完整记录词条、文字速度或限时状态，读取前会提示并要求确认；损坏或较新版本的槽位保留原数据。打开预览或刚读档不会立刻覆盖已有自动存档，推进剧情或开始新游戏后会更新。预览仍未实现全部节点和脚本，不能据此保证其他运行时行为一致；跨标签页存档竞争也尚未解决。
+
 ## 开发
 
-需要 Node.js **22.6 或更新版本**和 npm。当前两端共用 Studio 的测试及源码：干净检出后须在 `MooVN Studio/` 和 `MooVN Web/` 分别运行 `npm ci`，再在两目录运行 `npm test` 和 `npm run build`。分支安全浏览器回归可在两目录运行 `npm run test:branches:e2e`，需要可用的 Chromium（可通过 `MOOVN_CHROMIUM_PATH` 指定）。Rust 引擎使用 `cargo test`；桌面端还需 Tauri 对应平台构建依赖。
+需要 Node.js **22.6 或更新版本**和 npm。当前两端共用 Studio 的测试及源码：干净检出后须在 `MooVN Studio/` 和 `MooVN Web/` 分别运行 `npm ci`，再在两目录运行 `npm test` 和 `npm run build`。分支安全和预览状态浏览器回归可在两目录分别运行 `npm run test:branches:e2e` 和 `npm run test:preview-state:e2e`，需要可用的 Chromium（可通过 `MOOVN_CHROMIUM_PATH` 指定）。Rust 引擎使用 `cargo test`；桌面端还需 Tauri 对应平台构建依赖。
 
 ## 许可证和游戏输出边界
 

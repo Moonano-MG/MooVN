@@ -575,6 +575,11 @@ export interface SaveSlotData {
   customAttrSnapshot: Record<string, Record<string, number | string | boolean>>;
   variablesSnapshot: Record<string, number | string | boolean>;
   unlockedClues?: string[];
+  /** Versioned fields for Studio/Web preview saves, not Engine or HTML saves. */
+  previewSnapshotVersion?: 1;
+  clueSnapshot?: { title: string; desc: string }[];
+  textSpeedSnapshot?: number;
+  timedRemainingSnapshot?: number | null;
 }
 
 export type AiApiFormat =
