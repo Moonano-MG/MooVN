@@ -106,13 +106,16 @@ export const ScratchBlockTree: React.FC<ScratchBlockTreeProps> = ({
     onUpdateParam: (k: string, v: string | number | boolean) => void
   ) => {
     const entries = Object.entries(block.params);
+    const unsupported = isUnsupportedNode(block.type);
+    const label = `${block.title}${unsupported ? '（未实现）' : ''}`;
+    const description = unsupported ? `积木 ID：${block.id}。${getNodeMeta(block.type).description}` : undefined;
     if (entries.length === 0) {
-      return <span className="opacity-90">{block.title}</span>;
+      return <span className="opacity-90" title={description}>{label}</span>;
     }
 
     return (
       <div className="flex flex-wrap items-center gap-1">
-        <span className="font-bold tracking-tight mr-0.5">{block.title}</span>
+        <span className="font-bold tracking-tight mr-0.5" title={description}>{label}</span>
         {entries.map(([k, v]) => (
           <label
             key={k}
@@ -173,11 +176,10 @@ export const ScratchBlockTree: React.FC<ScratchBlockTreeProps> = ({
           ))}
         </div>
         <div className="grid grid-cols-2 gap-1 max-h-40 overflow-y-auto">
-          {NODE_REGISTRY.filter((n) => n.category === selectedAddCat).map(
+          {NODE_REGISTRY.filter((n) => n.category === selectedAddCat && !isUnsupportedNode(n.type)).map(
             (meta) => (
               <button
                 key={meta.type}
-                        disabled={isUnsupportedNode(meta.type)}
                 onClick={() => {
                   onPickType(meta.type);
                   setOpenAddSlotId(null);
@@ -188,7 +190,7 @@ export const ScratchBlockTree: React.FC<ScratchBlockTreeProps> = ({
                 }}
                 className="px-2 py-1 rounded text-[10px] font-bold text-left flex items-center justify-between hover:brightness-110 transition shadow-sm"
               >
-                <span className="truncate">{meta.title}{isUnsupportedNode(meta.type) ? '（未实现）' : ''}</span>
+                <span className="truncate">{meta.title}</span>
                 {meta.isContainer && (
                   <span className="px-1 rounded bg-black/25 text-white text-[8px]">
                     C型槽

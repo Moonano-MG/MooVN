@@ -1,0 +1,57 @@
+TAP version 13
+# Subtest: unimplemented random branches are rejected rather than emitted as generic effects
+ok 1 - unimplemented random branches are rejected rather than emitted as generic effects
+  ---
+  duration_ms: 32.735717
+  type: 'test'
+  ...
+# Subtest: unimplemented switch routing is rejected instead of emitting a generic effect
+not ok 2 - unimplemented switch routing is rejected instead of emitting a generic effect
+  ---
+  duration_ms: 1.655253
+  type: 'test'
+  location: '/home/user/MooVN/MooVN Studio/tests/branch-safety.test.mts:45:1'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (file:///home/user/MooVN/MooVN%20Studio/tests/branch-safety.test.mts:49:3)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: unimplemented choice conditions fail closed in generated JS and graph diagnostics
+ok 3 - unimplemented choice conditions fail closed in generated JS and graph diagnostics
+  ---
+  duration_ms: 36.851144
+  type: 'test'
+  ...
+# Subtest: graph diagnostics list every unsupported condition and retain their choice IDs
+ok 4 - graph diagnostics list every unsupported condition and retain their choice IDs
+  ---
+  duration_ms: 0.468008
+  type: 'test'
+  ...
+# Subtest: unconditional choice code still invokes the choice handler
+ok 5 - unconditional choice code still invokes the choice handler
+  ---
+  duration_ms: 1.240553
+  type: 'test'
+  ...
+# Subtest: a nested random branch does not compile to a successful generic execStep
+ok 6 - a nested random branch does not compile to a successful generic execStep
+  ---
+  duration_ms: 1.048398
+  type: 'test'
+  ...
+1..6
+# tests 6
+# suites 0
+# pass 5
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 382.108954

@@ -422,10 +422,9 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
               ))}
             </div>
             <div className="grid grid-cols-2 gap-1.5">
-              {NODE_REGISTRY.filter((n) => n.category === activeCat).map((meta) => (
+              {NODE_REGISTRY.filter((n) => n.category === activeCat && !isUnsupportedNode(n.type)).map((meta) => (
                 <button
                   key={meta.type}
-                        disabled={isUnsupportedNode(meta.type)}
                   type="button"
                   onClick={() => {
                     onAddNode(meta.type);
@@ -434,7 +433,7 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
                   className="p-2 rounded-lg bg-[#10141d] border border-[#283142] text-left flex flex-col gap-0.5 active:bg-[#1e2638]"
                 >
                   <span style={{ color: meta.badgeText }} className="text-xs font-bold">
-                    {meta.title}{isUnsupportedNode(meta.type) ? '（未实现）' : ''}
+                    {meta.title}
                   </span>
                   <span className="text-[10px] text-zinc-400 line-clamp-1">
                     {meta.description}
@@ -833,7 +832,7 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
           <button
             onClick={() => setShowAddMenu((v) => !v)}
             className="px-2 py-0.5 rounded bg-[#23232a] hover:bg-[#2d2d36] text-zinc-100 text-[11px] flex items-center gap-1"
-            title="打开 9 大分类 55 种节点库"
+            title="打开节点库"
           >
             <Plus className="w-3 h-3" strokeWidth={1.8} />
             添加节点
@@ -907,7 +906,7 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
         </div>
       </div>
 
-      {/* Categorized Quick-Add Popover (9 Color-Coded Categories, 55 Nodes) */}
+      {/* Categorized quick-add popover */}
       {showAddMenu && (
         <div
           onClick={(e) => e.stopPropagation()}
@@ -936,10 +935,9 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
           </div>
           {/* Nodes in Selected Category */}
           <div className="p-2 grid grid-cols-2 gap-1.5 max-h-64 overflow-y-auto">
-            {NODE_REGISTRY.filter((n) => n.category === activeCat).map((meta) => (
+            {NODE_REGISTRY.filter((n) => n.category === activeCat && !isUnsupportedNode(n.type)).map((meta) => (
               <button
                 key={meta.type}
-                        disabled={isUnsupportedNode(meta.type)}
                 onClick={() => {
                   onAddNode(meta.type);
                   setShowAddMenu(false);
@@ -951,7 +949,7 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
                     style={{ color: meta.badgeText }}
                     className="text-xs font-semibold"
                   >
-                    {meta.title}{isUnsupportedNode(meta.type) ? '（未实现）' : ''}
+                    {meta.title}
                   </span>
                   {meta.isContainer && (
                     <span className="px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-300 text-[9px]">

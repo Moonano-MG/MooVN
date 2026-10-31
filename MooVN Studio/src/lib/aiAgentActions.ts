@@ -87,9 +87,11 @@ function expressionTarget(action: AgentProposedAction, node: SceneNode, project:
 export function previewAgentAction(action: AgentProposedAction, node: SceneNode | undefined, project: VNProject): Preview {
   if (action.type === 'create_node') {
     const type = action.nodeType || 'dialogue';
-    if (!NODE_REGISTRY.some((entry) => entry.type === type) || isUnsupportedNode(type) ||
-        (type !== 'dialogue' && type !== 'narration')) {
-      return { ok: false, reason: 'Agent 暂只创建对白或旁白节点，其他类型请在节点库手动创建' };
+    if (isUnsupportedNode(type)) {
+      return { ok: false, reason: '此节点类型尚未实现，不能创建' };
+    }
+    if (!NODE_REGISTRY.some((entry) => entry.type === type) || (type !== 'dialogue' && type !== 'narration')) {
+      return { ok: false, reason: 'Agent 暂只创建对白或旁白节点；其他类型请以节点库的可用项为准' };
     }
     if (action.characterId && action.characterId !== 'narrator' && !project.characters.some((c) => c.id === action.characterId)) {
       return { ok: false, reason: '说话角色不存在' };

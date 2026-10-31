@@ -125,7 +125,7 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
       {mainTab === 'nodes' && (
         <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
           {NODE_CATEGORIES.map((cat) => {
-            const catNodes = NODE_REGISTRY.filter((n) => n.category === cat.id);
+            const catNodes = NODE_REGISTRY.filter((n) => n.category === cat.id && !isUnsupportedNode(n.type));
             const isOpen = !!openCategories[cat.id];
 
             return (
@@ -171,7 +171,6 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
                     {catNodes.map((meta) => (
                       <button
                         key={meta.type}
-                        disabled={isUnsupportedNode(meta.type)}
                         onClick={() => onAddNode(meta.type)}
                         style={{
                           backgroundColor: meta.badgeBg,
@@ -186,7 +185,7 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
                           style={{ color: meta.badgeText }}
                           className="text-[11px] font-medium truncate"
                         >
-                          {meta.title}{isUnsupportedNode(meta.type) ? '（未实现）' : ''}
+                          {meta.title}
                         </span>
                         <Plus
                           style={{ color: meta.accentColor }}

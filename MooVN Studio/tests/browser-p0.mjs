@@ -227,6 +227,7 @@ try {
   await page.getByText('chat must not apply', { exact: false }).first().waitFor();
   assert(!JSON.stringify(requests[0]).includes(fixture.title));
   assert(!JSON.stringify(requests[0]).includes('line-second'));
+  assert.match(requests[0].messages[0].content, /随机分支.*多路路由.*条件表达式.*不支持/);
   assert.equal(await page.getByRole('button', { name: '确认应用' }).count(), 0);
 
   await page.getByRole('button', { name: 'Agent', exact: true }).click();

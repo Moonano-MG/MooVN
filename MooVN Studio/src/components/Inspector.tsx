@@ -103,6 +103,17 @@ const NESTED_ADD_OPTIONS: {
   },
 ];
 
+function UnsupportedChoiceCondition({ choice, onClear }: { choice: ChoiceOption; onClear: () => void }) {
+  if (!choice.conditionExpr?.trim()) return null;
+  return (
+    <div className="rounded border border-amber-500/40 bg-amber-950/30 p-2 text-[11px] text-amber-100 break-words">
+      <p>选项 {choice.id} 的条件表达式尚未支持，预览会停止。若此节点支持选项，移除后该项将不再受条件限制；此操作可以撤销。</p>
+      <pre className="my-1 max-h-24 overflow-auto whitespace-pre-wrap break-all font-mono">{choice.conditionExpr}</pre>
+      <button type="button" onClick={onClear} className="underline">移除选项条件</button>
+    </div>
+  );
+}
+
 function MathOperandInput({ value, onChange }: { value: string | number; onChange: (value: number) => void }) {
   const [draft, setDraft] = useState(String(value));
   const [editing, setEditing] = useState(false);
@@ -459,7 +470,7 @@ export const Inspector: React.FC<InspectorProps> = ({
             >
               {NODE_CATEGORIES.map((cat) => (
                 <optgroup key={cat.id} label={cat.label}>
-                  {NODE_REGISTRY.filter((n) => n.category === cat.id).map(
+                  {NODE_REGISTRY.filter((n) => n.category === cat.id && (!isUnsupportedNode(n.type) || n.type === node.type)).map(
                     (item) => (
                       <option key={item.type} value={item.type} disabled={isUnsupportedNode(item.type)}>
                         [{item.categoryLabel}] {item.title}{isUnsupportedNode(item.type) ? '（未实现）' : ''}
@@ -514,6 +525,15 @@ export const Inspector: React.FC<InspectorProps> = ({
               </div>
             )}
         </div>
+
+        {!['choice', 'timed_choice', 'switch_branch', 'random_branch'].includes(node.type) &&
+          node.choices.map((choice) => (
+            <UnsupportedChoiceCondition
+              key={choice.id}
+              choice={choice}
+              onClear={() => onUpdateChoice(choice.id, { conditionExpr: undefined })}
+            />
+          ))}
 
         {/* ==================== MODE 2: NODE JS / TS SCRIPT VIEW ==================== */}
         {viewMode === 'script' ? (
@@ -1291,6 +1311,14 @@ export const Inspector: React.FC<InspectorProps> = ({
                   </button>
                 </div>
 
+                {(node.type === 'random_branch' || node.type === 'switch_branch') && (
+                  <div className="text-amber-200 text-[11px] break-words">
+                    {node.type === 'random_branch'
+                      ? '此旧随机分支尚未实现概率、权重及跨端执行。'
+                      : '此旧多路路由尚未实现 switch-case 自动分发。'}
+                    预览和生成代码会停止，不会自动选择分支。原配置仍保留，可修改节点类型或等待实现。
+                  </div>
+                )}
                 {node.type === 'timed_choice' && (
                   <div className="grid grid-cols-2 gap-2 p-2 rounded bg-[#141418] border border-[#2a2a33]">
                     <div>
@@ -1360,6 +1388,10 @@ export const Inspector: React.FC<InspectorProps> = ({
                         }
                         className="w-full px-2 py-1"
                         placeholder="选项文本..."
+                      />
+                      <UnsupportedChoiceCondition
+                        choice={ch}
+                        onClear={() => onUpdateChoice(ch.id, { conditionExpr: undefined })}
                       />
                       <div className="grid grid-cols-2 gap-1.5">
                         <select

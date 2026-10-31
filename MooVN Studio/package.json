@@ -25,6 +25,7 @@
     "test:assets:e2e": "node --experimental-strip-types tests/browser-asset-export.mjs",
     "test:math-input:e2e": "node --experimental-strip-types tests/browser-math-input.mjs",
     "test:containers:e2e": "node --experimental-strip-types tests/browser-empty-container.mjs",
+    "test:branches:e2e": "node --experimental-strip-types tests/browser-branch-safety.mjs",
     "test:formats:e2e": "node --experimental-strip-types tests/browser-formats.mjs"
   },
   "dependencies": {

@@ -19,5 +19,10 @@ test('Agent previews an independent, minimal node and rejects hidden complex def
   }
   assert.equal(node.nextNodeId, before);
   assert.equal(previewAgentAction({ ...action, nodeType: 'repeat_loop' }, node, project).ok, false);
+  for (const nodeType of ['random_branch', 'switch_branch'] as const) {
+    const blocked = previewAgentAction({ ...action, nodeType }, node, project);
+    assert.equal(blocked.ok, false);
+    if (!blocked.ok) assert.match(blocked.reason, /未实现/);
+  }
   assert.equal(previewAgentAction({ ...action, characterId: 'missing-role' }, node, project).ok, false);
 });
