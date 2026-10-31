@@ -1,0 +1,27 @@
+
+> moovn-studio@0.1.0 test:preview-state:e2e
+> node --experimental-strip-types tests/browser-preview-state.mjs
+
+  back observation: {"score":11,"affection":55,"clues":"档案词条 (1)"}
+✓ back restores node entry state and clues
+  load observation: {"score":11,"clues":"档案词条 (1)","backDisabled":true,"previousAuto":"c"}
+✓ load restores state without replay and clears stale history
+✓ versioned preview save survives closing and reopening preview
+  new-game observation: {"score":0,"affection":50,"clues":"档案词条 (0)"}
+✓ new game resets progress and history
+  timeout observation: {"backEnabled":true}
+✓ timed fallback keeps back history
+  initial effect observation: {"score":1}
+✓ initial node effect runs once in StrictMode
+✓ self loop is a fresh visit and back is a restore
+✓ multiple dialogue lines do not re-enter the node
+✓ timed choice snapshots resume and pause in save modal
+✓ settings effects restore without reopening the panel
+✓ restart from the same start node applies its effect once
+✓ legacy saves require consent and opening preview preserves auto save
+✓ legacy confirmation stays reachable at 900 and 360 pixels
+✓ damaged and future slots are isolated without erasing others
+✓ unreadable save table and non-finite state are not overwritten
+✓ empty save table string is preserved as corrupt
+✓ non finite simulated values do not corrupt save data
+✓ blocked branch cannot be manually saved

@@ -1,0 +1,66 @@
+  back observation: {"score":112,"affection":55,"clues":"档案词条 (2)"}
+✗ back restores node entry state and clues: back should restore B, not apply B again to C state
+
+112 !== 11
+
+  load observation: {"score":12,"clues":"档案词条 (2)","backDisabled":false}
+✗ load restores state without replay and clears stale history: loading a node must not apply its effect again
+
+12 !== 11
+
+  new-game observation: {"score":111,"affection":55,"clues":"档案词条 (2)"}
+✗ new game resets progress and history: Expected values to be strictly equal:
+
+111 !== 0
+
+  timeout observation: {"backEnabled":false}
+✗ timed fallback keeps back history: a timeout transition should be represented in history
+  initial effect observation: {"score":2}
+✗ initial node effect runs once in StrictMode: Expected values to be strictly equal:
+
+2 !== 1
+
+file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-state.mjs:203
+  if (failures.length) throw new Error(`${failures.length} preview-state regression(s) failed:\n${failures.join('\n\n')}`);
+                             ^
+
+Error: 5 preview-state regression(s) failed:
+back restores node entry state and clues: AssertionError [ERR_ASSERTION]: back should restore B, not apply B again to C state
+
+112 !== 11
+
+    at file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-state.mjs:124:12
+    at async runCase (file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-state.mjs:98:5)
+    at async file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-state.mjs:116:3
+
+load restores state without replay and clears stale history: AssertionError [ERR_ASSERTION]: loading a node must not apply its effect again
+
+12 !== 11
+
+    at file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-state.mjs:154:12
+    at async runCase (file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-state.mjs:98:5)
+    at async file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-state.mjs:134:3
+
+new game resets progress and history: AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+111 !== 0
+
+    at file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-state.mjs:168:12
+    at async runCase (file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-state.mjs:98:5)
+    at async file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-state.mjs:159:3
+
+timed fallback keeps back history: AssertionError [ERR_ASSERTION]: a timeout transition should be represented in history
+    at file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-state.mjs:184:5
+    at async runCase (file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-state.mjs:98:5)
+    at async file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-state.mjs:174:3
+
+initial node effect runs once in StrictMode: AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+2 !== 1
+
+    at file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-state.mjs:199:12
+    at async runCase (file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-state.mjs:98:5)
+    at async file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-state.mjs:189:3
+    at file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-state.mjs:203:30
+
+Node.js v22.22.3

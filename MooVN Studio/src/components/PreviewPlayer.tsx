@@ -18,6 +18,14 @@ import { CharacterMediaRenderer } from './CharacterMediaRenderer';
 import { characterPlacementStyle } from '../lib/characterPlacement';
 import { useReducedMotion } from '../lib/useReducedMotion';
 import { getUnsupportedBranchIssue } from '../lib/branchSupport';
+import {
+  backPreview,
+  createPreviewPlayback,
+  enterPreviewNode,
+  nextPreviewDialogue,
+  restorePreviewSlot,
+} from '../lib/previewState';
+import { inspectPreviewSaves } from '../lib/previewSaves';
 
 interface PreviewPlayerProps {
   project: VNProject;
@@ -52,43 +60,14 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
   const [screenMode, setScreenMode] = useState<'main_menu' | 'playing'>(
     initialNodeId ? 'playing' : 'main_menu'
   );
-  const [currentNodeId, setCurrentNodeId] = useState<string>(
-    initialNodeId || project.startNodeId
+  const [playback, setPlayback] = useState(() =>
+    createPreviewPlayback(project, initialNodeId || project.startNodeId, Boolean(initialNodeId))
   );
-  const [dialogueIndex, setDialogueIndex] = useState<number>(0);
-
-  const [affectionMap, setAffectionMap] = useState<Record<string, number>>(() => {
-    const init: Record<string, number> = {};
-    project.characters.forEach((c) => {
-      init[c.id] = c.initialAffection;
-    });
-    return init;
-  });
-
-  const [customAttrMap, setCustomAttrMap] = useState<
-    Record<string, Record<string, number | string | boolean>>
-  >(() => {
-    const init: Record<string, Record<string, number | string | boolean>> = {};
-    project.characters.forEach((c) => {
-      init[c.id] = {};
-      c.customAttributes.forEach((attr) => {
-        init[c.id][attr.key] = attr.value;
-      });
-    });
-    return init;
-  });
-
-  const [variablesMap, setVariablesMap] = useState<Record<string, number | string | boolean>>(
-    () => {
-      const init: Record<string, number | string | boolean> = {};
-      project.variables.forEach((v) => {
-        init[v.key] = v.value;
-      });
-      return init;
-    }
-  );
-
-  const [unlockedClues, setUnlockedClues] = useState<{ title: string; desc: string }[]>([]);
+  const {
+    nodeId: currentNodeId, dialogueIndex, affectionMap, customAttrMap, variablesMap,
+    clues: unlockedClues, textSpeedMs, timedRemaining,
+  } = playback.current;
+  const historyStack = playback.history;
   const [showClueDrawer, setShowClueDrawer] = useState(false);
 
   const [typedText, setTypedText] = useState<string>('');
@@ -100,31 +79,40 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
     'hidden'
   );
   const [isMuted, setIsMuted] = useState<boolean>(false);
-  const [textSpeedMs, setTextSpeedMs] = useState<number>(24);
-  const [historyStack, setHistoryStack] = useState<
-    { nodeId: string; dialogueIndex: number }[]
-  >([]);
 
   const [showDevDebug, setShowDevDebug] = useState<boolean>(false);
-  const [timedRemaining, setTimedRemaining] = useState<number | null>(null);
 
   const [modalMode, setModalMode] = useState<'none' | 'save' | 'load' | 'settings'>('none');
   const [activeSaveTab, setActiveSaveTab] = useState<SaveTabId>('1');
 
-  const [initialSaveState] = useState<{ slots: Record<string, SaveSlotData>; error: string | null }>(() => {
+  const [initialSaveState] = useState<{
+    rawSlots: Record<string, unknown>; slots: Record<string, SaveSlotData>; invalidKeys: string[]; readError: string | null;
+  }>(() => {
     try {
       const raw = localStorage.getItem(`moovn_saves_${project.id}`);
-      const parsed: unknown = raw ? JSON.parse(raw) : {};
-      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('存档格式错误');
-      return { slots: parsed as Record<string, SaveSlotData>, error: null };
+      const inspected = inspectPreviewSaves(raw === null ? {} : JSON.parse(raw));
+      return { ...inspected, readError: null };
     } catch (error: unknown) {
-      return { slots: {}, error: `存档读取失败：${error instanceof Error ? error.message : String(error)}` };
+      return {
+        rawSlots: {}, slots: {}, invalidKeys: [],
+        readError: `存档读取失败：${error instanceof Error ? error.message : String(error)}`,
+      };
     }
   });
   const [saveSlots, setSaveSlots] = useState(initialSaveState.slots);
-  const [saveError, setSaveError] = useState<string | null>(initialSaveState.error);
-  const saveSlotsRef = useRef(initialSaveState.slots);
-  const initialSaveReadFailed = useRef(Boolean(initialSaveState.error));
+  const [saveError, setSaveError] = useState<string | null>(
+    initialSaveState.readError || (initialSaveState.invalidKeys.length ? '部分存档槽损坏或版本不支持，已保留原数据。' : null)
+  );
+  const [pendingLegacySlot, setPendingLegacySlot] = useState<SaveSlotData | null>(null);
+  // Opening a node preview must not immediately overwrite a previous auto-save
+  // before the user has had a chance to continue or load it.
+  const [autoSaveArmed, setAutoSaveArmed] = useState(
+    !Object.prototype.hasOwnProperty.call(initialSaveState.rawSlots, 'auto-1')
+  );
+  const saveSlotsRef = useRef(initialSaveState.rawSlots);
+  const invalidSlotKeys = useRef(new Set(initialSaveState.invalidKeys));
+  const initialSaveReadFailed = useRef(Boolean(initialSaveState.readError));
+  const appliedVisitRef = useRef<number | null>(null);
 
   const currentNode =
     project.nodes.find((n) => n.id === currentNodeId) || project.nodes[0];
@@ -138,12 +126,23 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
 
   const persistSaveSlot = useCallback(
     (tabId: SaveTabId, slotIndex: number) => {
-      if (!currentNode || !currentLine) return false;
+      if (branchIssue) {
+        setSaveError('当前节点尚未执行，不能将其保存为有效进度。');
+        return false;
+      }
+      if (!currentNode || !currentLine) {
+        setSaveError('当前节点没有可保存的台词位置，原存档未覆盖。');
+        return false;
+      }
       if (initialSaveReadFailed.current) {
         setSaveError('存档读取失败，未覆盖原数据；请检查浏览器存储。');
         return false;
       }
       const slotKey = `${tabId}-${slotIndex}`;
+      if (invalidSlotKeys.current.has(slotKey)) {
+        setSaveError(`存档槽 ${slotKey} 损坏或版本不支持，未覆盖原数据。`);
+        return false;
+      }
       const newSlot: SaveSlotData = {
         slotKey,
         tabId,
@@ -159,13 +158,22 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
         affectionSnapshot: { ...affectionMap },
         customAttrSnapshot: structuredClone(customAttrMap),
         variablesSnapshot: { ...variablesMap },
+        unlockedClues: unlockedClues.map((clue) => clue.title),
+        previewSnapshotVersion: 1,
+        clueSnapshot: unlockedClues.map((clue) => ({ ...clue })),
+        textSpeedSnapshot: textSpeedMs,
+        timedRemainingSnapshot: timedRemaining,
       };
+      if (inspectPreviewSaves({ [slotKey]: newSlot }).invalidKeys.length) {
+        setSaveError('当前预览状态无法保存，原存档未覆盖；请检查变量和设置数值。');
+        return false;
+      }
       const next = { ...saveSlotsRef.current, [slotKey]: newSlot };
       try {
         localStorage.setItem(`moovn_saves_${project.id}`, JSON.stringify(next));
         saveSlotsRef.current = next;
-        setSaveSlots(next);
-        setSaveError(null);
+        setSaveSlots((previous) => ({ ...previous, [slotKey]: newSlot }));
+        setSaveError(invalidSlotKeys.current.size ? '部分存档槽损坏或版本不支持，已保留原数据。' : null);
         return true;
       } catch (error: unknown) {
         setSaveError(`存档写入失败：${error instanceof Error ? error.message : String(error)}`);
@@ -180,74 +188,28 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
       affectionMap,
       customAttrMap,
       variablesMap,
+      unlockedClues,
+      textSpeedMs,
+      timedRemaining,
+      branchIssue,
       project.id,
     ]
   );
 
-  // Unlock clue automatically when visiting a clue_unlock node
+  // Numeric/clue/settings state is applied atomically on fresh entry by previewState.
+  // Imperative actions must also run at most once per visit and never on restore.
   useEffect(() => {
-    if (screenMode === 'playing' && !branchIssue && currentNode?.unlockedClueTitle) {
-      setUnlockedClues((prev) => {
-        if (prev.some((c) => c.title === currentNode.unlockedClueTitle)) return prev;
-        return [
-          ...prev,
-          {
-            title: currentNode.unlockedClueTitle!,
-            desc: currentNode.unlockedClueDesc || '',
-          },
-        ];
-      });
-    }
-  }, [screenMode, currentNode?.id, currentNode?.unlockedClueTitle, currentNode?.unlockedClueDesc, branchIssue?.code]);
+    if (screenMode !== 'playing' || !currentNode || branchIssue || playback.entry !== 'fresh') return;
+    if (appliedVisitRef.current === playback.visit) return;
+    appliedVisitRef.current = playback.visit;
 
-  // Apply supported scene settings and chapter state changes.
-  useEffect(() => {
-    if (screenMode !== 'playing' || !currentNode || branchIssue) return;
-
-    if (currentNode.customScript) {
-      if (
-        /moovn(?:\.save:|::save::)create/i.test(
-          currentNode.customScript
-        )
-      ) {
-        persistSaveSlot('auto', 0);
-      }
+    if (currentNode.customScript && /moovn(?:\.save:|::save::)create/i.test(currentNode.customScript)) {
+      persistSaveSlot('auto', 0);
     }
-
-    if (currentNode.type === 'game_settings_modify' && currentNode.settingsActionConfig) {
-      if (typeof currentNode.settingsActionConfig.textSpeedMs === 'number') {
-        setTextSpeedMs(currentNode.settingsActionConfig.textSpeedMs);
-      }
-      if (currentNode.settingsActionConfig.openSettingsPanel) {
-        setModalMode('settings');
-      }
+    if (currentNode.type === 'game_settings_modify' && currentNode.settingsActionConfig?.openSettingsPanel) {
+      setModalMode('settings');
     }
-
-    // 执行 math_operation / set_variable / repeat_loop 节点数值逻辑
-    if (currentNode.type === 'math_operation' && currentNode.logicConfig) {
-      const { targetVar, mathOp = '+=', operandValue = 1 } = currentNode.logicConfig;
-      setVariablesMap((prev) => {
-        const cur = Number(prev[targetVar] ?? 0);
-        const val = Number(operandValue ?? 1);
-        const nextVal =
-          mathOp === '+='
-            ? cur + val
-            : mathOp === '-='
-            ? cur - val
-            : mathOp === '*='
-            ? cur * val
-            : mathOp === '/=' && val !== 0
-            ? Math.floor(cur / val)
-            : val;
-        return { ...prev, [targetVar]: nextVal };
-      });
-    } else if (currentNode.type === 'set_variable' && currentNode.variableKey) {
-      setVariablesMap((prev) => ({
-        ...prev,
-        [currentNode.variableKey!]: currentNode.variableValue ?? 1,
-      }));
-    }
-  }, [screenMode, currentNode?.id, branchIssue?.code]);
+  }, [screenMode, currentNode, branchIssue, playback.visit, playback.entry, persistSaveSlot]);
 
   // Pause autoplay/skip as soon as an unsupported branch is encountered.
   useEffect(() => {
@@ -257,43 +219,35 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
     }
   }, [screenMode, currentNodeId, branchIssue?.code]);
 
-  // Timed choice countdown
+  // Countdown is part of the snapshot. A timeout is a normal, reversible transition.
   useEffect(() => {
-    if (
-      screenMode === 'playing' &&
-      !branchIssue &&
-      currentNode?.type === 'timed_choice' &&
-      dialogueIndex === currentNode.dialogues.length - 1
-    ) {
-      setTimedRemaining(currentNode.timedChoiceSeconds || 12);
-      const timer = setInterval(() => {
-        setTimedRemaining((prev) => {
-          if (prev === null) return null;
-          if (prev <= 1) {
-            clearInterval(timer);
-            const fallback =
-              currentNode.defaultTimeoutTargetId ||
-              currentNode.choices[0]?.targetNodeId ||
-              project.startNodeId;
-            setCurrentNodeId(fallback);
-            setDialogueIndex(0);
-            return null;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-      return () => clearInterval(timer);
-    } else {
-      setTimedRemaining(null);
-    }
-  }, [screenMode, currentNode, dialogueIndex, project.startNodeId, branchIssue?.code]);
+    if (screenMode !== 'playing' || modalMode !== 'none' || branchIssue ||
+        currentNode.type !== 'timed_choice' || timedRemaining === null) return;
+    const visit = playback.visit;
+    const timer = setTimeout(() => {
+      if (timedRemaining <= 1) setAutoSaveArmed(true);
+      setPlayback((previous) => {
+        if (previous.visit !== visit || previous.current.timedRemaining === null) return previous;
+        if (previous.current.timedRemaining <= 1) {
+          const fallback = currentNode.defaultTimeoutTargetId || currentNode.choices[0]?.targetNodeId || project.startNodeId;
+          return enterPreviewNode(previous, project, fallback);
+        }
+        return {
+          ...previous,
+          current: { ...previous.current, timedRemaining: previous.current.timedRemaining - 1 },
+        };
+      });
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [screenMode, modalMode, branchIssue, currentNode, timedRemaining, playback.visit, project]);
 
-  // Keep the last valid checkpoint when playback is blocked before a node executes.
+  // Keep the last valid checkpoint when blocked, and do not erase an existing
+  // auto-save merely by opening preview (or immediately after loading it).
   useEffect(() => {
-    if (screenMode === 'playing' && currentNode && !branchIssue) {
+    if (screenMode === 'playing' && currentNode && !branchIssue && autoSaveArmed) {
       persistSaveSlot('auto', 1);
     }
-  }, [currentNodeId, screenMode, currentNode, persistSaveSlot, branchIssue?.code]);
+  }, [currentNodeId, screenMode, currentNode, persistSaveSlot, branchIssue?.code, autoSaveArmed]);
 
   // Hide UI hint fade in once then fade out
   useEffect(() => {
@@ -400,8 +354,8 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
     if (branchIssue) return;
 
     if (dialogueIndex < currentNode.dialogues.length - 1) {
-      setHistoryStack((h) => [...h, { nodeId: currentNodeId, dialogueIndex }]);
-      setDialogueIndex((i) => i + 1);
+      setAutoSaveArmed(true);
+      setPlayback((previous) => nextPreviewDialogue(previous, currentNode));
       return;
     }
 
@@ -415,17 +369,16 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
     if (currentNode.type === 'condition') {
       const targetId = evaluateCondition();
       if (targetId) {
-        setHistoryStack((h) => [...h, { nodeId: currentNodeId, dialogueIndex }]);
-        setCurrentNodeId(targetId);
-        setDialogueIndex(0);
+        setAutoSaveArmed(true);
+        setPlayback((previous) => enterPreviewNode(previous, project, targetId));
       }
       return;
     }
 
-    if (currentNode.nextNodeId) {
-      setHistoryStack((h) => [...h, { nodeId: currentNodeId, dialogueIndex }]);
-      setCurrentNodeId(currentNode.nextNodeId);
-      setDialogueIndex(0);
+    const nextNodeId = currentNode.nextNodeId;
+    if (nextNodeId) {
+      setAutoSaveArmed(true);
+      setPlayback((previous) => enterPreviewNode(previous, project, nextNodeId));
     }
   }, [
     isUiHidden,
@@ -438,6 +391,7 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
     currentNodeId,
     branchIssue,
     evaluateCondition,
+    project,
   ]);
 
   // Auto-play / Skip-mode timer
@@ -457,31 +411,55 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
 
   const stepBack = () => {
     if (historyStack.length === 0) return;
-    const last = historyStack[historyStack.length - 1];
-    setHistoryStack((h) => h.slice(0, -1));
-    setCurrentNodeId(last.nodeId);
-    setDialogueIndex(last.dialogueIndex);
+    setIsAutoPlay(false);
+    setIsSkipMode(false);
+    setAutoSaveArmed(true);
+    setPlayback((previous) => backPreview(previous));
   };
 
-  const handleLoadSlot = (slot: SaveSlotData) => {
-    if (!project.nodes.some((node) => node.id === slot.nodeId)) {
+  const handleLoadSlot = (slot: SaveSlotData, acceptLegacy = false) => {
+    const savedNode = project.nodes.find((node) => node.id === slot.nodeId);
+    if (!savedNode) {
       setSaveError(`存档中的节点不存在：${slot.nodeId}`);
       return;
     }
-    setSaveError(null);
-    setCurrentNodeId(slot.nodeId);
-    setDialogueIndex(slot.dialogueIndex);
-    setAffectionMap({ ...slot.affectionSnapshot });
-    setCustomAttrMap(structuredClone(slot.customAttrSnapshot));
-    setVariablesMap({ ...slot.variablesSnapshot });
+    if (slot.dialogueIndex >= Math.max(1, savedNode.dialogues.length)) {
+      setSaveError('存档中的台词位置无效，原存档未修改。');
+      return;
+    }
+    if (slot.previewSnapshotVersion === 1 && !getUnsupportedBranchIssue(savedNode)) {
+      const needsTimer = savedNode.type === 'timed_choice' && slot.dialogueIndex === savedNode.dialogues.length - 1;
+      if ((needsTimer && (typeof slot.timedRemainingSnapshot !== 'number' || slot.timedRemainingSnapshot <= 0)) ||
+          (!needsTimer && slot.timedRemainingSnapshot !== null)) {
+        setSaveError('存档中的限时状态与当前节点不一致，原存档未修改。');
+        return;
+      }
+    }
+    if (slot.previewSnapshotVersion !== 1 && !acceptLegacy) {
+      setPendingLegacySlot(slot);
+      return;
+    }
+    setPendingLegacySlot(null);
+    setSaveError(invalidSlotKeys.current.size ? '部分存档槽损坏或版本不支持，已保留原数据。' : null);
+    setAutoSaveArmed(false);
+    setPlayback((previous) => restorePreviewSlot(previous, project, slot));
+    setIsAutoPlay(false);
+    setIsSkipMode(false);
+    setIsUiHidden(false);
+    setShowClueDrawer(false);
     setModalMode('none');
     setScreenMode('playing');
   };
 
   const startNewGame = () => {
-    setCurrentNodeId(project.startNodeId);
-    setDialogueIndex(0);
-    setHistoryStack([]);
+    setAutoSaveArmed(true);
+    setPlayback((previous) => createPreviewPlayback(project, project.startNodeId, true, previous.visit + 1));
+    setPendingLegacySlot(null);
+    setIsAutoPlay(false);
+    setIsSkipMode(false);
+    setIsUiHidden(false);
+    setShowClueDrawer(false);
+    setModalMode('none');
     setScreenMode('playing');
   };
 
@@ -572,6 +550,22 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
       </div>
 
       {saveError && <div role="alert" className="px-3 py-1 text-xs text-rose-200 bg-rose-950">{saveError}</div>}
+      {screenMode === 'playing' && !autoSaveArmed && (
+        <div role="status" className="shrink-0 px-3 py-1 text-xs text-amber-100 bg-amber-950">
+          {invalidSlotKeys.current.has('auto-1')
+            ? '自动存档损坏或版本不支持，已保留原数据并停止自动覆盖。'
+            : '已保留现有自动存档；推进剧情或开始新游戏后自动存档会更新。'}
+        </div>
+      )}
+      {pendingLegacySlot && (
+        <div role="alert" className="shrink-0 max-h-32 overflow-auto px-3 py-2 text-xs text-amber-100 bg-amber-950 border-b border-amber-500/50">
+          读取槽位 {pendingLegacySlot.slotKey}（{pendingLegacySlot.nodeTitle}）：旧版预览存档未完整记录词条、文字速度或限时剩余；继续读取会重置这些状态并清空回退历史。继续播放时自动存档可能更新。
+          <div className="flex flex-wrap gap-3 mt-1">
+            <button type="button" className="underline" onClick={() => handleLoadSlot(pendingLegacySlot, true)}>继续读取旧存档</button>
+            <button type="button" className="underline" onClick={() => setPendingLegacySlot(null)}>取消</button>
+          </div>
+        </div>
+      )}
       {screenMode === 'playing' && branchIssue && (
         <div role="alert" className="shrink-0 max-h-32 overflow-auto px-3 py-2 text-xs text-amber-100 bg-amber-950 border-b border-amber-500/50 break-words">
           <div><strong>{branchIssue.code}：预览已暂停。</strong> 节点「{currentNode.title}」（{currentNode.id}）：{branchIssue.message}</div>
@@ -625,7 +619,9 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
                     label: '继续游戏',
                     action: () => {
                       const autoSlot = saveSlots['auto-1'];
-                      if (autoSlot) handleLoadSlot(autoSlot);
+                      if (invalidSlotKeys.current.has('auto-1') || initialSaveReadFailed.current) {
+                        setSaveError('自动存档无法读取，原数据未覆盖；请检查浏览器存储。');
+                      } else if (autoSlot) handleLoadSlot(autoSlot);
                       else startNewGame();
                     },
                   },
@@ -906,23 +902,8 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
                       key={choice.id}
                       onClick={(e) => {
                         e.stopPropagation();
-                        if (choice.affectionCharacterId && choice.affectionDelta) {
-                          setAffectionMap((prev) => ({
-                            ...prev,
-                            [choice.affectionCharacterId!]:
-                              (prev[choice.affectionCharacterId!] || 0) +
-                              choice.affectionDelta!,
-                          }));
-                        }
-                        if (choice.setVarKey !== undefined && choice.setVarValue !== undefined) {
-                          setVariablesMap((prev) => ({
-                            ...prev,
-                            [choice.setVarKey!]: choice.setVarValue!,
-                          }));
-                        }
-                        setHistoryStack((h) => [...h, { nodeId: currentNodeId, dialogueIndex }]);
-                        setCurrentNodeId(choice.targetNodeId);
-                        setDialogueIndex(0);
+                        setAutoSaveArmed(true);
+                        setPlayback((previous) => enterPreviewNode(previous, project, choice.targetNodeId, choice));
                       }}
                       style={{
                         backgroundColor: ui.choiceBox.bgColor,
@@ -1112,7 +1093,7 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
                   <p className="text-xs text-slate-400 mt-0.5">请选择存档分类页签与对应槽位</p>
                 </div>
                 <button
-                  onClick={() => setModalMode('none')}
+                  onClick={() => { setPendingLegacySlot(null); setModalMode('none'); }}
                   className="px-4 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-200 border border-slate-700"
                 >
                   关闭
@@ -1125,7 +1106,7 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
                   return (
                     <button
                       key={tab.id}
-                      onClick={() => setActiveSaveTab(tab.id)}
+                      onClick={() => { setPendingLegacySlot(null); setActiveSaveTab(tab.id); }}
                       className={`px-4 py-2 rounded-t-lg text-xs font-bold tracking-wider transition-all border-t border-l border-r ${
                         active
                           ? 'bg-[#0c234a] text-sky-300 border-sky-400/50 -mb-px pb-2.5'
@@ -1142,16 +1123,22 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
                 {[1, 2, 3, 4, 5, 6].map((slotIdx) => {
                   const slotKey = `${activeSaveTab}-${slotIdx}`;
                   const data = saveSlots[slotKey];
+                  const invalid = invalidSlotKeys.current.has(slotKey);
                   const slotBg = data ? getBackgroundById(data.backgroundId) : null;
 
                   return (
                     <div
                       key={slotKey}
                       onClick={() => {
-                        if (modalMode === 'save') {
+                        if (invalid) {
+                          setPendingLegacySlot(null);
+                          setSaveError(`存档槽 ${slotKey} 损坏或版本不支持，未覆盖原数据。`);
+                        } else if (modalMode === 'save') {
                           persistSaveSlot(activeSaveTab, slotIdx);
                         } else if (data) {
                           handleLoadSlot(data);
+                        } else {
+                          setPendingLegacySlot(null);
                         }
                       }}
                       className={`group relative rounded-xl border p-3.5 flex gap-4 transition cursor-pointer ${
@@ -1198,8 +1185,10 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
                             </div>
                           </>
                         ) : (
-                          <div className="my-auto text-xs text-slate-500">
-                            {modalMode === 'save'
+                          <div className={`my-auto text-xs ${invalid ? 'text-rose-300' : 'text-slate-500'}`}>
+                            {invalid
+                              ? '槽位损坏或版本不支持，原数据未覆盖'
+                              : modalMode === 'save'
                               ? '点击将当前游戏进度保存至此槽位'
                               : '空白存档槽位'}
                           </div>
@@ -1245,7 +1234,10 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
                     max={60}
                     step={2}
                     value={textSpeedMs}
-                    onChange={(e) => setTextSpeedMs(Number(e.target.value))}
+                    onChange={(e) => {
+                      const value = Number(e.target.value);
+                      setPlayback((previous) => ({ ...previous, current: { ...previous.current, textSpeedMs: value } }));
+                    }}
                     className="w-full accent-sky-400"
                   />
                 </div>
