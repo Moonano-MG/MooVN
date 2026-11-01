@@ -33,6 +33,7 @@ interface NodeCanvasProps {
   chapters: StoryChapter[];
   characters: CharacterProfile[];
   startNodeId: string;
+  coloredNodeCategories: boolean;
   selectedNodeId: string;
   selectedChapterId: string;
   onSelectNode: (id: string) => void;
@@ -53,6 +54,7 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
   nodes,
   chapters,
   startNodeId,
+  coloredNodeCategories,
   selectedNodeId,
   selectedChapterId,
   onSelectNode,
@@ -460,9 +462,9 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
                 <div
                   onClick={() => onSelectNode(node.id)}
                   style={{
-                    borderColor: isSelected ? meta.accentColor : '#262d3d',
+                    borderColor: isSelected ? (coloredNodeCategories ? meta.accentColor : '#a1a1aa') : '#262d3d',
                     borderLeftWidth: '4px',
-                    borderLeftColor: meta.accentColor,
+                    borderLeftColor: coloredNodeCategories ? meta.accentColor : '#52525b',
                   }}
                   className={`rounded-xl border bg-[#141822] px-3 py-2.5 shadow-sm transition ${
                     isSelected ? 'ring-1 ring-sky-400/60 bg-[#171d2b]' : ''
@@ -1022,12 +1024,12 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
                 left: node.position.x,
                 top: node.position.y,
                 width: meta.isContainer ? 276 : CARD_WIDTH,
-                borderColor: isSelected ? meta.accentColor : `${meta.accentColor}75`,
+                borderColor: coloredNodeCategories ? (isSelected ? meta.accentColor : `${meta.accentColor}75`) : (isSelected ? '#a1a1aa' : '#52525b'),
                 borderLeftWidth: '4px',
-                borderLeftColor: meta.accentColor,
+                borderLeftColor: coloredNodeCategories ? meta.accentColor : '#52525b',
                 background: `linear-gradient(180deg, ${meta.accentColor}16 0%, #17171c 100%)`,
                 boxShadow: isSelected
-                  ? `0 0 0 2px ${meta.accentColor}85, 0 14px 32px rgba(0,0,0,0.65)`
+                  ? `0 0 0 2px ${coloredNodeCategories ? `${meta.accentColor}85` : '#a1a1aa85'}, 0 14px 32px rgba(0,0,0,0.65)`
                   : `0 6px 18px rgba(0,0,0,0.45)`,
               }}
               className={`vn-node-card group absolute rounded-lg border transition cursor-pointer overflow-hidden ${
@@ -1261,7 +1263,7 @@ export const NodeCanvas: React.FC<NodeCanvasProps> = ({
                 ) : meta.category === 'audio' ? (
                   <div className="px-2 py-1.5 rounded bg-orange-500/15 border border-orange-500/35 text-[11px] text-orange-200 font-mono truncate">
                     {node.type === 'bgm_stop'
-                      ? '■ 淡出停止当前背景音乐'
+                      ? '■ 停止当前背景音乐（无淡出）'
                       : node.type === 'sfx_play'
                       ? `🔊 音效: ${node.sfxId || 'sfx-bell-chime'}`
                       : `♪ 曲轨: ${node.bgmId}`}

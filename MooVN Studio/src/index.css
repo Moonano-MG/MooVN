@@ -64,6 +64,15 @@ body {
   color: #0f172a !important;
 }
 
+/* The transparent editing layer sits above the highlighted source. Generic
+   form styling must not paint over it, including in the light theme. */
+textarea.moovn-code-input,
+.theme-light textarea.moovn-code-input {
+  background-color: transparent !important;
+  border: 0 !important;
+  color: transparent !important;
+}
+
 /* Dark Minimal Scrollbars */
 ::-webkit-scrollbar {
   width: 6px;

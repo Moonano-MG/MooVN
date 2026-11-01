@@ -49,7 +49,7 @@ import { AssetStudioPanel } from './components/AssetStudioPanel';
 import { SettingsModal } from './components/SettingsModal';
 import { OfficialPortal } from './components/OfficialPortal';
 import { PanelId } from './types';
-import { loadSystemSettings, saveProjectToWorkspace } from './lib/workspaceManager';
+import { loadSystemSettings, saveProjectToWorkspace, SYSTEM_SETTINGS_CHANGED_EVENT, SYSTEM_SETTINGS_STORAGE_KEY } from './lib/workspaceManager';
 import { useUILanguage } from './lib/i18n';
 import { useReducedMotion } from './lib/useReducedMotion';
 import { clampSplitRatio } from './lib/vnRuntimeCore';
@@ -475,6 +475,7 @@ export function App({
   const [isLauncherOpen, setIsLauncherOpen] = useState(true);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [motionLevel, setMotionLevel] = useState(() => loadSystemSettings().defaultGameSettings.motionLevel || 'subtle');
+  const [editorPreferences, setEditorPreferences] = useState(() => loadSystemSettings().editorConfig);
   const reducedMotion = useReducedMotion();
   const lastSavedProjectRef = useRef<VNProject | null>(null);
   const currentProjectRef = useRef(project);
@@ -626,16 +627,35 @@ export function App({
     }
   }, [adoptSavedProject]);
 
+  // Apply only successfully persisted settings, including same-tab imports and
+  // changes from another browser tab; unsaved dialog drafts do not affect the editor.
+  useEffect(() => {
+    const refresh = () => {
+      const settings = loadSystemSettings();
+      setEditorPreferences(settings.editorConfig);
+      setMotionLevel(settings.defaultGameSettings.motionLevel || 'subtle');
+    };
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === SYSTEM_SETTINGS_STORAGE_KEY || event.key === null) refresh();
+    };
+    window.addEventListener(SYSTEM_SETTINGS_CHANGED_EVENT, refresh);
+    window.addEventListener('storage', onStorage);
+    return () => {
+      window.removeEventListener(SYSTEM_SETTINGS_CHANGED_EVENT, refresh);
+      window.removeEventListener('storage', onStorage);
+    };
+  }, []);
+
   // Autosave commits the current revision, never a stale completion as the current revision.
   useEffect(() => {
     if (siteSection !== 'studio' || isLauncherOpen) return;
-    const seconds = Number(loadSystemSettings().editorConfig.autoSaveIntervalSec);
+    const seconds = editorPreferences.autoSaveIntervalSec;
     if (!Number.isFinite(seconds) || seconds <= 0) return;
     const timer = window.setInterval(() => {
       if (currentProjectRef.current !== lastSavedProjectRef.current) void saveCurrentProject(true);
     }, Math.max(5, seconds) * 1000);
     return () => window.clearInterval(timer);
-  }, [siteSection, isLauncherOpen, isSettingsOpen, saveCurrentProject]);
+  }, [siteSection, isLauncherOpen, isSettingsOpen, saveCurrentProject, editorPreferences.autoSaveIntervalSec]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -1183,6 +1203,7 @@ export function App({
             chapters={project.chapters}
             characters={project.characters}
             startNodeId={project.startNodeId}
+            coloredNodeCategories={editorPreferences.coloredNodeCategories}
             selectedNodeId={selectedNodeId}
             selectedChapterId={selectedChapterId}
             onSelectNode={setSelectedNodeId}
@@ -1235,6 +1256,7 @@ export function App({
       case 'ts_code':
         return (
           <ScriptView
+            key={`script-${project.id}`}
             project={project}
             selectedChapterId={selectedChapterId}
             selectedNode={selectedNode}
@@ -1246,6 +1268,7 @@ export function App({
       case 'yaml_code':
         return (
           <ScriptView
+            key={`yaml-${project.id}`}
             project={project}
             selectedChapterId={selectedChapterId}
             selectedNode={selectedNode}
