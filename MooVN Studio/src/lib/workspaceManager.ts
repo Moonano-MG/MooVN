@@ -17,8 +17,11 @@ import { getProjectSnapshot, putProjectSnapshot } from './projectStorage.ts';
 import { newId } from './ids.ts';
 import { validateVNProjectShape } from './projectSchema.ts';
 import { migrateEmbeddedProjectMedia, verifyProjectAssets } from './assetStore.ts';
+import { parseStoredSettingsJson, validateSystemSettings } from './systemSettingsSchema.ts';
 
-const SETTINGS_STORAGE_KEY = 'moovn_studio_settings_v3';
+export const SYSTEM_SETTINGS_STORAGE_KEY = 'moovn_studio_settings_v3';
+const SETTINGS_STORAGE_KEY = SYSTEM_SETTINGS_STORAGE_KEY;
+export const SYSTEM_SETTINGS_CHANGED_EVENT = 'moovn:system-settings-changed';
 const PROJECTS_STORAGE_KEY = 'moovn_studio_projects_v3';
 
 /** Import is always a separate, unsaved project; keep all internal graph IDs intact. */
@@ -90,69 +93,129 @@ export async function fetchWorkspaceDiskStatus(): Promise<null> {
   return null;
 }
 
-export function loadSystemSettings(): MooVNSystemSettings {
+function defaultSystemSettings(): MooVNSystemSettings {
   const platform = detectRuntimePlatform();
-  const defaults = getPlatformDefaultPaths(platform);
-
-  const fallback: MooVNSystemSettings = {
+  return {
     platform,
-    ...defaults,
-    editorConfig: {
-      autoSaveIntervalSec: 15,
-      coloredNodeCategories: true,
-      defaultScriptLang: 'typescript',
-    },
-    defaultGameSettings: {
-      textSpeedMs: 32,
-      autoPlayDelayMs: 2000,
-      bgmVolume: 75,
-      sfxVolume: 85,
-      motionLevel: 'subtle',
-    },
+    ...getPlatformDefaultPaths(platform),
+    editorConfig: { autoSaveIntervalSec: 15, coloredNodeCategories: true, defaultScriptLang: 'typescript' },
+    defaultGameSettings: { textSpeedMs: 32, autoPlayDelayMs: 2000, bgmVolume: 75, sfxVolume: 85, motionLevel: 'subtle' },
     performanceConfig: { ...DEFAULT_PERFORMANCE_CONFIG },
   };
+}
 
+type SettingsStorageRead = { ok: true; raw: string | null } | { ok: false; error: string };
+export type SettingsWriteResult = { ok: true } | { ok: false; error: string };
+export interface SystemSettingsInspection {
+  settings: MooVNSystemSettings;
+  warning: string | null;
+  /** The original record remains untouched and may be downloaded. */
+  invalidRaw?: string;
+}
+
+export function readSystemSettingsRaw(): SettingsStorageRead {
   try {
-    const raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
-    if (!raw) return fallback;
-    const parsed = JSON.parse(raw) as Partial<MooVNSystemSettings>;
-    return {
-      ...fallback,
-      ...parsed,
-      ...defaults,
-      editorConfig: { ...fallback.editorConfig, ...(parsed.editorConfig || {}) },
-      defaultGameSettings: {
-        ...fallback.defaultGameSettings,
-        ...(parsed.defaultGameSettings || {}),
-      },
-      performanceConfig: {
-        ...fallback.performanceConfig,
-        ...(parsed.performanceConfig || {}),
-      },
-    };
+    return { ok: true, raw: localStorage.getItem(SETTINGS_STORAGE_KEY) };
   } catch {
-    return fallback;
+    return { ok: false, error: 'ERR_SETTINGS_STORAGE: 无法读取本机设置，原记录未覆盖' };
   }
+}
+
+export function inspectSystemSettings(): SystemSettingsInspection {
+  const fallback = defaultSystemSettings();
+  const current = readSystemSettingsRaw();
+  if (!current.ok) return { settings: fallback, warning: current.error };
+  if (current.raw === null) return { settings: fallback, warning: null };
+  const parsed = parseStoredSettingsJson(current.raw);
+  if (!parsed.ok) {
+    return {
+      settings: fallback,
+      warning: `ERR_SETTINGS_CORRUPT: 本机设置无效，正在使用临时默认值；原记录未覆盖。${parsed.error}`,
+      invalidRaw: current.raw,
+    };
+  }
+  const value = parsed.value;
+  return {
+    settings: {
+      ...fallback,
+      ...(value.webMountedFolderName === undefined ? {} : { webMountedFolderName: value.webMountedFolderName }),
+      editorConfig: { ...fallback.editorConfig, ...value.editorConfig },
+      defaultGameSettings: { ...fallback.defaultGameSettings, ...value.defaultGameSettings },
+      performanceConfig: { ...fallback.performanceConfig, ...value.performanceConfig },
+    },
+    warning: null,
+  };
+}
+
+export function loadSystemSettings(): MooVNSystemSettings {
+  return inspectSystemSettings().settings;
+}
+
+function publishSystemSettingsChange(): void {
+  if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+    window.dispatchEvent(new Event(SYSTEM_SETTINGS_CHANGED_EVENT));
+  }
+}
+
+/** Do not replace an unreadable record, or a record changed during an import. */
+export function saveSystemSettingsDetailed(settings: MooVNSystemSettings, expectedRaw?: string | null): SettingsWriteResult {
+  const validated = validateSystemSettings(settings);
+  if (!validated.ok) return validated;
+  const current = readSystemSettingsRaw();
+  if (!current.ok) return current;
+  if (expectedRaw !== undefined && current.raw !== expectedRaw) {
+    return { ok: false, error: 'ERR_SETTINGS_CHANGED: 本机设置已更改，未覆盖新设置；请重新打开后重试' };
+  }
+  if (current.raw !== null) {
+    const existing = parseStoredSettingsJson(current.raw);
+    if (!existing.ok) {
+      return { ok: false, error: 'ERR_SETTINGS_CORRUPT: 本机设置无效，原记录未覆盖；请下载原始设置或在设置中备份并恢复默认' };
+    }
+  }
+  try {
+    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(validated.value));
+  } catch {
+    return { ok: false, error: 'ERR_SETTINGS_STORAGE: 设置保存失败，原记录未覆盖' };
+  }
+  publishSystemSettingsChange();
+  return { ok: true };
 }
 
 export function saveSystemSettings(settings: MooVNSystemSettings): boolean {
-  try {
-    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
-    return true;
-  } catch {
-    return false;
-  }
+  return saveSystemSettingsDetailed(settings).ok;
 }
 
-export function resetSystemSettings(): MooVNSystemSettings {
-  try {
-    localStorage.removeItem(SETTINGS_STORAGE_KEY);
-  } catch {
-    // ignore
+export type SettingsResetResult =
+  | { ok: true; settings: MooVNSystemSettings; backupKey?: string }
+  | { ok: false; error: string };
+
+/** Explicit reset backs up the original first; failure never removes the original. */
+export function resetSystemSettings(): SettingsResetResult {
+  const fresh = defaultSystemSettings();
+  const validated = validateSystemSettings(fresh);
+  if (!validated.ok) return validated;
+  const current = readSystemSettingsRaw();
+  if (!current.ok) return current;
+  let backupKey: string | undefined;
+  if (current.raw !== null) {
+    try {
+      backupKey = `${SETTINGS_STORAGE_KEY}.backup.${newId('settings')}`;
+      localStorage.setItem(backupKey, current.raw);
+      if (localStorage.getItem(backupKey) !== current.raw) throw new Error('backup verification failed');
+    } catch {
+      return { ok: false, error: 'ERR_SETTINGS_BACKUP: 无法备份原设置，原记录未覆盖；可先下载原始设置并腾出空间' };
+    }
   }
-  const fresh = loadSystemSettings();
-  saveSystemSettings(fresh);
-  return fresh;
+  const latest = readSystemSettingsRaw();
+  if (!latest.ok) return latest;
+  if (latest.raw !== current.raw) return { ok: false, error: 'ERR_SETTINGS_CHANGED: 备份期间本机设置已更改，未覆盖新设置，请重试' };
+  try {
+    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(validated.value));
+  } catch {
+    return { ok: false, error: 'ERR_SETTINGS_STORAGE: 恢复默认失败，原记录未覆盖' };
+  }
+  publishSystemSettingsChange();
+  return { ok: true, settings: validated.value, backupKey };
 }
 
 export async function syncSystemSettingsToDisk(
@@ -162,16 +225,33 @@ export async function syncSystemSettingsToDisk(
   return syncWriteToRealWorkspaceDisk('', 'settings.moovn.json', payload);
 }
 
-export function exportSettingsFileJson(settings: MooVNSystemSettings): void {
-  const payload = JSON.stringify(settings, null, 2);
-  syncWriteToRealWorkspaceDisk('', 'settings.moovn.json', payload);
+function downloadSettingsPayload(payload: string, fileName: string): void {
   const blob = new Blob([payload], { type: 'application/json;charset=utf-8' });
   const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'settings.moovn.json';
-  a.click();
-  URL.revokeObjectURL(url);
+  try {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    a.click();
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+/** Export is a download only; it must not silently overwrite the desktop file. */
+export function exportSettingsFileJson(settings: MooVNSystemSettings): void {
+  downloadSettingsPayload(JSON.stringify(settings, null, 2), 'settings.moovn.json');
+}
+
+export function downloadInvalidSystemSettings(raw: string): void {
+  downloadSettingsPayload(raw, 'settings.moovn.invalid.json');
+}
+
+export function downloadSystemSettingsBackup(backupKey: string): void {
+  if (!backupKey.startsWith(`${SETTINGS_STORAGE_KEY}.backup.`)) throw new Error('ERR_SETTINGS_BACKUP: 非法备份键');
+  const raw = localStorage.getItem(backupKey);
+  if (raw === null) throw new Error('ERR_SETTINGS_BACKUP: 找不到备份');
+  downloadSettingsPayload(raw, 'settings.moovn.backup.json');
 }
 
 /**
@@ -270,7 +350,7 @@ export function createBlankVNProject(params: {
     projectPath: params.projectPath,
     isTemplatePreset: false,
     resolution: { width: params.width, height: params.height },
-    defaultLanguage: 'typescript',
+    defaultLanguage: loadSystemSettings().editorConfig.defaultScriptLang,
     startNodeId,
     performanceConfig: { ...DEFAULT_PERFORMANCE_CONFIG },
     uiConfig: structuredClone(DEFAULT_PROJECT.uiConfig),
