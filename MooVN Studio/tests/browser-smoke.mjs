@@ -279,10 +279,14 @@ try {
   project.nodes[0].dialogues[0].text = 'Hello ' + payload;
   const html = buildStandaloneGameHtml(project, { backgrounds: [], characters: [] });
   await activePage.route(`${origin}/__export-test`, (route) => route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: html }));
-  await activePage.addInitScript(() => {
+  await activePage.addInitScript(({ nodeId }) => {
     const value = '<img src=x onerror=window.__xssHit=1>';
-    localStorage.setItem('moovn_standalone_saves_moovn-e2e-xss', JSON.stringify({ '1-0': { chapterTitle: value, savedAt: value, nodeTitle: value, speakerName: value, textPreview: value } }));
-  });
+    localStorage.setItem('moovn_standalone_saves_moovn-e2e-xss', JSON.stringify({
+      '1-0': { slotKey: '1-0', tabId: '1', slotIndex: 0, chapterTitle: value, savedAt: value,
+        nodeId, nodeTitle: value, dialogueIndex: 0, speakerName: value, textPreview: value,
+        affection: {}, variables: { chapterIndex: 1 } },
+    }));
+  }, { nodeId: project.nodes[0].id });
   await activePage.goto(`${origin}/__export-test`);
   await activePage.getByRole('button', { name: '开始游戏' }).click();
   await activePage.locator('#top-hud').getByRole('button', { name: '读档', exact: true }).click();

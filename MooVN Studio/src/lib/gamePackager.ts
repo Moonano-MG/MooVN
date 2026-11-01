@@ -306,7 +306,7 @@ export function buildStandaloneGameHtml(
     <div id="cinematic-top"></div>
     <div id="cinematic-bottom"></div>
     <div id="screen-text-layer"></div>
-    <div id="toast-banner"></div>
+    <div id="toast-banner" role="status" aria-live="polite"></div>
 
     <!-- Top HUD -->
     <div id="top-hud">
@@ -333,7 +333,7 @@ export function buildStandaloneGameHtml(
         <div style="display:flex;flex-direction:column;gap:6px;">
           <button class="menu-btn" onclick="startNewGame()">开始游戏</button>
           <button class="menu-btn" onclick="openSaveModal('load')">读取存档</button>
-          <button class="menu-btn" onclick="resetGameSession()">重置进度</button>
+          <p style="font-size:12px;color:#94a3b8;">开始新周目不会删除手动存档。</p>
         </div>
         <div style="font-size:11px;color:#64748b;">MooVN Runtime</div>
       </div>
@@ -379,14 +379,16 @@ export function buildStandaloneGameHtml(
     const CHAR_ASSETS = ${charJson};
     const ORIGIN = "${originUrl}";
     const SAVE_STORAGE_KEY = "moovn_standalone_saves_" + PROJECT.id;
+    const MAX_SAVE_ROOT_CHARS = 16 * 1024 * 1024;
     const SAVE_TABS = ["auto", "quick", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0"];
 
     let currentNodeId = PROJECT.startNodeId || (PROJECT.nodes[0] && PROJECT.nodes[0].id);
     let dlgIdx = 0;
     let historyStack = [];
     let backlog = [];
-    let affection = {};
-    let variables = {};
+    // Null-prototype records safely support arbitrary user-defined variable IDs.
+    let affection = Object.create(null);
+    let variables = Object.create(null);
     PROJECT.characters.forEach(c => affection[c.id] = c.initialAffection);
     (PROJECT.variables || []).forEach(v => variables[v.key] = v.value);
 
@@ -399,6 +401,7 @@ export function buildStandaloneGameHtml(
     let uiHidden = false;
     let activeModalMode = "save";
     let activeSaveTab = "1";
+    let toastTimer = null;
 
     // All runtime/project data is assigned as text, never interpolated into HTML.
     function appendText(parent, tag, text, css) {
@@ -409,52 +412,119 @@ export function buildStandaloneGameHtml(
       return element;
     }
 
-    function resetGameSession() {
+    function copyRecord(record) {
+      return Object.assign(Object.create(null), record);
+    }
+
+    function isRecord(value) {
+      return value !== null && typeof value === "object" && !Array.isArray(value);
+    }
+
+    function isStateRecord(value, numericOnly) {
+      if (!isRecord(value)) return false;
+      return Object.entries(value).every(([key, item]) =>
+        key.length <= 4096 && (typeof item === "number" ? Number.isFinite(item) :
+          !numericOnly && (typeof item === "boolean" || (typeof item === "string" && item.length <= 1000000)))
+      );
+    }
+
+    // Existing, unversioned HTML saves are accepted if complete. Unknown future
+    // fields/versions are retained and protected from accidental replacement.
+    const SAVE_FIELDS = new Set(["formatVersion", "slotKey", "tabId", "slotIndex", "savedAt", "chapterTitle", "nodeId", "nodeTitle", "dialogueIndex", "speakerName", "textPreview", "affection", "variables"]);
+    function isValidSaveSlot(slot, key) {
+      if (!isRecord(slot) || Object.keys(slot).some(field => !SAVE_FIELDS.has(field)) ||
+          (slot.formatVersion !== undefined && slot.formatVersion !== 1) ||
+          !SAVE_TABS.includes(slot.tabId) || !Number.isInteger(slot.slotIndex) || slot.slotIndex < 0 || slot.slotIndex > 5 ||
+          slot.slotKey !== key || key !== slot.tabId + "-" + slot.slotIndex ||
+          ![slot.savedAt, slot.chapterTitle, slot.nodeId, slot.nodeTitle, slot.speakerName, slot.textPreview].every(value => typeof value === "string" && value.length <= 1000000) ||
+          !isStateRecord(slot.affection, true) || !isStateRecord(slot.variables, false)) return false;
+      const node = getNode(slot.nodeId);
+      return Boolean(node && Number.isInteger(slot.dialogueIndex) && slot.dialogueIndex >= 0 &&
+        slot.dialogueIndex < (node.dialogues || []).length);
+    }
+
+    function stopPlaybackModes() {
+      clearTimeout(autoTimer);
+      autoTimer = null;
+      isAuto = false;
+      isSkip = false;
+      document.getElementById("btn-auto")?.classList.remove("active");
+      document.getElementById("btn-skip")?.classList.remove("active");
+    }
+
+    function resetSessionState() {
+      clearInterval(typingTimer);
+      stopPlaybackModes();
       historyStack = [];
       backlog = [];
+      affection = Object.create(null);
+      variables = Object.create(null);
       PROJECT.characters.forEach(c => affection[c.id] = c.initialAffection);
       (PROJECT.variables || []).forEach(v => variables[v.key] = v.value);
-      showToast("已重置当前周目变量与状态");
+      uiHidden = false;
+      document.getElementById("restore-hint").style.opacity = "0";
+    }
+
+    function captureHistory() {
+      // renderScene records the displayed line; save the prior backlog so that
+      // returning to this snapshot does not retain later lines or duplicate it.
+      return { nodeId: currentNodeId, dlgIdx, affection: copyRecord(affection), variables: copyRecord(variables), backlog: backlog.slice(0, -1) };
     }
 
     function loadAllSaves() {
       try {
-        const saves = JSON.parse(localStorage.getItem(SAVE_STORAGE_KEY) || "{}");
-        if (!saves || typeof saves !== "object" || Array.isArray(saves)) throw new Error("invalid save data");
-        return saves;
+        const raw = localStorage.getItem(SAVE_STORAGE_KEY);
+        if (raw !== null && raw.length > MAX_SAVE_ROOT_CHARS) throw new Error("save data too large");
+        const saves = raw === null ? Object.create(null) : JSON.parse(raw);
+        if (!isRecord(saves)) throw new Error("invalid save data");
+        return { raw, saves };
       } catch (e) {
-        showToast("存档读取失败，请检查浏览器存储权限或损坏的数据");
+        showToast("存档读取失败，请检查浏览器存储权限或损坏的数据；原数据未覆盖");
         return null;
       }
     }
 
     function persistSaveSlot(tabId, slotIdx) {
       const node = getNode(currentNodeId);
-      if (!node) return false;
-      const line = (node.dialogues && node.dialogues[dlgIdx]) || (node.dialogues && node.dialogues[0]) || { speakerName: "", text: "" };
+      if (!node || !isStateRecord(affection, true) || !isStateRecord(variables, false)) {
+        showToast("当前状态无效，未覆盖存档");
+        return false;
+      }
+      const line = node.dialogues && node.dialogues[dlgIdx];
+      if (!line) { showToast("台词位置无效，未覆盖存档"); return false; }
       const ch = PROJECT.chapters.find(c => c.id === node.chapterId) || PROJECT.chapters[0];
-      const all = loadAllSaves();
-      if (!all) return false;
+      const loaded = loadAllSaves();
+      if (!loaded) return false;
       const key = tabId + "-" + slotIdx;
-      all[key] = {
-        slotKey: key,
-        tabId,
-        slotIndex: slotIdx,
+      if (Object.prototype.hasOwnProperty.call(loaded.saves, key) && !isValidSaveSlot(loaded.saves[key], key)) {
+        showToast("存档槽 " + key + " 损坏或版本不支持，原数据未覆盖");
+        return false;
+      }
+      const slot = {
+        formatVersion: 1,
+        slotKey: key, tabId, slotIndex: slotIdx,
         savedAt: new Date().toLocaleString("zh-CN", { hour12: false }),
         chapterTitle: ch ? ch.title : "第 1 章",
-        nodeId: node.id,
-        nodeTitle: node.title,
-        dialogueIndex: dlgIdx,
-        speakerName: line.speakerName || "",
-        textPreview: line.text || "",
-        affection: Object.assign({}, affection),
-        variables: Object.assign({}, variables)
+        nodeId: node.id, nodeTitle: node.title, dialogueIndex: dlgIdx,
+        speakerName: line.speakerName || "", textPreview: (line.text || "").slice(0, 300),
+        affection: copyRecord(affection), variables: copyRecord(variables)
       };
+      if (!isValidSaveSlot(slot, key)) { showToast("当前状态无法保存，原数据未覆盖"); return false; }
+      loaded.saves[key] = slot;
       try {
-        localStorage.setItem(SAVE_STORAGE_KEY, JSON.stringify(all));
+        const encoded = JSON.stringify(loaded.saves);
+        if (encoded.length > MAX_SAVE_ROOT_CHARS) {
+          showToast("存档数据超出大小限制，原数据未覆盖");
+          return false;
+        }
+        if (localStorage.getItem(SAVE_STORAGE_KEY) !== loaded.raw) {
+          showToast("存档已在其他窗口更改，未覆盖新数据；请重试");
+          return false;
+        }
+        localStorage.setItem(SAVE_STORAGE_KEY, encoded);
         return true;
       } catch (e) {
-        showToast("存档写入失败，请检查浏览器存储权限或空间");
+        showToast("存档写入失败，请检查浏览器存储权限或空间；原数据未覆盖");
         return false;
       }
     }
@@ -463,7 +533,8 @@ export function buildStandaloneGameHtml(
       const toastEl = document.getElementById("toast-banner");
       toastEl.textContent = msg;
       toastEl.style.display = "block";
-      setTimeout(() => { toastEl.style.display = "none"; }, 2400);
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => { toastEl.style.display = "none"; }, 2400);
     }
 
     function quickSave() {
@@ -471,26 +542,22 @@ export function buildStandaloneGameHtml(
     }
 
     function quickLoad() {
-      const all = loadAllSaves();
-      if (!all) return;
-      const slot = all["quick-0"];
-      if (!slot) { showToast("暂无快速存档记录"); return; }
-      applyLoadedSlot(slot);
+      const loaded = loadAllSaves();
+      if (!loaded) return;
+      if (!Object.prototype.hasOwnProperty.call(loaded.saves, "quick-0")) { showToast("暂无快速存档记录"); return; }
+      applyLoadedSlot(loaded.saves["quick-0"], "quick-0");
     }
 
-    function applyLoadedSlot(slot) {
-      const node = PROJECT.nodes.find(n => n.id === slot.nodeId);
-      if (!node || !Number.isInteger(slot.dialogueIndex) || slot.dialogueIndex < 0 ||
-          slot.dialogueIndex >= Math.max(1, (node.dialogues || []).length) ||
-          !slot.affection || typeof slot.affection !== "object" || Array.isArray(slot.affection) ||
-          !slot.variables || typeof slot.variables !== "object" || Array.isArray(slot.variables)) {
-        showToast("存档数据无效或对应节点不存在");
+    function applyLoadedSlot(slot, key) {
+      if (!isValidSaveSlot(slot, key)) {
+        showToast("存档槽损坏或版本不支持，或对应节点不存在；原数据未修改");
         return;
       }
+      resetSessionState();
       currentNodeId = slot.nodeId;
-      dlgIdx = slot.dialogueIndex || 0;
-      affection = Object.assign({}, slot.affection || affection);
-      variables = Object.assign({}, slot.variables || variables);
+      dlgIdx = slot.dialogueIndex;
+      affection = copyRecord(slot.affection);
+      variables = copyRecord(slot.variables);
       document.getElementById("main-menu").style.display = "none";
       document.getElementById("dlg-wrap").style.display = "block";
       document.getElementById("top-hud").style.display = "flex";
@@ -500,6 +567,7 @@ export function buildStandaloneGameHtml(
     }
 
     function openSaveModal(mode) {
+      stopPlaybackModes();
       activeModalMode = mode;
       document.getElementById("modal-title").textContent = mode === "save" ? "保存进度" : "读取进度";
       document.getElementById("modal-overlay").style.display = "flex";
@@ -521,14 +589,18 @@ export function buildStandaloneGameHtml(
       const bodyEl = document.getElementById("modal-body");
       bodyEl.style.gridTemplateColumns = "repeat(2, 1fr)";
       bodyEl.replaceChildren();
-      const all = loadAllSaves();
-      if (!all) return;
+      const loaded = loadAllSaves();
+      if (!loaded) return;
       for (let i = 0; i < 6; i++) {
         const key = activeSaveTab + "-" + i;
-        const slot = all[key];
+        const hasSlot = Object.prototype.hasOwnProperty.call(loaded.saves, key);
+        const slot = loaded.saves[key];
+        const valid = hasSlot && isValidSaveSlot(slot, key);
         const card = document.createElement("div");
         card.className = "save-slot";
-        if (slot) {
+        if (hasSlot && !valid) {
+          appendText(card, "div", "槽位 #" + (i + 1) + " 损坏或版本不支持；原数据已保留", "font-size:12px;color:#fbbf24;padding:12px 0;");
+        } else if (valid) {
           const heading = document.createElement("div");
           heading.style.cssText = "display:flex;justify-content:space-between;font-size:11px;color:#38bdf8;margin-bottom:4px;";
           appendText(heading, "span", "#" + (i + 1) + " · " + (slot.chapterTitle || ""), "");
@@ -546,8 +618,9 @@ export function buildStandaloneGameHtml(
               renderSaveModalContent();
               showToast("已写入存档槽位 #" + (i + 1));
             }
-          } else if (slot) {
-            applyLoadedSlot(slot);
+          } else if (hasSlot) {
+            const latest = loadAllSaves();
+            if (latest) applyLoadedSlot(latest.saves[key], key);
           }
         };
         bodyEl.appendChild(card);
@@ -555,6 +628,7 @@ export function buildStandaloneGameHtml(
     }
 
     function openBacklogModal() {
+      stopPlaybackModes();
       document.getElementById("modal-title").textContent = "对话历史记录";
       document.getElementById("modal-tabs").style.display = "none";
       const bodyEl = document.getElementById("modal-body");
@@ -603,16 +677,21 @@ export function buildStandaloneGameHtml(
     }
 
     function startNewGame() {
+      resetSessionState();
       currentNodeId = PROJECT.startNodeId || (PROJECT.nodes[0] && PROJECT.nodes[0].id);
       dlgIdx = 0;
+      closeModal();
       document.getElementById("main-menu").style.display = "none";
       document.getElementById("dlg-wrap").style.display = "block";
       document.getElementById("top-hud").style.display = "flex";
-      persistSaveSlot("auto", 0);
       renderScene();
+      persistSaveSlot("auto", 0);
     }
 
     function returnToTitle() {
+      clearInterval(typingTimer);
+      stopPlaybackModes();
+      uiHidden = false;
       document.getElementById("main-menu").style.display = "flex";
       document.getElementById("dlg-wrap").style.display = "none";
       document.getElementById("top-hud").style.display = "none";
@@ -759,16 +838,19 @@ export function buildStandaloneGameHtml(
           btn.textContent = ch.text;
           btn.onclick = (e) => {
             e.stopPropagation();
-            if (ch.affectionCharacterId && ch.affectionDelta) {
-              affection[ch.affectionCharacterId] = (affection[ch.affectionCharacterId] || 0) + ch.affectionDelta;
+            const nextAffection = ch.affectionCharacterId && ch.affectionDelta
+              ? (affection[ch.affectionCharacterId] || 0) + ch.affectionDelta : null;
+            if ((nextAffection !== null && !Number.isFinite(nextAffection)) || !getNode(ch.targetNodeId)) {
+              showToast("选项状态或目标无效，未执行跳转");
+              return;
             }
-            if (ch.setVarKey) {
-              variables[ch.setVarKey] = ch.setVarValue;
-            }
-            historyStack.push({ nodeId: currentNodeId, dlgIdx });
+            historyStack.push(captureHistory());
+            if (nextAffection !== null) affection[ch.affectionCharacterId] = nextAffection;
+            if (ch.setVarKey !== undefined && ch.setVarValue !== undefined) variables[ch.setVarKey] = ch.setVarValue;
             currentNodeId = ch.targetNodeId;
             dlgIdx = 0;
             renderScene();
+            persistSaveSlot("auto", 0);
           };
           box.appendChild(btn);
         });
@@ -778,64 +860,67 @@ export function buildStandaloneGameHtml(
     }
 
     function advanceStep() {
-      if (uiHidden) return;
+      if (uiHidden || document.getElementById("modal-overlay").style.display === "flex" ||
+          document.getElementById("main-menu").style.display !== "none") return;
       if (typedText.length < fullText.length && !isSkip) {
         clearInterval(typingTimer);
         typedText = fullText;
         document.getElementById("dlg-text").textContent = fullText;
+        if (isAuto) autoTimer = setTimeout(advanceStep, 1600);
         return;
       }
       const node = getNode(currentNodeId);
       if (!node) return;
       if (node.dialogues && dlgIdx < node.dialogues.length - 1) {
-        historyStack.push({ nodeId: currentNodeId, dlgIdx });
+        historyStack.push(captureHistory());
         dlgIdx++;
         renderScene();
+        persistSaveSlot("auto", 0);
         return;
       }
       if (node.choices && node.choices.length > 0) return;
-      if (node.type === "condition" && node.conditionRule) {
-        const rule = node.conditionRule;
-        const val = affection[rule.characterId] || 0;
-        const pass = val >= Number(rule.compareValue);
-        currentNodeId = pass ? rule.trueTargetNodeId : rule.falseTargetNodeId;
-        dlgIdx = 0;
-        renderScene();
-        return;
-      }
       if (node.nextNodeId) {
-        historyStack.push({ nodeId: currentNodeId, dlgIdx });
+        historyStack.push(captureHistory());
         currentNodeId = node.nextNodeId;
         dlgIdx = 0;
         renderScene();
+        persistSaveSlot("auto", 0);
       }
     }
 
     function stepBack() {
       if (historyStack.length === 0) return;
+      stopPlaybackModes();
       const prev = historyStack.pop();
       currentNodeId = prev.nodeId;
       dlgIdx = prev.dlgIdx;
+      affection = copyRecord(prev.affection);
+      variables = copyRecord(prev.variables);
+      backlog = prev.backlog.slice();
       renderScene();
+      persistSaveSlot("auto", 0);
     }
 
     function toggleAuto() {
+      clearTimeout(autoTimer);
       isAuto = !isAuto;
-      const btn = document.getElementById("btn-auto");
-      if (btn) btn.classList.toggle("active", isAuto);
-      if (isAuto && typedText.length >= fullText.length) {
-        autoTimer = setTimeout(advanceStep, 1200);
-      }
+      if (isAuto) isSkip = false;
+      document.getElementById("btn-auto")?.classList.toggle("active", isAuto);
+      document.getElementById("btn-skip")?.classList.toggle("active", isSkip);
+      if (isAuto && typedText.length >= fullText.length) autoTimer = setTimeout(advanceStep, 1600);
     }
 
     function toggleSkip() {
+      clearTimeout(autoTimer);
       isSkip = !isSkip;
-      const btn = document.getElementById("btn-skip");
-      if (btn) btn.classList.toggle("active", isSkip);
+      if (isSkip) isAuto = false;
+      document.getElementById("btn-auto")?.classList.toggle("active", isAuto);
+      document.getElementById("btn-skip")?.classList.toggle("active", isSkip);
       if (isSkip) advanceStep();
     }
 
     function hideUI() {
+      stopPlaybackModes();
       uiHidden = true;
       document.getElementById("dlg-wrap").style.display = "none";
       document.getElementById("choice-overlay").style.display = "none";

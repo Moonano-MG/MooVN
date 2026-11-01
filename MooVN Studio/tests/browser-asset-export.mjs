@@ -10,7 +10,8 @@ import { DEFAULT_PROJECT, SAMPLE_PROJECT } from '../src/data/defaultProject.ts';
 import { parseMpvnProject, serializeMpvnProject } from '../src/lib/mpvnFormat.ts';
 import { parseAndDecompressMsvnPackage } from '../src/lib/assetCompressionEngine.ts';
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const web = process.argv.includes('--web');
+const root = resolve(dirname(fileURLToPath(import.meta.url)), web ? '../../MooVN Web' : '..');
 const output = resolve(process.env.MOOVN_E2E_ARTIFACT_DIR || resolve(root, 'test-results/browser-assets'));
 await mkdir(output, { recursive: true });
 const server = await createServer({ root, configFile: resolve(root, 'vite.config.ts'), logLevel: 'error', server: { host: '127.0.0.1', port: 0, strictPort: false } });
@@ -27,7 +28,7 @@ try {
   await server.listen();
   const address = server.httpServer.address();
   if (!address || typeof address === 'string') throw new Error('Vite test server did not bind');
-  const origin = `http://127.0.0.1:${address.port}`;
+  const origin = `http://127.0.0.1:${address.port}${web ? '/studio.html' : '/'}`;
   browser = await chromium.launch({ executablePath: process.env.MOOVN_CHROMIUM_PATH || undefined, args: ['--no-sandbox', '--disable-dev-shm-usage'] });
   let context = await browser.newContext({ viewport: { width: 1366, height: 768 }, acceptDownloads: true });
   let page = await context.newPage();
@@ -35,7 +36,13 @@ try {
   await page.goto(origin);
   const fixture = structuredClone(DEFAULT_PROJECT);
   fixture.title = 'Asset text export regression';
+  fixture.variables = [{ key: 'score', label: 'score', type: 'number', value: 0 }];
   fixture.nodes[0].dialogues[0].text = phrase;
+  fixture.nodes[0].type = 'choice';
+  fixture.nodes[0].choices = [{ id: 'file-choice', text: 'File origin path', targetNodeId: 'file-ending', setVarKey: 'score', setVarValue: 7 }];
+  const ending = structuredClone(DEFAULT_PROJECT.nodes[0]);
+  ending.id = 'file-ending'; ending.title = 'File ending'; ending.dialogues[0].id = 'file-ending-line'; ending.dialogues[0].text = 'Saved on file origin'; ending.nextNodeId = null;
+  fixture.nodes.push(ending);
   await importProject(page, fixture);
   await page.getByRole('button', { name: '导出游戏', exact: true }).first().click();
   const htmlDownload = page.waitForEvent('download');
@@ -50,6 +57,20 @@ try {
   await player.getByRole('button', { name: '开始游戏', exact: true }).click();
   await player.getByText(phrase, { exact: true }).waitFor();
   await player.screenshot({ path: resolve(output, '01-html-dialogue-text.png') });
+  await player.getByRole('button', { name: 'File origin path', exact: true }).click();
+  await player.getByText('Saved on file origin', { exact: true }).waitFor();
+  await player.getByRole('button', { name: '快速存档', exact: true }).click();
+  await player.getByText('已快速存档', { exact: false }).waitFor();
+  assert.equal(await player.evaluate(() => {
+    const key = Object.keys(localStorage).find((name) => name.startsWith('moovn_standalone_saves_'));
+    return key ? JSON.parse(localStorage.getItem(key))['quick-0'].variables.score : null;
+  }), 7);
+  await player.reload();
+  await player.getByRole('button', { name: '读取存档', exact: true }).click();
+  await player.locator('#modal-tabs').getByRole('button', { name: '快速', exact: true }).click();
+  await player.locator('#modal-body .save-slot').first().click();
+  await player.getByText('Saved on file origin', { exact: true }).waitFor();
+  await player.screenshot({ path: resolve(output, '03-file-origin-save-reload.png') });
   await player.close();
 
   await page.getByRole('button', { name: '导出工程 (.mpvn)', exact: true }).click();
@@ -64,7 +85,7 @@ try {
   await page.getByRole('button', { name: '导出 .msvn', exact: true }).click();
   const parsedChapter = await parseAndDecompressMsvnPackage(await readFile(await (await msvnDownload).path(), 'utf8'));
   assert.equal(parsedChapter.nodes[0].dialogues[0].text, phrase);
-  console.log('✓ HTML plays literal asset-looking dialogue; MPVN and MSVN retain it');
+  console.log('✓ UI-exported file:// HTML plays, saves choice state and reloads it; MPVN and MSVN retain text');
   await context.close();
 
   // A syntactically valid but missing real image reference is still blocked.
