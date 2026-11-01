@@ -173,6 +173,9 @@ export const Inspector: React.FC<InspectorProps> = ({
 }) => {
   const [viewMode, setViewMode] = useState<'config' | 'scratch' | 'char' | 'script'>('config');
   const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
+  const [audioError, setAudioError] = useState<string | null>(null);
+  useEffect(() => soundEngine.subscribeBgm(setPlayingAudioId), []);
+  useEffect(() => { setAudioError(null); }, [node.id]);
   const [newAttrInputs, setNewAttrInputs] = useState<
     Record<string, { key: string; val: string }>
   >({});
@@ -1786,69 +1789,53 @@ export const Inspector: React.FC<InspectorProps> = ({
             {/* CASE G: AUDIO NODES (BGM Play / Stop / SFX / Voice) */}
             {meta.category === 'audio' && (
               <div className="p-3 rounded-lg bg-[#1b1b22] border border-orange-500/40 space-y-2.5">
-                <div className="font-semibold text-orange-300">
-                  {meta.title} · 音频轨道控制
-                </div>
-                <div>
-                  <label className="block text-[10px] text-zinc-400 mb-1">
-                    选择音频资源
-                  </label>
-                  <select
-                    value={
-                      node.type === 'sfx_play'
-                        ? node.sfxId || AUDIO_ASSETS[0].id
-                        : node.bgmId
-                    }
-                    onChange={(e) =>
-                      onUpdateNode((prev) =>
-                        node.type === 'sfx_play'
-                          ? { ...prev, sfxId: e.target.value }
-                          : { ...prev, bgmId: e.target.value }
-                      )
-                    }
-                    className="w-full px-2 py-1.5"
-                  >
-                    {AUDIO_ASSETS.map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => {
-                      const targetId =
-                        node.type === 'sfx_play'
-                          ? node.sfxId || AUDIO_ASSETS[0].id
-                          : node.bgmId;
-                      const asset =
-                        AUDIO_ASSETS.find((a) => a.id === targetId) ||
-                        AUDIO_ASSETS[0];
-                      if (playingAudioId === asset.id) {
-                        soundEngine.stopBgm();
-                        setPlayingAudioId(null);
-                      } else {
-                        soundEngine.playBgm(asset);
-                        setPlayingAudioId(asset.id);
-                      }
-                    }}
-                    className="px-3 py-1.5 rounded bg-orange-500/20 hover:bg-orange-500/30 border border-orange-500/40 text-orange-200 flex items-center gap-1.5"
-                  >
-                    {playingAudioId ? (
-                      <>
-                        <VolumeX className="w-3.5 h-3.5" />
-                        停止试听
-                      </>
-                    ) : (
-                      <>
-                        <Volume2 className="w-3.5 h-3.5" />
-                        试听当前音轨
-                      </>
-                    )}
-                  </button>
-                </div>
+                <div className="font-semibold text-orange-300">{meta.title} · 音频轨道控制</div>
+                <p className="text-[10px] text-zinc-400">内置素材为简单合成音；上传音频和语音尚未支持，HTML 游戏不能播放这些音轨。</p>
+                {node.type === 'voice_play' ? (
+                  <div role="status" className="text-amber-300">语音播放尚未实现，预览会暂停。</div>
+                ) : node.type === 'bgm_stop' ? (
+                  <div className="text-zinc-300">预览在此节点停止 BGM（不支持淡出）。</div>
+                ) : (
+                  <>
+                    <label className="block text-[10px] text-zinc-400">选择内置{node.type === 'sfx_play' ? '音效' : '背景音乐'}
+                      <select
+                        value={node.type === 'sfx_play' ? node.sfxId || '' : node.bgmId || ''}
+                        onChange={(event) => {
+                          const value = event.target.value;
+                          onUpdateNode((prev) => node.type === 'sfx_play' ? { ...prev, sfxId: value } : { ...prev, bgmId: value });
+                        }}
+                        className="block w-full px-2 py-1.5"
+                      >
+                        <option value="">请选择音频</option>
+                        {AUDIO_ASSETS.filter((asset) => asset.type === (node.type === 'sfx_play' ? 'sfx' : 'bgm')).map((asset) => (
+                          <option key={asset.id} value={asset.id}>{asset.name}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <button
+                      type="button"
+                      disabled={!AUDIO_ASSETS.some((asset) => asset.id === (node.type === 'sfx_play' ? node.sfxId : node.bgmId) && asset.type === (node.type === 'sfx_play' ? 'sfx' : 'bgm'))}
+                      onClick={() => {
+                        const asset = AUDIO_ASSETS.find((item) => item.id === (node.type === 'sfx_play' ? node.sfxId : node.bgmId));
+                        if (!asset) { setAudioError('找不到音频资源'); return; }
+                        setAudioError(null);
+                        const onError = (message: string) => { setAudioError(message); };
+                        if (asset.type === 'sfx') {
+                          soundEngine.stopSfx();
+                          soundEngine.playSfx(asset, 100, onError);
+                        } else if (playingAudioId === asset.id) {
+                          soundEngine.stopBgm();
+                        } else {
+                          soundEngine.playBgm(asset, 100, onError);
+                        }
+                      }}
+                      className="px-3 py-1.5 rounded bg-orange-500/20 hover:bg-orange-500/30 border border-orange-500/40 text-orange-200 flex items-center gap-1.5 disabled:opacity-40"
+                    >
+                      {playingAudioId === node.bgmId && node.type !== 'sfx_play' ? <><VolumeX className="w-3.5 h-3.5" />停止试听</> : <><Volume2 className="w-3.5 h-3.5" />试听当前音轨</>}
+                    </button>
+                  </>
+                )}
+                {audioError && <div role="alert" className="text-amber-300">{audioError}</div>}
               </div>
             )}
 

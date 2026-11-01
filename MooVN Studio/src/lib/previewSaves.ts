@@ -13,7 +13,7 @@ const slotSchema = z.object({
   unlockedClues: z.array(z.string()).optional(),
   previewSnapshotVersion: z.literal(1).optional(),
   clueSnapshot: z.array(z.object({ title: z.string(), desc: z.string() })).optional(),
-  textSpeedSnapshot: z.number().finite().optional(),
+  textSpeedSnapshot: z.number().int().min(10).max(80).optional(),
   timedRemainingSnapshot: z.number().finite().positive().nullable().optional(),
 }).passthrough().superRefine((slot, ctx) => {
   if (slot.slotKey !== `${slot.tabId}-${slot.slotIndex}`) {

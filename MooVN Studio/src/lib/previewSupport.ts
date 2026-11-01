@@ -1,8 +1,9 @@
 import type { NestedChildNode, SceneNode, ScriptLanguage } from '../types.ts';
 import { getUnsupportedBranchIssue, type BranchSupportIssue } from './branchSupport.ts';
+import { AUDIO_ASSETS } from '../data/assets.ts';
 
 export type PreviewSupportIssue = BranchSupportIssue | {
-  code: 'ERR_PREVIEW_SCRIPT_UNSUPPORTED';
+  code: 'ERR_PREVIEW_SCRIPT_UNSUPPORTED' | 'ERR_PREVIEW_AUDIO_UNSUPPORTED' | 'ERR_PREVIEW_SETTINGS_UNSUPPORTED';
   message: string;
 };
 
@@ -70,6 +71,28 @@ function scriptIssue(location: string): PreviewSupportIssue {
 export function getUnsupportedPreviewIssue(node: SceneNode): PreviewSupportIssue | null {
   const branchIssue = getUnsupportedBranchIssue(node);
   if (branchIssue) return branchIssue;
+  // The built-in preview only synthesizes BGM/SFX note sequences. Do not
+  // advance through voice actions or silently substitute a different asset.
+  if (node.type === 'voice_play' || node.dialogues.some((line) => line.voiceAudioId)) {
+    return { code: 'ERR_PREVIEW_AUDIO_UNSUPPORTED', message: '预览尚不支持语音或上传音频；已暂停并保留当前存档。' };
+  }
+  if ((node.type === 'sfx_play' && !node.sfxId) ||
+      (node.sfxId && !AUDIO_ASSETS.some((asset) => asset.id === node.sfxId && asset.type === 'sfx'))) {
+    return { code: 'ERR_PREVIEW_AUDIO_UNSUPPORTED', message: '音效未配置或不是可用的内置音效；已暂停并保留当前存档。' };
+  }
+  if (node.type !== 'bgm_stop' && ((node.type === 'bgm_play' && !node.bgmId) ||
+      (node.bgmId && !AUDIO_ASSETS.some((asset) => asset.id === node.bgmId && asset.type === 'bgm')))) {
+    return { code: 'ERR_PREVIEW_AUDIO_UNSUPPORTED', message: '背景音乐未配置或不是可用的内置 BGM；已暂停并保留当前存档。' };
+  }
+  if (node.type === 'game_settings_modify' && node.settingsActionConfig) {
+    const config = node.settingsActionConfig;
+    const unsupported = Object.entries(config).some(([key, value]) => value !== undefined && key !== 'textSpeedMs' && key !== 'openSettingsPanel');
+    const invalidSpeed = config.textSpeedMs !== undefined &&
+      (!Number.isInteger(config.textSpeedMs) || config.textSpeedMs < 10 || config.textSpeedMs > 80);
+    if (unsupported || invalidSpeed) {
+      return { code: 'ERR_PREVIEW_SETTINGS_UNSUPPORTED', message: '此设置节点包含未支持的参数或无效文字速度；预览已暂停并保留存档。' };
+    }
+  }
   if (node.type === 'function_call') return scriptIssue('函数调用节点');
   if (node.customScript && !isOnlyWhitespaceAndComments(node.customScript, node.scriptLanguage)) {
     return scriptIssue('自定义节点脚本');

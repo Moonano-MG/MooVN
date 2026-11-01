@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ChevronRight,
   ChevronDown,
@@ -82,17 +82,21 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
   const [selectedCharGroup, setSelectedCharGroup] = useState<string>(charGroups[0] || '星野雪奈');
 
   const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
+  const [audioError, setAudioError] = useState<string | null>(null);
+  useEffect(() => soundEngine.subscribeBgm(setPlayingAudioId), []);
 
   const handleToggleAudio = (audioId: string) => {
-    if (playingAudioId === audioId) {
+    const asset = AUDIO_ASSETS.find((a) => a.id === audioId);
+    if (!asset) { setAudioError('找不到音频资源'); return; }
+    setAudioError(null);
+    const onError = (message: string) => { setAudioError(message); };
+    if (asset.type === 'sfx') {
+      soundEngine.stopSfx();
+      soundEngine.playSfx(asset, 100, onError);
+    } else if (playingAudioId === audioId) {
       soundEngine.stopBgm();
-      setPlayingAudioId(null);
     } else {
-      const asset = AUDIO_ASSETS.find((a) => a.id === audioId);
-      if (asset) {
-        soundEngine.playBgm(asset);
-        setPlayingAudioId(audioId);
-      }
+      soundEngine.playBgm(asset, 100, onError);
     }
   };
 
@@ -458,6 +462,8 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
           {/* 3C. Audio List */}
           {assetSubTab === 'audio' && (
             <div className="flex-1 overflow-y-auto p-2 space-y-1">
+              <p className="text-[10px] text-zinc-400">内置示例是简单合成音，不是录制音轨；上传音频暂不支持。</p>
+              {audioError && <div role="alert" className="text-xs text-amber-300">{audioError}</div>}
               {AUDIO_ASSETS.map((aud) => {
                 const isPlaying = playingAudioId === aud.id;
                 return (
@@ -467,7 +473,7 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({
                   >
                     <div className="min-w-0">
                       <div className="text-[11px] text-zinc-200 truncate">{aud.name}</div>
-                      <div className="text-[10px] text-zinc-500">{aud.duration}</div>
+                      <div className="text-[10px] text-zinc-500">{aud.type === 'bgm' ? '合成音 · 循环' : '合成音 · 一次'}</div>
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
                       <button
