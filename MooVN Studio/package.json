@@ -27,6 +27,7 @@
     "test:containers:e2e": "node --experimental-strip-types tests/browser-empty-container.mjs",
     "test:branches:e2e": "node --experimental-strip-types tests/browser-branch-safety.mjs",
     "test:preview-state:e2e": "node --experimental-strip-types tests/browser-preview-state.mjs",
+    "test:preview-script:e2e": "node --experimental-strip-types tests/browser-preview-script-safety.mjs",
     "test:formats:e2e": "node --experimental-strip-types tests/browser-formats.mjs"
   },
   "dependencies": {

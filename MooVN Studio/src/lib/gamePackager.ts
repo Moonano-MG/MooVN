@@ -57,6 +57,8 @@ export function buildStandaloneGameHtml(
   project: VNProject,
   catalog?: StandaloneAssetCatalog
 ): string {
+  // The HTML player does not execute custom scripts; validation must reject them
+  // rather than guessing actions from their source text.
   assertStandaloneHtmlSupported(project);
   const safeJson = (val: unknown) =>
     JSON.stringify(val)
@@ -620,10 +622,6 @@ export function buildStandaloneGameHtml(
     function renderScene() {
       const node = getNode(currentNodeId);
       if (!node) { showToast("剧情节点不存在，无法继续"); return; }
-
-      if (node.customScript && /moovn(?:\.save:|::save::)create/i.test(node.customScript)) {
-        persistSaveSlot("auto", 0);
-      }
 
       const bg = BG_ASSETS.find(b => b.id === node.backgroundId);
       const bgEl = document.getElementById("bg-layer");

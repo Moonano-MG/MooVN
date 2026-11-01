@@ -1,0 +1,13 @@
+  before={"node":"intro","chapterIndex":1}; after={"node":"intro","chapterIndex":1,"clues":[],"oscillator":0}
+✗ last-good-checkpoint-and-back: AssertionError [ERR_ASSERTION]: blocked node must not mount character media
+
+1 !== 0
+
+    at file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-script-safety.mjs:218:12
+    at async runCase (file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-script-safety.mjs:108:5)
+    at async file:///home/user/MooVN/MooVN%20Studio/tests/browser-preview-script-safety.mjs:186:3
+
+1 case(s) failed:
+- last-good-checkpoint-and-back: blocked node must not mount character media
+
+1 !== 0

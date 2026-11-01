@@ -843,6 +843,10 @@ export const ScriptView: React.FC<ScriptViewProps> = ({
         </div>
       </div>
 
+      <div className="px-3 py-1 text-[11px] text-amber-300 border-b border-amber-500/20 shrink-0">
+        预览尚不执行脚本；节点含非注释脚本或函数调用时会暂停。解析 / 引擎是另一项操作。
+      </div>
+
       {statusNotice?.kind === 'error' && (
         <div role="alert" className="px-3 py-2 bg-rose-950/40 border-b border-rose-500/40 text-rose-200 text-xs flex items-start justify-between gap-2 shrink-0">
           <span className="break-all select-text">{statusNotice.message}</span>

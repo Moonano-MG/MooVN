@@ -530,7 +530,7 @@ export const NODE_REGISTRY: NodeTypeMeta[] = [
     category: 'script',
     categoryLabel: '脚本',
     title: '函数调用',
-    description: '调用自定义 JS/TS 函数并传入参数',
+    description: '函数可编辑；预览尚不执行函数调用，遇到时会暂停。',
     ...CAT_STYLE.script,
   },
   {
@@ -538,7 +538,7 @@ export const NODE_REGISTRY: NodeTypeMeta[] = [
     category: 'script',
     categoryLabel: '脚本',
     title: '脚本代码',
-    description: '编写自定义 JavaScript / TypeScript 逻辑',
+    description: '可编辑脚本；预览尚不执行，遇到非注释内容时会暂停。',
     ...CAT_STYLE.script,
   },
 ];

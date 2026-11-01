@@ -11,7 +11,7 @@ Version: 2.0.0
 - **[视觉]**: \`bg_switch\` (背景切换), \`fade\` (淡入淡出控制), \`camera_pan_zoom\` (镜头推拉摇移), \`camera_shake\` (屏幕震动), \`screen_flash\` (屏幕闪光), \`weather_particles\` (天气粒子；尚未实现), \`color_filter\` (色调滤镜), \`frame_animation\` (序列帧与视频动画)
 - **[音频]**: \`bgm_play\` (播放BGM), \`bgm_stop\` (停止音乐), \`sfx_play\` (播放环境音效), \`voice_play\` (角色语音)
 - **[界面]**: \`ui_visibility\` (对话框显隐), \`popup_toast\` (系统提示横幅), \`clue_unlock\` (解锁档案词条), \`ui_theme_switch\` (界面主题切换)
-- **[脚本]**: \`set_variable\` (变量赋值), \`script\` (脚本草稿；跨语言桥接未实现)
+- **[脚本]**: \`set_variable\` (变量赋值), \`script\` (脚本草稿；预览不执行脚本或函数调用，遇到非注释脚本会暂停；跨语言桥接未实现)
 
 ## 2. 章节与导出
 章节数据保存在工程中；YAML 视图和脚本草稿不代表已经生成或执行了独立章节文件。具体导出能力以当前校验结果为准。

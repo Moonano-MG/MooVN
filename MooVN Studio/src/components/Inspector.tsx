@@ -609,6 +609,9 @@ export const Inspector: React.FC<InspectorProps> = ({
                   载入模板
                 </button>
               </div>
+              <p className="text-[11px] text-amber-300">
+                预览不执行自定义脚本或函数调用；遇到非注释内容或无法确认的内容时会暂停。可识别的空白和完整注释不会触发脚本动作。
+              </p>
               <textarea
                 rows={8}
                 value={node.customScript || ''}
@@ -1074,6 +1077,9 @@ export const Inspector: React.FC<InspectorProps> = ({
                 <div className="font-semibold text-emerald-300">
                   {meta.title} · 专属运算参数
                 </div>
+                {node.type === 'function_call' && (
+                  <p className="text-[11px] text-amber-300">预览尚不执行函数调用，遇到此节点会暂停；参数会保留。</p>
+                )}
 
                 {node.type === 'break_continue' ? (
                   <div>
