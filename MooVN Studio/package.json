@@ -33,7 +33,8 @@
     "test:standalone:e2e": "node --experimental-strip-types tests/browser-standalone-saves.mjs",
     "test:preview-audio:e2e": "node --experimental-strip-types tests/browser-preview-audio.mjs",
     "test:preferences:e2e": "node --experimental-strip-types 'tests/browser-editor-preferences.mjs'",
-    "test:audition:e2e": "node --experimental-strip-types 'tests/browser-audio-audition.mjs'"
+    "test:audition:e2e": "node --experimental-strip-types 'tests/browser-audio-audition.mjs'",
+    "test:web-production:e2e": "node tests/browser-web-production.mjs"
   },
   "dependencies": {
     "@noble/hashes": "^2.4.0",

@@ -26,7 +26,8 @@
     "test:preview-audio:e2e": "node --experimental-strip-types ../\"MooVN Studio\"/tests/browser-preview-audio.mjs --web",
     "test:preferences:e2e": "node --experimental-strip-types '../MooVN Studio/tests/browser-editor-preferences.mjs' --web",
     "test:audition:e2e": "node --experimental-strip-types '../MooVN Studio/tests/browser-audio-audition.mjs' --web",
-    "test:assets:e2e": "node --experimental-strip-types '../MooVN Studio/tests/browser-asset-export.mjs' --web"
+    "test:assets:e2e": "node --experimental-strip-types '../MooVN Studio/tests/browser-asset-export.mjs' --web",
+    "test:isolated-build": "node tests/isolated-build.mjs"
   },
   "dependencies": {
     "@noble/hashes": "^2.4.0",

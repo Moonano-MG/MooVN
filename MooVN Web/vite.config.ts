@@ -151,6 +151,8 @@ export default defineConfig({
       'react-dom': path.resolve(__dirname, 'node_modules/react-dom'),
       'lucide-react': path.resolve(__dirname, 'node_modules/lucide-react'),
       yaml: path.resolve(__dirname, 'node_modules/yaml'),
+      zod: path.resolve(__dirname, 'node_modules/zod'),
+      '@noble/hashes': path.resolve(__dirname, 'node_modules/@noble/hashes'),
     },
   },
   server: { host: '127.0.0.1', allowedHosts: [], fs: { allow: ['..'] } },
