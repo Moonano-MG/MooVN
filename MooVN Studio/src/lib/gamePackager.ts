@@ -3,6 +3,7 @@ import { BACKGROUND_ASSETS, CHARACTER_ASSETS } from '../data/assets.ts';
 import { escapeHtmlText } from './vnRuntimeCore.ts';
 import { CHARACTER_WIDTH_PERCENT } from './characterPlacement.ts';
 import { assertStandaloneHtmlSupported } from './htmlExportValidation.ts';
+import { createReadHistory } from './readHistory.ts';
 
 export interface StandaloneAssetCatalog {
   backgrounds: BackgroundAsset[];
@@ -297,6 +298,12 @@ export function buildStandaloneGameHtml(
       color: #f8fafc; font-size: 13px; font-weight: 600;
       z-index: 38; display: none; box-shadow: 0 10px 30px rgba(0,0,0,0.6);
     }
+    #read-warning {
+      position: absolute; top: 96px; left: 50%; transform: translateX(-50%);
+      width: min(90%, 640px); padding: 8px 12px; border: 1px solid #fbbf24;
+      border-radius: 8px; background: rgba(69, 26, 3, 0.96); color: #fef3c7;
+      font-size: 12px; z-index: 39; display: none; pointer-events: none;
+    }
   </style>
 </head>
 <body>
@@ -307,6 +314,7 @@ export function buildStandaloneGameHtml(
     <div id="cinematic-bottom"></div>
     <div id="screen-text-layer"></div>
     <div id="toast-banner" role="status" aria-live="polite"></div>
+    <div id="read-warning" role="status" aria-live="polite"></div>
 
     <!-- Top HUD -->
     <div id="top-hud">
@@ -349,8 +357,8 @@ export function buildStandaloneGameHtml(
         <div id="dlg-text" class="dlg-text"></div>
         <div class="dlg-controls" onclick="event.stopPropagation()">
           ${ui.dialogueBox.visibleControls.back ? '<button class="ctrl-btn" onclick="stepBack()">后退</button>' : ''}
-          ${ui.dialogueBox.visibleControls.auto ? '<button class="ctrl-btn" id="btn-auto" onclick="toggleAuto()">自动</button>' : ''}
-          ${ui.dialogueBox.visibleControls.skip ? '<button class="ctrl-btn" id="btn-skip" onclick="toggleSkip()">快进</button>' : ''}
+          ${ui.dialogueBox.visibleControls.auto ? '<button class="ctrl-btn" id="btn-auto" aria-pressed="false" onclick="toggleAuto()">自动</button>' : ''}
+          ${ui.dialogueBox.visibleControls.skip ? '<button class="ctrl-btn" id="btn-skip" aria-pressed="false" onclick="toggleSkip()">快进</button>' : ''}
           <button class="ctrl-btn" onclick="openSaveModal(\'save\')">存档</button>
           <button class="ctrl-btn" onclick="openSaveModal(\'load\')">读档</button>
           ${ui.dialogueBox.visibleControls.hide ? '<button class="ctrl-btn" onclick="hideUI()">隐藏</button>' : ''}
@@ -379,6 +387,9 @@ export function buildStandaloneGameHtml(
     const CHAR_ASSETS = ${charJson};
     const ORIGIN = "${originUrl}";
     const SAVE_STORAGE_KEY = "moovn_standalone_saves_" + PROJECT.id;
+    // This same self-contained factory is used by the editor preview.
+    const createReadHistory = ${createReadHistory.toString()};
+    const readHistory = createReadHistory(() => window.localStorage, "moovn_standalone_read_" + PROJECT.id);
     const MAX_SAVE_ROOT_CHARS = 16 * 1024 * 1024;
     const SAVE_TABS = ["auto", "quick", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0"];
 
@@ -443,13 +454,21 @@ export function buildStandaloneGameHtml(
         slot.dialogueIndex < (node.dialogues || []).length);
     }
 
+    function updatePlaybackButtons() {
+      const auto = document.getElementById("btn-auto");
+      const skip = document.getElementById("btn-skip");
+      auto?.classList.toggle("active", isAuto);
+      skip?.classList.toggle("active", isSkip);
+      auto?.setAttribute("aria-pressed", String(isAuto));
+      skip?.setAttribute("aria-pressed", String(isSkip));
+    }
+
     function stopPlaybackModes() {
       clearTimeout(autoTimer);
       autoTimer = null;
       isAuto = false;
       isSkip = false;
-      document.getElementById("btn-auto")?.classList.remove("active");
-      document.getElementById("btn-skip")?.classList.remove("active");
+      updatePlaybackButtons();
     }
 
     function resetSessionState() {
@@ -676,6 +695,41 @@ export function buildStandaloneGameHtml(
       return PROJECT.nodes.find(n => n.id === id) || null;
     }
 
+    function atChoice(node) {
+      return Boolean(node && node.choices && node.choices.length > 0 &&
+        dlgIdx === (node.dialogues || []).length - 1);
+    }
+
+    function currentReadStatus() {
+      const node = getNode(currentNodeId);
+      const line = node && node.dialogues && node.dialogues[dlgIdx];
+      return line ? readHistory.hasRead(node.id, dlgIdx, line)
+        : { read: false, error: "当前节点没有可记录的台词，快进已停用。" };
+    }
+
+    function setReadWarning(message) {
+      const warning = document.getElementById("read-warning");
+      warning.textContent = message || "";
+      warning.style.display = message ? "block" : "none";
+    }
+
+    function stopSkip(message, persistent) {
+      clearTimeout(autoTimer);
+      isSkip = false;
+      updatePlaybackButtons();
+      if (persistent) setReadWarning(message);
+      else if (message) showToast(message);
+    }
+
+    function markCurrentRead() {
+      const node = getNode(currentNodeId);
+      const line = node && node.dialogues && node.dialogues[dlgIdx];
+      if (!line) return;
+      const result = readHistory.markRead(node.id, dlgIdx, line);
+      if (!result.ok) stopSkip(result.error, true);
+      else setReadWarning(null);
+    }
+
     function startNewGame() {
       resetSessionState();
       currentNodeId = PROJECT.startNodeId || (PROJECT.nodes[0] && PROJECT.nodes[0].id);
@@ -795,6 +849,12 @@ export function buildStandaloneGameHtml(
       spEl.textContent = line.speakerName || "";
       spEl.style.color = line.speakerColor || "#38bdf8";
 
+      if (isSkip) {
+        const status = currentReadStatus();
+        if (!status.read || atChoice(node)) {
+          stopSkip(status.error || (atChoice(node) ? "已到选项，快进已暂停。" : "已到未读剧情，快进已停止。"), Boolean(status.error));
+        }
+      }
       startTyping(line.text || "");
       renderChoices(node);
     }
@@ -844,6 +904,8 @@ export function buildStandaloneGameHtml(
               showToast("选项状态或目标无效，未执行跳转");
               return;
             }
+            if (typedText === fullText) markCurrentRead();
+            if (isSkip) stopSkip();
             historyStack.push(captureHistory());
             if (nextAffection !== null) affection[ch.affectionCharacterId] = nextAffection;
             if (ch.setVarKey !== undefined && ch.setVarValue !== undefined) variables[ch.setVarKey] = ch.setVarValue;
@@ -862,6 +924,16 @@ export function buildStandaloneGameHtml(
     function advanceStep() {
       if (uiHidden || document.getElementById("modal-overlay").style.display === "flex" ||
           document.getElementById("main-menu").style.display !== "none") return;
+      const node = getNode(currentNodeId);
+      if (!node) return;
+      if (isSkip) {
+        // Recheck immediately before every advance, not only when enabling skip.
+        const status = currentReadStatus();
+        if (!status.read || atChoice(node)) {
+          stopSkip(status.error || (atChoice(node) ? "已到选项，快进已暂停。" : "已到未读剧情，快进已停止。"), Boolean(status.error));
+          return;
+        }
+      }
       if (typedText.length < fullText.length && !isSkip) {
         clearInterval(typingTimer);
         typedText = fullText;
@@ -869,8 +941,8 @@ export function buildStandaloneGameHtml(
         if (isAuto) autoTimer = setTimeout(advanceStep, 1600);
         return;
       }
-      const node = getNode(currentNodeId);
-      if (!node) return;
+      if (atChoice(node)) return;
+      if (!isSkip) markCurrentRead();
       if (node.dialogues && dlgIdx < node.dialogues.length - 1) {
         historyStack.push(captureHistory());
         dlgIdx++;
@@ -878,13 +950,14 @@ export function buildStandaloneGameHtml(
         persistSaveSlot("auto", 0);
         return;
       }
-      if (node.choices && node.choices.length > 0) return;
       if (node.nextNodeId) {
         historyStack.push(captureHistory());
         currentNodeId = node.nextNodeId;
         dlgIdx = 0;
         renderScene();
         persistSaveSlot("auto", 0);
+      } else if (isSkip) {
+        stopSkip("剧情已到末尾，快进已停止。");
       }
     }
 
@@ -905,18 +978,24 @@ export function buildStandaloneGameHtml(
       clearTimeout(autoTimer);
       isAuto = !isAuto;
       if (isAuto) isSkip = false;
-      document.getElementById("btn-auto")?.classList.toggle("active", isAuto);
-      document.getElementById("btn-skip")?.classList.toggle("active", isSkip);
+      updatePlaybackButtons();
       if (isAuto && typedText.length >= fullText.length) autoTimer = setTimeout(advanceStep, 1600);
     }
 
     function toggleSkip() {
       clearTimeout(autoTimer);
-      isSkip = !isSkip;
-      if (isSkip) isAuto = false;
-      document.getElementById("btn-auto")?.classList.toggle("active", isAuto);
-      document.getElementById("btn-skip")?.classList.toggle("active", isSkip);
-      if (isSkip) advanceStep();
+      if (isSkip) { stopSkip(); return; }
+      isAuto = false;
+      const status = currentReadStatus();
+      const choice = atChoice(getNode(currentNodeId));
+      if (!status.error) setReadWarning(null);
+      if (!status.read || choice) {
+        stopSkip(status.error || (choice ? "已到选项，快进已暂停。" : "当前剧情尚未读过，不能快进。"), Boolean(status.error));
+        return;
+      }
+      isSkip = true;
+      updatePlaybackButtons();
+      advanceStep();
     }
 
     function hideUI() {

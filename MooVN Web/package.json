@@ -12,6 +12,8 @@
     "test:e2e": "node --experimental-strip-types ../\"MooVN Studio\"/tests/browser-smoke.mjs --web",
     "test:branches:e2e": "node --experimental-strip-types ../\"MooVN Studio\"/tests/browser-branch-safety.mjs --web",
     "test:preview-state:e2e": "node --experimental-strip-types ../\"MooVN Studio\"/tests/browser-preview-state.mjs --web",
+    "test:read-skip:e2e": "node --experimental-strip-types '../MooVN Studio/tests/browser-read-skip.mjs' --web",
+    "test:read-skip-production:e2e": "node --experimental-strip-types '../MooVN Studio/tests/browser-read-skip-production.mjs' --web",
     "test:preview-script:e2e": "node --experimental-strip-types ../\"MooVN Studio\"/tests/browser-preview-script-safety.mjs --web",
     "preview": "vite preview --host 127.0.0.1 --port 5173",
     "tauri": "tauri",

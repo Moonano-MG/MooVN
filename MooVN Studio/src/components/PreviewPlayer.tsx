@@ -27,6 +27,7 @@ import {
   restorePreviewSlot,
 } from '../lib/previewState';
 import { inspectPreviewSaves } from '../lib/previewSaves';
+import { createReadHistory } from '../lib/readHistory';
 
 interface PreviewPlayerProps {
   project: VNProject;
@@ -74,6 +75,8 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
   const [showClueDrawer, setShowClueDrawer] = useState(false);
 
   const [typedText, setTypedText] = useState<string>('');
+  const [typedLineToken, setTypedLineToken] = useState('');
+  const typingTimer = useRef<number | null>(null);
   const [isTyping, setIsTyping] = useState<boolean>(false);
   const [isAutoPlay, setIsAutoPlay] = useState<boolean>(false);
   const [isSkipMode, setIsSkipMode] = useState<boolean>(false);
@@ -131,7 +134,51 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
   const sfx = currentNode.sfxId
     ? AUDIO_ASSETS.find((asset) => asset.id === currentNode.sfxId && asset.type === 'sfx') : undefined;
   const currentLine = currentNode.dialogues[dialogueIndex] || currentNode.dialogues[0];
+  const displayToken = JSON.stringify([playback.visit, currentNode.id, dialogueIndex, currentLine?.id]);
+  const currentTextFullyDisplayed = Boolean(currentLine && typedLineToken === displayToken &&
+    !isTyping && typedText === currentLine.text);
   const ui = project.uiConfig;
+  const readStorageKey = `moovn_preview_read_${project.id}`;
+  const readHistory = useMemo(() => createReadHistory(() => localStorage, readStorageKey), [readStorageKey]);
+  const [readRevision, setReadRevision] = useState(0);
+  const [readNotice, setReadNotice] = useState<string | null>(null);
+  const readStatus = useMemo(() => currentLine
+    ? readHistory.hasRead(currentNode.id, dialogueIndex, currentLine)
+    : { read: false, error: '当前节点没有可记录的台词，快进已停用。' },
+  [readHistory, currentNode.id, dialogueIndex, currentLine, readRevision]);
+  const canSkipCurrentLine = isSkipMode && readStatus.read && !previewIssue;
+  const isChoicePause = (currentNode.type === 'choice' || currentNode.type === 'timed_choice') &&
+    currentNode.choices.length > 0 && dialogueIndex === currentNode.dialogues.length - 1;
+
+  const markCurrentRead = useCallback(() => {
+    if (!currentLine || previewIssue) return;
+    const result = readHistory.markRead(currentNode.id, dialogueIndex, currentLine);
+    if (!result.ok) {
+      setIsSkipMode(false);
+      setReadNotice(result.error);
+      return;
+    }
+    setReadNotice(null);
+    setReadRevision((revision) => revision + 1);
+  }, [currentNode.id, currentLine, dialogueIndex, previewIssue, readHistory]);
+
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === readStorageKey || event.key === null) setReadRevision((revision) => revision + 1);
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [readStorageKey]);
+
+  // Do not wait for an effect to gate the timer: canSkipCurrentLine is false
+  // immediately on an unread line, including after a transition or reload.
+  useEffect(() => {
+    if (!isSkipMode || previewIssue) return;
+    if (!readStatus.read || isChoicePause) {
+      setIsSkipMode(false);
+      setReadNotice(readStatus.error || (isChoicePause ? '已到选项，快进已暂停。' : '已到未读剧情，快进已停止。'));
+    }
+  }, [isSkipMode, previewIssue, readStatus, isChoicePause]);
 
   const persistSaveSlot = useCallback(
     (tabId: SaveTabId, slotIndex: number) => {
@@ -306,12 +353,18 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
     };
   }, [isMuted, bgm, screenMode, previewIssue?.code, previewDefaults.bgmVolume]);
 
-  // Typewriter effect (skipped immediately in 快进 mode)
+  // Only previously read dialogue may bypass the typewriter in skip mode.
   useEffect(() => {
-    if (screenMode !== 'playing' || !currentLine) return;
+    if (screenMode !== 'playing') return;
+    setTypedLineToken(displayToken);
+    if (!currentLine) {
+      setTypedText('');
+      setIsTyping(false);
+      return;
+    }
     const full = currentLine.text;
 
-    if (isSkipMode || motionOff) {
+    if (canSkipCurrentLine || motionOff || full.length === 0) {
       setTypedText(full);
       setIsTyping(false);
       return;
@@ -320,18 +373,21 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
     setTypedText('');
     setIsTyping(true);
     let idx = 0;
-
-    const timer = setInterval(() => {
+    const timer = window.setInterval(() => {
       idx += 1;
       setTypedText(full.slice(0, idx));
       if (idx >= full.length) {
-        clearInterval(timer);
+        window.clearInterval(timer);
+        if (typingTimer.current === timer) typingTimer.current = null;
         setIsTyping(false);
       }
     }, textSpeedMs);
-
-    return () => clearInterval(timer);
-  }, [currentNodeId, dialogueIndex, currentLine, screenMode, textSpeedMs, isSkipMode, motionOff]);
+    typingTimer.current = timer;
+    return () => {
+      window.clearInterval(timer);
+      if (typingTimer.current === timer) typingTimer.current = null;
+    };
+  }, [displayToken, currentLine, screenMode, textSpeedMs, canSkipCurrentLine, motionOff]);
 
   const evaluateCondition = useCallback((): string | null => {
     const rule = currentNode.conditionRule;
@@ -374,25 +430,31 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
 
   const advance = useCallback(() => {
     if (isUiHidden || modalMode !== 'none') return;
+    if (isSkipMode) {
+      // The stored record can change in another tab between renders and timers.
+      const latest = currentLine ? readHistory.hasRead(currentNode.id, dialogueIndex, currentLine) : readStatus;
+      if (!latest.read || isChoicePause) {
+        setIsSkipMode(false);
+        setReadNotice(latest.error || (isChoicePause ? '已到选项，快进已暂停。' : '已到未读剧情，快进已停止。'));
+        return;
+      }
+    }
 
-    if (isTyping && !isSkipMode && currentLine) {
+    if (currentLine && !canSkipCurrentLine && !currentTextFullyDisplayed) {
+      if (typingTimer.current !== null) window.clearInterval(typingTimer.current);
+      typingTimer.current = null;
+      setTypedLineToken(displayToken);
       setTypedText(currentLine.text);
       setIsTyping(false);
       return;
     }
 
-    if (previewIssue) return;
+    if (previewIssue || isChoicePause) return;
+    if (!canSkipCurrentLine) markCurrentRead();
 
     if (dialogueIndex < currentNode.dialogues.length - 1) {
       setAutoSaveArmed(true);
       setPlayback((previous) => nextPreviewDialogue(previous, currentNode));
-      return;
-    }
-
-    if (
-      (currentNode.type === 'choice' || currentNode.type === 'timed_choice') &&
-      currentNode.choices.length > 0
-    ) {
       return;
     }
 
@@ -401,6 +463,9 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
       if (targetId) {
         setAutoSaveArmed(true);
         setPlayback((previous) => enterPreviewNode(previous, project, targetId));
+      } else if (canSkipCurrentLine) {
+        setIsSkipMode(false);
+        setReadNotice('剧情已到末尾，快进已停止。');
       }
       return;
     }
@@ -409,35 +474,38 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
     if (nextNodeId) {
       setAutoSaveArmed(true);
       setPlayback((previous) => enterPreviewNode(previous, project, nextNodeId));
+    } else if (canSkipCurrentLine) {
+      setIsSkipMode(false);
+      setReadNotice('剧情已到末尾，快进已停止。');
     }
   }, [
     isUiHidden,
     modalMode,
-    isTyping,
     isSkipMode,
+    canSkipCurrentLine,
+    currentTextFullyDisplayed,
+    displayToken,
+    readHistory,
+    readStatus,
     currentLine,
     dialogueIndex,
     currentNode,
-    currentNodeId,
     previewIssue,
+    isChoicePause,
+    markCurrentRead,
     evaluateCondition,
     project,
   ]);
 
-  // Auto-play / Skip-mode timer
+  // An unread line is never scheduled by skip mode, even before React effects run.
   useEffect(() => {
-    if (screenMode !== 'playing' || previewIssue || (!isAutoPlay && !isSkipMode) || isTyping) return;
-    const isChoicePause =
-      (currentNode.type === 'choice' || currentNode.type === 'timed_choice') &&
-      dialogueIndex === currentNode.dialogues.length - 1;
-    if (isChoicePause) return;
-
-    const delay = isSkipMode ? 110 : previewDefaults.autoPlayDelayMs;
-    const t = setTimeout(() => {
-      advance();
-    }, delay);
-    return () => clearTimeout(t);
-  }, [screenMode, isAutoPlay, isSkipMode, isTyping, advance, currentNode.type, dialogueIndex, currentNode.dialogues.length, previewIssue?.code, previewDefaults.autoPlayDelayMs]);
+    if (screenMode !== 'playing' || previewIssue || isChoicePause ||
+        (currentLine && !currentTextFullyDisplayed && !canSkipCurrentLine) ||
+        (!isAutoPlay && !canSkipCurrentLine)) return;
+    const delay = canSkipCurrentLine ? 110 : previewDefaults.autoPlayDelayMs;
+    const timer = setTimeout(advance, delay);
+    return () => clearTimeout(timer);
+  }, [screenMode, isAutoPlay, canSkipCurrentLine, currentLine, currentTextFullyDisplayed, advance, isChoicePause, previewIssue, previewDefaults.autoPlayDelayMs]);
 
   const stepBack = () => {
     if (historyStack.length === 0) return;
@@ -581,6 +649,7 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
       </div>
 
       {saveError && <div role="alert" className="px-3 py-1 text-xs text-rose-200 bg-rose-950">{saveError}</div>}
+      {readNotice && <div role="status" className="px-3 py-1 text-xs text-amber-100 bg-amber-950">{readNotice}</div>}
       {(bgmError || sfxError) && <div role="alert" className="px-3 py-1 text-xs text-amber-200 bg-amber-950">{bgmError || sfxError}</div>}
       {screenMode === 'playing' && !autoSaveArmed && (
         <div role="status" className="shrink-0 px-3 py-1 text-xs text-amber-100 bg-amber-950">
@@ -934,6 +1003,9 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
                       key={choice.id}
                       onClick={(e) => {
                         e.stopPropagation();
+                        // An early choice must not mark text the player has not seen.
+                        if (currentTextFullyDisplayed) markCurrentRead();
+                        setIsSkipMode(false);
                         setAutoSaveArmed(true);
                         setPlayback((previous) => enterPreviewNode(previous, project, choice.targetNodeId, choice));
                       }}
@@ -1023,8 +1095,8 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
                       }}
                       className="tracking-wide whitespace-pre-wrap"
                     >
-                      {typedText}
-                      {isTyping && (
+                      {typedLineToken === displayToken ? typedText : ''}
+                      {typedLineToken === displayToken && isTyping && (
                         <span className="inline-block w-1.5 h-5 bg-sky-400 ml-1 animate-pulse align-middle" />
                       )}
                     </p>
@@ -1052,7 +1124,12 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
                       <button
                         disabled={Boolean(previewIssue)}
                         title={previewIssue ? '当前节点包含未支持的内容，自动播放已暂停' : undefined}
-                        onClick={() => setIsAutoPlay((a) => !a)}
+                        aria-pressed={isAutoPlay}
+                        onClick={() => {
+                          setIsSkipMode(false);
+                          setReadNotice(null);
+                          setIsAutoPlay((active) => !active);
+                        }}
                         className={`px-3 py-1 rounded border text-xs transition disabled:opacity-35 ${
                           isAutoPlay
                             ? 'bg-sky-500/30 border-sky-400 text-white'
@@ -1066,7 +1143,21 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
                       <button
                         disabled={Boolean(previewIssue)}
                         title={previewIssue ? '当前节点包含未支持的内容，快进已暂停' : undefined}
-                        onClick={() => setIsSkipMode((s) => !s)}
+                        aria-pressed={isSkipMode}
+                        onClick={() => {
+                          if (isSkipMode) {
+                            setIsSkipMode(false);
+                            return;
+                          }
+                          setIsAutoPlay(false);
+                          const latest = currentLine ? readHistory.hasRead(currentNode.id, dialogueIndex, currentLine) : readStatus;
+                          if (!latest.read || isChoicePause) {
+                            setReadNotice(latest.error || (isChoicePause ? '已到选项，快进已暂停。' : '当前剧情尚未读过，不能快进。'));
+                            return;
+                          }
+                          setReadNotice(null);
+                          setIsSkipMode(true);
+                        }}
                         className={`px-3 py-1 rounded border text-xs transition disabled:opacity-35 ${
                           isSkipMode
                             ? 'bg-amber-500/30 border-amber-400 text-white'
