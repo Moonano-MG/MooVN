@@ -112,6 +112,17 @@ jobs:
       - name: Build Web bundle (PC & Mobile)
         run: npm run build
 
+      - name: Verify Web builds without Studio node_modules
+        run: npm run test:isolated-build
+
+      - name: Install Chromium for the production Web smoke test
+        working-directory: MooVN Studio
+        run: npx playwright-core install --with-deps chromium
+
+      - name: Browser-test the built Web pages
+        working-directory: MooVN Studio
+        run: npm run test:web-production:e2e
+
       - name: Upload Web (PC & Mobile) Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -197,6 +208,9 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Test startup gate failure handling
+        run: node --experimental-strip-types --test tests/windows-startup-smoke.test.mts
+
       - name: Generate Tauri icons
         run: npx tauri icon public/icon.png
 
@@ -206,9 +220,17 @@ jobs:
       - name: Require both Windows installer formats
         shell: pwsh
         run: |
-          $msi = Get-ChildItem 'src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi' -ErrorAction SilentlyContinue
-          $nsis = Get-ChildItem 'src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe' -ErrorAction SilentlyContinue
-          if (-not $msi -or -not $nsis) { throw 'Expected both MSI and NSIS installers.' }
+          $msi = @(Get-ChildItem 'src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi' -ErrorAction SilentlyContinue)
+          $nsis = @(Get-ChildItem 'src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe' -ErrorAction SilentlyContinue)
+          if ($msi.Count -ne 1 -or $nsis.Count -ne 1) { throw 'Expected both MSI and NSIS installers, exactly one of each.' }
+
+      - name: Install NSIS and smoke-test the actual desktop UI
+        shell: pwsh
+        run: |
+          $installer = @(Get-ChildItem 'src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe')
+          if ($installer.Count -ne 1) { throw 'Expected exactly one NSIS installer to test.' }
+          node scripts/windows-startup-smoke.mjs "$($installer[0].FullName)"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Upload Windows Installer Artifact
         uses: actions/upload-artifact@v4
@@ -217,7 +239,6 @@ jobs:
           path: |
             MooVN Studio/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
             MooVN Studio/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
-            MooVN Studio/src-tauri/target/x86_64-pc-windows-msvc/release/moovn.exe
           if-no-files-found: error
 
   # ============================================================================

@@ -8,6 +8,8 @@ interface Step {
   name?: string;
   uses?: string;
   run?: string;
+  if?: string;
+  'continue-on-error'?: boolean;
   with?: Record<string, unknown>;
 }
 interface Job {
@@ -58,4 +60,29 @@ test('manual platform builds fail if required artifacts are missing', () => {
   assert.match(commands('build-windows'), /Expected both MSI and NSIS/);
   assert.match(commands('build-macos'), /Expected a DMG and exactly one/);
   assert.match(commands('build-ios'), /No iOS app or IPA was produced/);
+});
+
+test('Windows release artifacts are gated on installing and opening the actual NSIS package', () => {
+  const steps = workflow('build.yml').jobs['build-windows'].steps;
+  const smokeIndex = steps.findIndex((step) => /node scripts\/windows-startup-smoke\.mjs/.test(step.run ?? ''));
+  const uploadIndex = steps.findIndex((step) => step.uses?.startsWith('actions/upload-artifact@'));
+  assert.ok(smokeIndex >= 0 && uploadIndex > smokeIndex, 'startup gate must precede artifact upload');
+  assert.notEqual(steps[smokeIndex]['continue-on-error'], true);
+  assert.equal(steps[smokeIndex].if, undefined, 'startup gate must not be conditional');
+  const paths = String(steps[uploadIndex].with?.path ?? '');
+  assert.match(paths, /bundle\/nsis\/\*\.exe/);
+  assert.match(paths, /bundle\/msi\/\*\.msi/);
+  assert.doesNotMatch(paths, /release\/moovn\.exe/, 'a raw executable is not an installer');
+  const qualitySteps = workflow('ci.yml').jobs['windows-tauri'].steps;
+  assert.ok(qualitySteps.some((step) => /node scripts\/windows-startup-smoke\.mjs/.test(step.run ?? '')),
+    'manual quality checks must be able to exercise a branch installer too');
+});
+
+test('manual Web builds also run isolated dependency and production browser regressions', () => {
+  const build = workflow('build.yml').jobs['build-web'].steps;
+  const quality = workflow('ci.yml').jobs.frontend.steps;
+  for (const steps of [build, quality]) {
+    assert.ok(steps.some((step) => /npm run test:isolated-build/.test(step.run ?? '')));
+    assert.ok(steps.some((step) => /npm run test:web-production:e2e/.test(step.run ?? '')));
+  }
 });
