@@ -28,7 +28,13 @@
     "test:branches:e2e": "node --experimental-strip-types tests/browser-branch-safety.mjs",
     "test:preview-state:e2e": "node --experimental-strip-types tests/browser-preview-state.mjs",
     "test:preview-script:e2e": "node --experimental-strip-types tests/browser-preview-script-safety.mjs",
-    "test:formats:e2e": "node --experimental-strip-types tests/browser-formats.mjs"
+    "test:formats:e2e": "node --experimental-strip-types tests/browser-formats.mjs",
+    "test:settings:e2e": "node --experimental-strip-types tests/browser-settings-import.mjs",
+    "test:standalone:e2e": "node --experimental-strip-types tests/browser-standalone-saves.mjs",
+    "test:preview-audio:e2e": "node --experimental-strip-types tests/browser-preview-audio.mjs",
+    "test:preferences:e2e": "node --experimental-strip-types 'tests/browser-editor-preferences.mjs'",
+    "test:audition:e2e": "node --experimental-strip-types 'tests/browser-audio-audition.mjs'",
+    "test:web-production:e2e": "node tests/browser-web-production.mjs"
   },
   "dependencies": {
     "@noble/hashes": "^2.4.0",

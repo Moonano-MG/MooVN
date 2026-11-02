@@ -12,7 +12,7 @@ import {
   Edit3,
   Play,
 } from 'lucide-react';
-import { ProjectScriptFile, SceneNode, VNProject } from '../types';
+import { ProjectScriptFile, SceneNode, ScriptLanguage, VNProject } from '../types';
 import { generateChapterYaml, exportChapterYaml } from '../lib/projectUtils';
 import {
   generateSingleNodeCode,
@@ -349,18 +349,33 @@ export function highlightCodeToHtml(code: string, ext: string): string {
     .join('\n');
 }
 
+const SCRIPT_SUFFIX: Record<ScriptLanguage, string> = {
+  typescript: 'ts', javascript: 'js', csharp: 'cs', cpp: 'cpp', rust: 'rs',
+};
+
+function nodeDraft(node: SceneNode, language: ScriptLanguage, project: VNProject): string {
+  if (node.customScript) return node.customScript;
+  if (language === 'javascript' || language === 'typescript') {
+    return generateNodeEngineFastScript(node, language) || generateSingleNodeCode(node, language, project);
+  }
+  // No host-language compiler/runtime exists here. Keep an honest blank draft
+  // instead of relabelling generated JS/TS as C#, C++ or Rust.
+  return '// 当前节点脚本草稿；预览不会执行脚本，宿主语言编译尚未实现。\n';
+}
+
 function buildDefaultWorkspaceFiles(
   project: VNProject,
   selectedChapterId: string,
   selectedNode?: SceneNode
 ): ProjectScriptFile[] {
   const nodeTarget = selectedNode || project.nodes[0];
-  const nodeFileName = nodeTarget ? `${nodeTarget.id}.ts` : 'node_1.ts';
-  const nodeContent = nodeTarget
-    ? nodeTarget.customScript ||
-      generateNodeEngineFastScript(nodeTarget, 'typescript') ||
-      generateSingleNodeCode(nodeTarget, 'typescript', project)
-    : '// 当前节点脚本\n';
+  const language = project.defaultLanguage;
+  const nodeLanguage = nodeTarget?.customScript ? (nodeTarget.scriptLanguage || 'typescript') : language;
+  const nodeFileName = `${nodeTarget?.id || 'node_1'}.${SCRIPT_SUFFIX[nodeLanguage]}`;
+  const nodeContent = nodeTarget ? nodeDraft(nodeTarget, nodeLanguage, project) : '// 当前节点脚本\n';
+  const mainContent = language === 'typescript' || language === 'javascript'
+    ? generateFullProjectCode(project, language)
+    : '// 工程脚本草稿；宿主语言编译与预览执行尚未实现。\n';
 
   return [
     {
@@ -371,8 +386,8 @@ function buildDefaultWorkspaceFiles(
     },
     {
       id: 'file-main-ts',
-      fileName: 'main.ts',
-      content: generateFullProjectCode(project, 'typescript'),
+      fileName: `main.${SCRIPT_SUFFIX[language]}`,
+      content: mainContent,
     },
     {
       id: 'file-chapter-yaml',
@@ -414,7 +429,7 @@ export const ScriptView: React.FC<ScriptViewProps> = ({
   );
   const [showExplorer, setShowExplorer] = useState<boolean>(true);
   const [isCreatingFile, setIsCreatingFile] = useState<boolean>(false);
-  const [newFileName, setNewFileName] = useState<string>('new_script.ts');
+  const [newFileName, setNewFileName] = useState<string>(() => `new_script.${SCRIPT_SUFFIX[project.defaultLanguage]}`);
   const [renamingFileId, setRenamingFileId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState<string>('');
   const [copied, setCopied] = useState<boolean>(false);
@@ -457,19 +472,17 @@ export const ScriptView: React.FC<ScriptViewProps> = ({
         const currentExt = f.fileName.includes('.')
           ? f.fileName.split('.').pop() || 'ts'
           : 'ts';
-        const nextFileName = `${selectedNode.id}.${currentExt}`;
-        const extMeta = getFileExtensionMeta(nextFileName);
-        const lang: EnginePolyglotLanguage =
-          extMeta.engineLang === 'yaml' || extMeta.engineLang === 'json'
+        const extMeta = getFileExtensionMeta(`node.${currentExt}`);
+        const lang: ScriptLanguage = selectedNode.customScript
+          ? (selectedNode.scriptLanguage || 'typescript')
+          : extMeta.engineLang === 'yaml' || extMeta.engineLang === 'json'
             ? 'typescript'
             : extMeta.engineLang;
         return {
           ...f,
-          fileName: nextFileName,
+          fileName: `${selectedNode.id}.${SCRIPT_SUFFIX[lang]}`,
           linkedNodeId: selectedNode.id,
-          content:
-            selectedNode.customScript ||
-            generateNodeEngineFastScript(selectedNode, lang),
+          content: nodeDraft(selectedNode, lang, project),
         };
       })
     );
@@ -520,8 +533,8 @@ export const ScriptView: React.FC<ScriptViewProps> = ({
   };
 
   const handleCreateNewFile = () => {
-    const clean = newFileName.trim() || `script_${files.length + 1}.ts`;
-    const finalName = clean.includes('.') ? clean : `${clean}.ts`;
+    const clean = newFileName.trim() || `script_${files.length + 1}.${SCRIPT_SUFFIX[project.defaultLanguage]}`;
+    const finalName = clean.includes('.') ? clean : `${clean}.${SCRIPT_SUFFIX[project.defaultLanguage]}`;
     const meta = getFileExtensionMeta(finalName);
 
     let starter = '';
@@ -548,7 +561,7 @@ export const ScriptView: React.FC<ScriptViewProps> = ({
     onUpdateProject?.({ scriptFiles: next });
     setActiveFileId(created.id);
     setIsCreatingFile(false);
-    setNewFileName('new_script.ts');
+    setNewFileName(`new_script.${SCRIPT_SUFFIX[project.defaultLanguage]}`);
   };
 
   const handleCommitRename = (fileId: string) => {
@@ -1049,11 +1062,13 @@ export const ScriptView: React.FC<ScriptViewProps> = ({
               <pre
                 ref={preRef}
                 aria-hidden="true"
+                style={{ color: '#d4d4d4' }}
                 className="absolute inset-0 m-0 py-3 px-3.5 font-mono text-[12.5px] leading-[20px] whitespace-pre overflow-hidden pointer-events-none select-none"
                 dangerouslySetInnerHTML={{ __html: highlightedHtml + '\n' }}
               />
               <textarea
                 ref={textareaRef}
+                aria-label="脚本代码"
                 value={code}
                 spellCheck={false}
                 autoCapitalize="off"
@@ -1068,7 +1083,7 @@ export const ScriptView: React.FC<ScriptViewProps> = ({
                   color: 'transparent',
                   caretColor: '#f4f4f5',
                 }}
-                className="absolute inset-0 w-full h-full m-0 py-3 px-3.5 font-mono text-[12.5px] leading-[20px] whitespace-pre bg-transparent border-0 resize-none focus:outline-none overflow-auto selection:bg-sky-500/30"
+                className="moovn-code-input absolute inset-0 w-full h-full m-0 py-3 px-3.5 font-mono text-[12.5px] leading-[20px] whitespace-pre bg-transparent border-0 resize-none focus:outline-none overflow-auto selection:bg-sky-500/30"
               />
             </div>
           </div>

@@ -74,7 +74,7 @@ function enterNode(project: VNProject, snapshot: PreviewSnapshot, nodeId: string
   return next;
 }
 
-export function createPreviewPlayback(project: VNProject, nodeId: string, enter = true, visit = 0): PreviewPlayback {
+export function createPreviewPlayback(project: VNProject, nodeId: string, enter = true, visit = 0, defaultTextSpeedMs = 24): PreviewPlayback {
   const affectionMap: PreviewSnapshot['affectionMap'] = {};
   const customAttrMap: PreviewSnapshot['customAttrMap'] = {};
   for (const character of project.characters) {
@@ -84,7 +84,7 @@ export function createPreviewPlayback(project: VNProject, nodeId: string, enter 
   const variablesMap: PreviewSnapshot['variablesMap'] = Object.fromEntries(project.variables.map((v) => [v.key, v.value]));
   const initial: PreviewSnapshot = {
     nodeId, dialogueIndex: 0, affectionMap, customAttrMap, variablesMap,
-    clues: [], textSpeedMs: 24, timedRemaining: null,
+    clues: [], textSpeedMs: defaultTextSpeedMs, timedRemaining: null,
   };
   return { current: enter ? enterNode(project, initial, nodeId) : initial, history: [], visit, entry: 'fresh' };
 }
@@ -128,10 +128,10 @@ export function backPreview(playback: PreviewPlayback): PreviewPlayback {
 }
 
 /** Slots without the preview snapshot fields require explicit legacy confirmation. */
-export function restorePreviewSlot(playback: PreviewPlayback, project: VNProject, slot: SaveSlotData): PreviewPlayback {
+export function restorePreviewSlot(playback: PreviewPlayback, project: VNProject, slot: SaveSlotData, defaultTextSpeedMs = 24): PreviewPlayback {
   const node = findNode(project, slot.nodeId);
   let clues: PreviewClue[] = [];
-  let textSpeedMs = 24;
+  let textSpeedMs = defaultTextSpeedMs;
   let timedRemaining = initialTimer(node, slot.dialogueIndex);
   if (slot.previewSnapshotVersion === 1) {
     if (!slot.clueSnapshot || slot.textSpeedSnapshot === undefined || slot.timedRemainingSnapshot === undefined) {

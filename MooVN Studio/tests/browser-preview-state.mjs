@@ -382,7 +382,7 @@ try {
     await page.getByRole('button', { name: '后退', exact: true }).click();
     await nodeVisible(page, 'ROOT_LINE');
     await page.locator('[data-scene-viewport="player"]').getByRole('button', { name: '设置', exact: true }).click();
-    assert.equal(await page.locator('[data-scene-viewport="player"] input[type=range]').inputValue(), '24');
+    assert.equal(await page.locator('[data-scene-viewport="player"] input[type=range]').inputValue(), '32'); // new session uses the editor's default speed
   });
 
   await runCase('restart from the same start node applies its effect once', () => {

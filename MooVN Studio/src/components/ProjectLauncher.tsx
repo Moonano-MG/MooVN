@@ -18,19 +18,24 @@ import {
 } from '../types';
 import {
   IS_WEB_EDITION,
+  SYSTEM_SETTINGS_CHANGED_EVENT,
+  SYSTEM_SETTINGS_STORAGE_KEY,
   createBlankVNProject,
   createSampleVNProject,
   deleteSavedProject,
+  downloadInvalidSystemSettings,
   exportSettingsFileJson,
+  inspectSystemSettings,
   loadSavedProjectsList,
   makeImportedProjectCopy,
   migrateLegacyRecentProjects,
-  loadSystemSettings,
   openSavedProject,
+  readSystemSettingsRaw,
   refreshWorkspacePaths,
   saveProjectToWorkspace,
-  saveSystemSettings,
+  saveSystemSettingsDetailed,
 } from '../lib/workspaceManager';
+import { MAX_SETTINGS_BYTES, parseSettingsImportJson } from '../lib/systemSettingsSchema';
 import { parseMpvnProject } from '../lib/mpvnFormat';
 import { getLatestDraft, type ProjectSnapshot } from '../lib/projectStorage';
 import { useUILanguage } from '../lib/i18n';
@@ -54,10 +59,34 @@ export const ProjectLauncher: React.FC<ProjectLauncherProps> = ({
     IS_WEB_EDITION ? 'create' : 'projects'
   );
   const [projects, setProjects] = useState<SavedProjectMeta[]>(() => loadSavedProjectsList());
-  const [settings, setSettings] = useState<MooVNSystemSettings>(() => loadSystemSettings());
+  const [initialSettings] = useState(inspectSystemSettings);
+  const [settings, setSettings] = useState<MooVNSystemSettings>(initialSettings.settings);
+  const [settingsIssue, setSettingsIssue] = useState(initialSettings);
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
+  const importSettingsAttempt = useRef(0);
   const [notice, setNotice] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const [draft, setDraft] = useState<ProjectSnapshot | null>(null);
+
+  useEffect(() => {
+    const refreshSettings = () => {
+      const inspection = inspectSystemSettings();
+      settingsRef.current = inspection.settings;
+      setSettings(inspection.settings);
+      setSettingsIssue(inspection);
+    };
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === SYSTEM_SETTINGS_STORAGE_KEY || event.key === null) refreshSettings();
+    };
+    window.addEventListener(SYSTEM_SETTINGS_CHANGED_EVENT, refreshSettings);
+    window.addEventListener('storage', onStorage);
+    return () => {
+      importSettingsAttempt.current += 1;
+      window.removeEventListener(SYSTEM_SETTINGS_CHANGED_EVENT, refreshSettings);
+      window.removeEventListener('storage', onStorage);
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -125,6 +154,14 @@ export const ProjectLauncher: React.FC<ProjectLauncherProps> = ({
   const importProjectInputRef = useRef<HTMLInputElement | null>(null);
   const importSettingsInputRef = useRef<HTMLInputElement | null>(null);
 
+  useEffect(() => {
+    const input = importSettingsInputRef.current;
+    // React's onCancel does not reliably handle file input cancellation.
+    const onCancel = () => { importSettingsAttempt.current += 1; };
+    input?.addEventListener('cancel', onCancel);
+    return () => input?.removeEventListener('cancel', onCancel);
+  }, []);
+
   const loadMpvnFileObject = (file: File) => {
     if (file.size > 16 * 1024 * 1024) {
       setNotice('ERR_FILE_TOO_LARGE: 工程文件超过 16 MiB');
@@ -151,11 +188,14 @@ export const ProjectLauncher: React.FC<ProjectLauncherProps> = ({
   };
 
   const updateSettings = (patch: Partial<MooVNSystemSettings>) => {
-    setSettings((prev) => {
-      const next = { ...prev, ...patch };
-      saveSystemSettings(next);
-      return next;
-    });
+    const next = { ...settingsRef.current, ...patch };
+    const saved = saveSystemSettingsDetailed(next);
+    if (!saved.ok) {
+      setNotice(saved.error);
+      return;
+    }
+    settingsRef.current = next;
+    setSettings(next);
   };
 
   const handleCreateProject = async () => {
@@ -190,23 +230,64 @@ export const ProjectLauncher: React.FC<ProjectLauncherProps> = ({
   };
 
   const handleImportSettingsFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const attempt = ++importSettingsAttempt.current;
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
+    if (file.size > MAX_SETTINGS_BYTES) {
+      setNotice('ERR_SETTINGS_TOO_LARGE: 设置文件超过 256 KiB，未导入');
+      return;
+    }
+    const beforeRead = readSystemSettingsRaw();
+    if (!beforeRead.ok) {
+      setNotice(beforeRead.error);
+      return;
+    }
     const reader = new FileReader();
     reader.onload = () => {
-      try {
-        const parsed = JSON.parse(String(reader.result)) as MooVNSystemSettings;
-        if (parsed && parsed.workspaceRootPath) {
-          saveSystemSettings(parsed);
-          setSettings(parsed);
-          setNotice('已导入并应用 settings.moovn.json 设置文件');
-        }
-      } catch {
-        setNotice('设置文件格式无效');
+      if (attempt !== importSettingsAttempt.current) return;
+      if (typeof reader.result !== 'string') {
+        setNotice('ERR_SETTINGS_READ: 无法读取设置文件，原设置未更改');
+        return;
       }
+      const parsed = parseSettingsImportJson(reader.result);
+      if (!parsed.ok) {
+        setNotice(`${parsed.error}；原设置未更改`);
+        return;
+      }
+      // Paths, platform and mounted-folder identity belong to this device, not the file.
+      const next: MooVNSystemSettings = {
+        ...settingsRef.current,
+        editorConfig: parsed.value.editorConfig,
+        defaultGameSettings: parsed.value.defaultGameSettings,
+        performanceConfig: parsed.value.performanceConfig,
+      };
+      const saved = saveSystemSettingsDetailed(next, beforeRead.raw);
+      if (!saved.ok) {
+        if (saved.error.startsWith('ERR_SETTINGS_CHANGED:')) {
+          const current = inspectSystemSettings();
+          settingsRef.current = current.settings;
+          setSettings(current.settings);
+          setSettingsIssue(current);
+        }
+        setNotice(saved.error);
+        return;
+      }
+      settingsRef.current = next;
+      setSettings(next);
+      setNotice('设置已导入本机应用存储；本机路径不变，磁盘设置文件未自动更新');
     };
-    reader.readAsText(file);
-    e.target.value = '';
+    reader.onerror = () => {
+      if (attempt === importSettingsAttempt.current) setNotice('ERR_SETTINGS_READ: 无法读取设置文件，原设置未更改');
+    };
+    reader.onabort = () => {
+      if (attempt === importSettingsAttempt.current) setNotice('ERR_SETTINGS_READ: 设置文件读取已取消，原设置未更改');
+    };
+    try {
+      reader.readAsText(file);
+    } catch {
+      setNotice('ERR_SETTINGS_READ: 无法读取设置文件，原设置未更改');
+    }
   };
 
   return (
@@ -297,6 +378,21 @@ export const ProjectLauncher: React.FC<ProjectLauncherProps> = ({
 
       {/* Main Content */}
       <div className="flex-1 overflow-y-auto p-6 max-w-5xl w-full mx-auto">
+        {settingsIssue.warning && (
+          <div role="alert" className="mb-4 px-3 py-2 rounded-md border border-amber-500/50 bg-amber-950/30 text-amber-200 text-xs flex flex-wrap items-center justify-between gap-2">
+            <span>{settingsIssue.warning}</span>
+            {settingsIssue.invalidRaw !== undefined && (
+              <button type="button" className="px-2 py-1 border border-amber-400 rounded" onClick={() => {
+                if (settingsIssue.invalidRaw === undefined) return;
+                try {
+                  downloadInvalidSystemSettings(settingsIssue.invalidRaw);
+                } catch {
+                  setNotice('ERR_SETTINGS_DOWNLOAD: 无法下载原始设置');
+                }
+              }}>下载原始设置</button>
+            )}
+          </div>
+        )}
         {notice && (
           <div role="status" className="mb-4 px-3 py-2 rounded-md bg-[#1c1c20] border border-[#2e2e36] text-xs text-zinc-200 flex items-center justify-between">
             <span className="flex items-center gap-1.5">
@@ -642,25 +738,34 @@ export const ProjectLauncher: React.FC<ProjectLauncherProps> = ({
                     导入设置文件
                   </button>
                   <button
-                    onClick={() => exportSettingsFileJson(settings)}
-                    className="px-2.5 py-1 rounded bg-zinc-200 hover:bg-white text-zinc-950 font-medium text-[11px] flex items-center gap-1"
+                    disabled={Boolean(settingsIssue.warning)}
+                    onClick={() => {
+                      try {
+                        exportSettingsFileJson(settings);
+                      } catch {
+                        setNotice('ERR_SETTINGS_DOWNLOAD: 无法下载设置');
+                      }
+                    }}
+                    className="px-2.5 py-1 rounded bg-zinc-200 hover:bg-white disabled:opacity-50 text-zinc-950 font-medium text-[11px] flex items-center gap-1"
                   >
                     <Download className="w-3 h-3" strokeWidth={1.6} />
-                    保存 settings.moovn.json
+                    下载 settings.moovn.json
                   </button>
                 </div>
               </div>
+              <p className="text-[11px] text-zinc-400">仅接受完整的当前格式；缺失或未知字段将被拒绝，本机路径不会从文件导入。</p>
 
               <div className="grid grid-cols-3 gap-4 pt-1">
                 <div>
                   <div className="flex justify-between text-[11px] text-zinc-400 mb-1">
-                    <span>默认文字打字速度</span>
+                    <span>预览默认文字打字速度</span>
                     <span>{settings.defaultGameSettings.textSpeedMs}ms/字</span>
                   </div>
                   <input
                     type="range"
                     min={10}
                     max={80}
+                    step={1}
                     value={settings.defaultGameSettings.textSpeedMs}
                     onChange={(e) =>
                       updateSettings({
@@ -675,7 +780,7 @@ export const ProjectLauncher: React.FC<ProjectLauncherProps> = ({
 
                 <div>
                   <div className="flex justify-between text-[11px] text-zinc-400 mb-1">
-                    <span>默认 BGM 音量</span>
+                    <span>预览默认 BGM 音量</span>
                     <span>{settings.defaultGameSettings.bgmVolume}%</span>
                   </div>
                   <input

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   X,
   FolderOpen,
@@ -11,10 +11,13 @@ import {
 import { MooVNSystemSettings, VNProject } from '../types';
 import {
   IS_WEB_EDITION,
-  loadSystemSettings,
+  downloadInvalidSystemSettings,
+  downloadSystemSettingsBackup,
+  inspectSystemSettings,
   refreshWorkspacePaths,
+  readSystemSettingsRaw,
   resetSystemSettings,
-  saveSystemSettings,
+  saveSystemSettingsDetailed,
   syncSystemSettingsToDisk,
 } from '../lib/workspaceManager';
 import {
@@ -34,12 +37,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onUpdateProject,
   onClose,
 }) => {
-  const [settings, setSettings] = useState<MooVNSystemSettings>(loadSystemSettings);
+  const [initialSettings] = useState(inspectSystemSettings);
+  // A settings dialog is an editable draft. Do not replace newer changes made
+  // in another tab or elsewhere while the dialog was open.
+  const initialRaw = useRef(readSystemSettingsRaw());
+  const [settings, setSettings] = useState<MooVNSystemSettings>(initialSettings.settings);
+  const [settingsIssue, setSettingsIssue] = useState(initialSettings);
   const { lang, setLang, t } = useUILanguage();
   const [activeTab, setActiveTab] = useState<
     'general' | 'game_defaults' | 'workspace'
   >('general');
-  const [savedToast, setSavedToast] = useState<string | null>(null);
+  const [savedToast, setSavedToast] = useState<{ message: string; error: boolean } | null>(null);
+  const [resetBackupKey, setResetBackupKey] = useState<string | undefined>();
 
   useEffect(() => {
     if (IS_WEB_EDITION) return;
@@ -47,29 +56,42 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     refreshWorkspacePaths().then((paths) => {
       if (active) setSettings((previous) => ({ ...previous, ...paths }));
     }).catch((error: unknown) => {
-      if (active) setSavedToast(error instanceof Error ? error.message : String(error));
+      if (active) setSavedToast({ message: error instanceof Error ? error.message : String(error), error: true });
     });
     return () => { active = false; };
   }, []);
 
   const handleSaveAll = async () => {
-    if (!saveSystemSettings(settings)) {
-      setSavedToast('ERR_SETTINGS_STORAGE: 设置保存失败');
+    if (!initialRaw.current.ok) {
+      setSavedToast({ message: initialRaw.current.error, error: true });
       return;
     }
+    const saved = saveSystemSettingsDetailed(settings, initialRaw.current.raw);
+    if (!saved.ok) {
+      setSavedToast({ message: saved.error, error: true });
+      return;
+    }
+    initialRaw.current = readSystemSettingsRaw();
+    setSettingsIssue(inspectSystemSettings());
     if (!IS_WEB_EDITION && !(await syncSystemSettingsToDisk(settings))) {
-      setSavedToast('ERR_SETTINGS_WRITE: 无法写入桌面设置文件');
+      setSavedToast({ message: 'ERR_SETTINGS_WRITE: 本机应用设置已保存，但无法写入桌面设置文件', error: true });
       return;
     }
-    setSavedToast('设置已保存');
-    setTimeout(() => setSavedToast(null), 2000);
+    setSavedToast({ message: '设置已保存', error: false });
   };
 
   const handleReset = () => {
-    const def = resetSystemSettings();
-    setSettings(def);
-    setSavedToast('已恢复默认设置');
-    setTimeout(() => setSavedToast(null), 2000);
+    if (!window.confirm('将恢复默认设置。当前本机设置会先备份；备份失败时不会覆盖。继续吗？')) return;
+    const result = resetSystemSettings();
+    if (!result.ok) {
+      setSavedToast({ message: result.error, error: true });
+      return;
+    }
+    setSettings(result.settings);
+    initialRaw.current = readSystemSettingsRaw();
+    setSettingsIssue(inspectSystemSettings());
+    setResetBackupKey(result.backupKey);
+    setSavedToast({ message: result.backupKey ? '已恢复默认；原设置已备份到本机存储' : '已恢复默认设置', error: false });
   };
 
   const tabs = [
@@ -95,7 +117,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   ];
 
   return (
-    <div className="fixed inset-0 z-[600] bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 select-none">
+    <div role="dialog" aria-modal="true" aria-label={t('settings.title')} className="fixed inset-0 z-[600] bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 select-none">
       <div className="w-full max-w-2xl bg-[#161619] border border-[#27272c] rounded-lg shadow-2xl overflow-hidden flex flex-col max-h-[86vh]">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-2.5 bg-[#121215] border-b border-[#27272c] shrink-0">
@@ -106,6 +128,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             <X className="w-4 h-4" strokeWidth={1.6} />
           </button>
         </div>
+
+        {settingsIssue.warning && (
+          <div role="alert" className="px-4 py-2 border-b border-amber-500/50 bg-amber-950/30 text-amber-200 text-xs flex flex-wrap items-center justify-between gap-2">
+            <span>{settingsIssue.warning}</span>
+            {settingsIssue.invalidRaw !== undefined && (
+              <button type="button" className="px-2 py-1 border border-amber-400 rounded" onClick={() => {
+                if (settingsIssue.invalidRaw === undefined) return;
+                try {
+                  downloadInvalidSystemSettings(settingsIssue.invalidRaw);
+                } catch {
+                  setSavedToast({ message: 'ERR_SETTINGS_DOWNLOAD: 无法下载原始设置', error: true });
+                }
+              }}>下载原始设置</button>
+            )}
+          </div>
+        )}
 
         {/* Main Content: Left Sidebar Tabs + Right Panel */}
         <div className="flex flex-1 min-h-0 overflow-hidden text-xs">
@@ -252,6 +290,27 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       }
                     />
                   </label>
+                  <label className="block text-[11px] text-zinc-300">
+                    新建项目的默认脚本语言
+                    <select
+                      aria-label="新建项目的默认脚本语言"
+                      value={settings.editorConfig.defaultScriptLang}
+                      onChange={(event) => {
+                        const language = event.target.value;
+                        if (language === 'typescript' || language === 'javascript' || language === 'csharp' || language === 'cpp' || language === 'rust') {
+                          setSettings({ ...settings, editorConfig: { ...settings.editorConfig, defaultScriptLang: language } });
+                        }
+                      }}
+                      className="block w-full mt-1 px-2 py-1"
+                    >
+                      <option value="typescript">TypeScript</option>
+                      <option value="javascript">JavaScript</option>
+                      <option value="csharp">C#</option>
+                      <option value="cpp">C++</option>
+                      <option value="rust">Rust</option>
+                    </select>
+                    <span className="block mt-1 text-zinc-500">只影响新建空白工程的脚本草稿与后缀；不自动翻译，非 JS/TS 宿主程序和预览脚本执行尚未实现。</span>
+                  </label>
                 </div>
               </>
             )}
@@ -260,8 +319,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             {activeTab === 'game_defaults' && (
               <div className="p-3.5 rounded-md bg-[#1c1c21] border border-[#27272c] space-y-4">
                 <div className="text-xs font-semibold text-zinc-100">
-                  游戏运行默认参数
+                  编辑器预览默认参数
                 </div>
+                <p className="text-zinc-400">仅用于 Studio/Web 预览，不写入工程或 HTML 游戏。内置音频是简单合成音；上传音频和语音暂不支持。</p>
 
                 <label className="block text-[11px] text-zinc-300 space-y-1">
                   <span>动效（关闭时暂停角色视频、CSS 动画和打字机；天气尚未实现）</span>
@@ -294,7 +354,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     type="range"
                     min={10}
                     max={80}
-                    step={2}
+                    step={1}
                     value={settings.defaultGameSettings.textSpeedMs}
                     onChange={(e) =>
                       setSettings({
@@ -402,8 +462,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="px-4 py-2.5 bg-[#121215] border-t border-[#27272c] flex items-center justify-between text-xs shrink-0">
-          <div className="flex items-center gap-2">
+        <div className="px-4 py-2.5 bg-[#121215] border-t border-[#27272c] flex flex-wrap gap-2 items-center justify-between text-xs shrink-0">
+          <div className="flex flex-wrap min-w-0 items-center gap-2">
             <button
               type="button"
               onClick={handleReset}
@@ -413,10 +473,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <span>恢复默认</span>
             </button>
             {savedToast && (
-              <span className="text-emerald-400 flex items-center gap-1">
-                <Check className="w-3.5 h-3.5" />
-                {savedToast}
+              <span role={savedToast.error ? 'alert' : 'status'} className={`${savedToast.error ? 'text-amber-300' : 'text-emerald-400'} flex items-center gap-1`}>
+                {!savedToast.error && <Check className="w-3.5 h-3.5" />}
+                {savedToast.message}
               </span>
+            )}
+            {resetBackupKey && (
+              <button type="button" className="underline text-zinc-300" onClick={() => {
+                try {
+                  downloadSystemSettingsBackup(resetBackupKey);
+                } catch {
+                  setSavedToast({ message: 'ERR_SETTINGS_DOWNLOAD: 无法下载备份', error: true });
+                }
+              }}>下载本次备份</button>
             )}
           </div>
 

@@ -12,7 +12,8 @@ import {
   BookOpen,
 } from 'lucide-react';
 import { VNProject, SaveTabId, SaveSlotData } from '../types';
-import { getBackgroundById, getCharacterById, getAudioById } from '../data/assets';
+import { AUDIO_ASSETS, getBackgroundById, getCharacterById } from '../data/assets';
+import { loadSystemSettings } from '../lib/workspaceManager';
 import { soundEngine } from '../lib/soundEngine';
 import { CharacterMediaRenderer } from './CharacterMediaRenderer';
 import { characterPlacementStyle } from '../lib/characterPlacement';
@@ -60,8 +61,10 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
   const [screenMode, setScreenMode] = useState<'main_menu' | 'playing'>(
     initialNodeId ? 'playing' : 'main_menu'
   );
+  // These are editor preview preferences; they do not change an exported game.
+  const [previewDefaults] = useState(() => loadSystemSettings().defaultGameSettings);
   const [playback, setPlayback] = useState(() =>
-    createPreviewPlayback(project, initialNodeId || project.startNodeId, Boolean(initialNodeId))
+    createPreviewPlayback(project, initialNodeId || project.startNodeId, Boolean(initialNodeId), 0, previewDefaults.textSpeedMs)
   );
   const {
     nodeId: currentNodeId, dialogueIndex, affectionMap, customAttrMap, variablesMap,
@@ -79,6 +82,8 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
     'hidden'
   );
   const [isMuted, setIsMuted] = useState<boolean>(false);
+  const [bgmError, setBgmError] = useState<string | null>(null);
+  const [sfxError, setSfxError] = useState<string | null>(null);
 
   const [showDevDebug, setShowDevDebug] = useState<boolean>(false);
 
@@ -113,6 +118,7 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
   const invalidSlotKeys = useRef(new Set(initialSaveState.invalidKeys));
   const initialSaveReadFailed = useRef(Boolean(initialSaveState.readError));
   const appliedVisitRef = useRef<number | null>(null);
+  const sfxVisitRef = useRef<number | null>(null);
 
   const currentNode =
     project.nodes.find((n) => n.id === currentNodeId) || project.nodes[0];
@@ -120,7 +126,10 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
   const currentChapter =
     project.chapters.find((c) => c.id === currentNode.chapterId) || project.chapters[0];
   const bg = getBackgroundById(currentNode.backgroundId);
-  const bgm = currentNode.bgmId ? getAudioById(currentNode.bgmId) : null;
+  const bgm = currentNode.type !== 'bgm_stop'
+    ? AUDIO_ASSETS.find((asset) => asset.id === currentNode.bgmId && asset.type === 'bgm') : undefined;
+  const sfx = currentNode.sfxId
+    ? AUDIO_ASSETS.find((asset) => asset.id === currentNode.sfxId && asset.type === 'sfx') : undefined;
   const currentLine = currentNode.dialogues[dialogueIndex] || currentNode.dialogues[0];
   const ui = project.uiConfig;
 
@@ -208,6 +217,25 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
     }
   }, [screenMode, currentNode, previewIssue, playback.visit, playback.entry]);
 
+  // Delay the one-shot to the next task so React StrictMode's development-only
+  // setup/cleanup cycle cannot cancel the only playback or play it twice.
+  useEffect(() => {
+    if (screenMode !== 'playing' || previewIssue || playback.entry !== 'fresh' || sfxVisitRef.current === playback.visit) return;
+    const visit = playback.visit;
+    const timer = window.setTimeout(() => {
+      if (sfxVisitRef.current === visit) return;
+      sfxVisitRef.current = visit;
+      setSfxError(null);
+      if (sfx && !isMuted) soundEngine.playSfx(sfx, previewDefaults.sfxVolume, setSfxError);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [screenMode, previewIssue, playback.entry, playback.visit, sfx, isMuted, previewDefaults.sfxVolume]);
+
+  useEffect(() => {
+    if (screenMode !== 'playing' || previewIssue || isMuted) soundEngine.stopSfx();
+  }, [screenMode, previewIssue, isMuted]);
+  useEffect(() => () => soundEngine.stopSfx(), []);
+
   // Pause autoplay/skip as soon as an unsupported node is encountered.
   useEffect(() => {
     if (screenMode === 'playing' && previewIssue) {
@@ -261,17 +289,22 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
     };
   }, [isUiHidden]);
 
-  // Play BGM
+  // Built-in synthesised BGM only; volume is an editor preview preference.
   useEffect(() => {
+    let active = true;
+    setBgmError(null);
     if (screenMode === 'playing' && !previewIssue && !isMuted && bgm) {
-      soundEngine.playBgm(bgm);
+      soundEngine.playBgm(bgm, previewDefaults.bgmVolume, (message) => {
+        if (active) setBgmError(message);
+      });
     } else {
       soundEngine.stopBgm();
     }
     return () => {
+      active = false;
       soundEngine.stopBgm();
     };
-  }, [currentNode?.bgmId, isMuted, bgm, screenMode, previewIssue?.code]);
+  }, [isMuted, bgm, screenMode, previewIssue?.code, previewDefaults.bgmVolume]);
 
   // Typewriter effect (skipped immediately in 快进 mode)
   useEffect(() => {
@@ -399,12 +432,12 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
       dialogueIndex === currentNode.dialogues.length - 1;
     if (isChoicePause) return;
 
-    const delay = isSkipMode ? 110 : 1650;
+    const delay = isSkipMode ? 110 : previewDefaults.autoPlayDelayMs;
     const t = setTimeout(() => {
       advance();
     }, delay);
     return () => clearTimeout(t);
-  }, [screenMode, isAutoPlay, isSkipMode, isTyping, advance, currentNode.type, dialogueIndex, currentNode.dialogues.length, previewIssue?.code]);
+  }, [screenMode, isAutoPlay, isSkipMode, isTyping, advance, currentNode.type, dialogueIndex, currentNode.dialogues.length, previewIssue?.code, previewDefaults.autoPlayDelayMs]);
 
   const stepBack = () => {
     if (historyStack.length === 0) return;
@@ -439,7 +472,7 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
     setPendingLegacySlot(null);
     setSaveError(invalidSlotKeys.current.size ? '部分存档槽损坏或版本不支持，已保留原数据。' : null);
     setAutoSaveArmed(false);
-    setPlayback((previous) => restorePreviewSlot(previous, project, slot));
+    setPlayback((previous) => restorePreviewSlot(previous, project, slot, previewDefaults.textSpeedMs));
     setIsAutoPlay(false);
     setIsSkipMode(false);
     setIsUiHidden(false);
@@ -450,7 +483,7 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
 
   const startNewGame = () => {
     setAutoSaveArmed(true);
-    setPlayback((previous) => createPreviewPlayback(project, project.startNodeId, true, previous.visit + 1));
+    setPlayback((previous) => createPreviewPlayback(project, project.startNodeId, true, previous.visit + 1, previewDefaults.textSpeedMs));
     setPendingLegacySlot(null);
     setIsAutoPlay(false);
     setIsSkipMode(false);
@@ -527,6 +560,7 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
 
           <button
             onClick={() => setIsMuted((m) => !m)}
+            aria-label={isMuted ? '取消静音' : '静音'}
             className="flex items-center gap-1 px-2 py-0.5 rounded bg-[#252529] hover:bg-[#323238]"
           >
             {isMuted ? (
@@ -547,6 +581,7 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
       </div>
 
       {saveError && <div role="alert" className="px-3 py-1 text-xs text-rose-200 bg-rose-950">{saveError}</div>}
+      {(bgmError || sfxError) && <div role="alert" className="px-3 py-1 text-xs text-amber-200 bg-amber-950">{bgmError || sfxError}</div>}
       {screenMode === 'playing' && !autoSaveArmed && (
         <div role="status" className="shrink-0 px-3 py-1 text-xs text-amber-100 bg-amber-950">
           {invalidSlotKeys.current.has('auto-1')
@@ -1228,8 +1263,8 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
                   <input
                     type="range"
                     min={10}
-                    max={60}
-                    step={2}
+                    max={80}
+                    step={1}
                     value={textSpeedMs}
                     onChange={(e) => {
                       const value = Number(e.target.value);
