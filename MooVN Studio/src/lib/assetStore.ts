@@ -1,5 +1,6 @@
 import type { AvatarLayerTextureMap, VNProject } from '../types.ts';
 import { isTauriEnvironment, readAssetViaTauri, storeAssetViaTauri } from './tauriBridge.ts';
+import { classifyProjectMedia } from './projectMediaPolicy.ts';
 
 export const MAX_ASSET_BYTES = 100 * 1024 * 1024;
 export const ASSET_PREFIX = 'moovn-asset://';
@@ -186,16 +187,27 @@ export async function hydrateAssetsForHtmlExport(project: VNProject): Promise<VN
   const copy = structuredClone(project);
   const refs = new Map<string, Promise<string>>();
   const pending: Promise<void>[] = [];
+  const resources: Array<{ value: string; kind: 'workspace' | 'bundled'; replace: (value: string) => void }> = [];
+  // Preflight the whole project before starting any fetch or asset read.
   forEachProjectMedia(copy, (value, replace) => {
-    if (/^https?:\/\//i.test(value)) {
+    const reference = classifyProjectMedia(value);
+    if (reference.kind === 'remote') {
       throw new Error('ERR_EXPORT_EXTERNAL_MEDIA: 请先将远程媒体导入工程，再生成离线 HTML。');
     }
-    if (!value.startsWith(ASSET_PREFIX) && !value.startsWith('/images/')) return;
+    if (reference.kind === 'invalid') {
+      const code = value.startsWith(ASSET_PREFIX) ? 'ERR_ASSET_REFERENCE' : 'ERR_EXPORT_MEDIA_REFERENCE';
+      throw new Error(`${code}: ${reference.reason}；请导入本地素材。`);
+    }
+    if (reference.kind === 'workspace' || reference.kind === 'bundled') {
+      resources.push({ value, kind: reference.kind, replace });
+    }
+  });
+  for (const { value, kind, replace } of resources) {
     let data = refs.get(value);
     if (!data) {
-      data = value.startsWith(ASSET_PREFIX)
+      data = kind === 'workspace'
         ? readAsset(value).then(blobToDataUrl)
-        : fetch(value).then(async (response) => {
+        : fetch(value, { credentials: 'omit', redirect: 'error', referrerPolicy: 'no-referrer' }).then(async (response) => {
             if (!response.ok) throw new Error(`ERR_EXPORT_ASSET: 无法读取 ${value}`);
             const blob = await response.blob();
             if (!blob.type.startsWith('image/') && !blob.type.startsWith('video/')) throw new Error(`ERR_EXPORT_ASSET: 无效媒体 ${value}`);
@@ -204,7 +216,7 @@ export async function hydrateAssetsForHtmlExport(project: VNProject): Promise<VN
       refs.set(value, data);
     }
     pending.push(data.then(replace));
-  });
+  }
   await Promise.all(pending);
   return copy;
 }

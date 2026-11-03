@@ -35,6 +35,20 @@ Studio preview or standalone HTML save paths, which currently have no save-slot
 checksum. Rust and TypeScript v2 canonicalization do not match for all inputs,
 and no cross-language v3 has been established.
 
+Project-supplied character images, videos and layer textures are not requested
+by the stage, preview or asset workshop until the user approves that exact set
+of URLs. Approval is scoped to the current character display and project
+session; switching nodes, closing it or stopping remote media revokes it. An
+approved request uses `credentials: omit`, no referrer and `redirect: error`,
+then displays a size-limited, supported-type blob. CORS and the existing desktop
+CSP can still prevent loading. Consent is not proof that a remote server or its
+content is trustworthy: it sees the IP, request time and potentially the Origin.
+Unknown `/images/` paths and URLs containing credentials are refused; import
+those files locally instead. The HTML exporter rejects remote media even after
+preview approval. Bundled images still rely on the application host; other
+project capabilities and real Tauri/Windows/Android paths are not covered by
+this browser regression and untrusted projects have not been fully audited.
+
 ## CSP and HTML exports
 
 The configured desktop CSP restricts script sources, disallows objects and

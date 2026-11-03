@@ -16,6 +16,7 @@ import { AUDIO_ASSETS, getBackgroundById, getCharacterById } from '../data/asset
 import { loadSystemSettings } from '../lib/workspaceManager';
 import { soundEngine } from '../lib/soundEngine';
 import { CharacterMediaRenderer } from './CharacterMediaRenderer';
+import { ProjectMediaNoticeArea } from './ProjectMediaGate';
 import { characterPlacementStyle } from '../lib/characterPlacement';
 import { useReducedMotion } from '../lib/useReducedMotion';
 import { getUnsupportedPreviewIssue } from '../lib/previewSupport';
@@ -870,57 +871,62 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
             )}
 
             {/* Characters Layer (Supports Static Images, GIF/WebP Animations, and MP4/WebM Video Sprites!) */}
-            {!previewIssue && <div className="absolute inset-0 pointer-events-none">
-              {currentNode.characters.map((pl) => {
-                const charProfile = project.characters.find((c) => c.id === pl.characterId);
-                const activeSpriteId =
-                  currentLine?.speakerId === pl.characterId && currentLine?.expressionSpriteId
-                    ? currentLine.expressionSpriteId
-                    : currentNode.type === 'char_expression' &&
-                      currentNode.targetExpressionCharId === pl.characterId &&
-                      currentNode.targetExpressionSpriteId
-                    ? currentNode.targetExpressionSpriteId
-                    : pl.spriteId;
-                const sprite = getCharacterById(activeSpriteId);
-                const mediaSrc = pl.mediaUrl || charProfile?.mediaUrl || (activeSpriteId ? sprite.path : '');
-                const mediaType =
-                  pl.mediaType || charProfile?.mediaType || sprite.mediaType || 'image';
-                const idleMotion = pl.idleMotion || charProfile?.idleMotion || 'none';
-                const chromaKeyColor = pl.chromaKeyColor || charProfile?.chromaKeyColor;
-                const isSpeaking = currentLine?.speakerId === pl.characterId;
+            {!previewIssue && (
+              <ProjectMediaNoticeArea>
+                <div className="absolute inset-0 pointer-events-none">
+                  {currentNode.characters.map((pl) => {
+                    const charProfile = project.characters.find((c) => c.id === pl.characterId);
+                    const activeSpriteId =
+                      currentLine?.speakerId === pl.characterId && currentLine?.expressionSpriteId
+                        ? currentLine.expressionSpriteId
+                        : currentNode.type === 'char_expression' &&
+                          currentNode.targetExpressionCharId === pl.characterId &&
+                          currentNode.targetExpressionSpriteId
+                        ? currentNode.targetExpressionSpriteId
+                        : pl.spriteId;
+                    const sprite = getCharacterById(activeSpriteId);
+                    const mediaSrc = pl.mediaUrl || charProfile?.mediaUrl || (activeSpriteId ? sprite.path : '');
+                    const mediaType =
+                      pl.mediaType || charProfile?.mediaType || sprite.mediaType || 'image';
+                    const idleMotion = pl.idleMotion || charProfile?.idleMotion || 'none';
+                    const chromaKeyColor = pl.chromaKeyColor || charProfile?.chromaKeyColor;
+                    const isSpeaking = currentLine?.speakerId === pl.characterId;
 
-                return (
-                  <div
-                    key={pl.id}
-                    data-character-placement={pl.id}
-                    style={characterPlacementStyle(pl)}
-                    className={`absolute transition-all duration-300 ${
-                      isSpeaking ? 'brightness-105 z-20' : 'brightness-90 z-10'
-                    }`}
-                  >
-                    <CharacterMediaRenderer
-                      mediaUrl={mediaSrc}
-                      alt={pl.name}
-                      layerTextures={pl.layerTextures || charProfile?.layerTextures}
-                      mediaType={
-                        mediaType === 'video' || mediaType === 'animated_image'
-                          ? mediaType
-                          : 'static'
-                      }
-                      videoLoop={pl.videoLoop ?? charProfile?.videoLoop ?? true}
-                      videoPlaybackRate={
-                        pl.videoPlaybackRate ?? charProfile?.videoPlaybackRate ?? 1
-                      }
-                      chromaKeyColor={chromaKeyColor}
-                      idleMotion={idleMotion === 'breathe' ? 'breathe' : 'none'}
-                      motionLevel={motionLevel}
-                      isTalking={isSpeaking && isTyping}
-                      className="w-full h-auto drop-shadow-[0_20px_40px_rgba(0,0,0,0.72)]"
-                    />
-                  </div>
-                );
-              })}
-            </div>}
+                    return (
+                      <div
+                        key={pl.id}
+                        data-character-placement={pl.id}
+                        style={characterPlacementStyle(pl)}
+                        className={`absolute transition-all duration-300 ${
+                          isSpeaking ? 'brightness-105 z-20' : 'brightness-90 z-10'
+                        }`}
+                      >
+                        <CharacterMediaRenderer
+                          key={JSON.stringify([currentNode.id, pl.id])}
+                          mediaUrl={mediaSrc}
+                          alt={pl.name}
+                          layerTextures={pl.layerTextures || charProfile?.layerTextures}
+                          mediaType={
+                            mediaType === 'video' || mediaType === 'animated_image'
+                              ? mediaType
+                              : 'static'
+                          }
+                          videoLoop={pl.videoLoop ?? charProfile?.videoLoop ?? true}
+                          videoPlaybackRate={
+                            pl.videoPlaybackRate ?? charProfile?.videoPlaybackRate ?? 1
+                          }
+                          chromaKeyColor={chromaKeyColor}
+                          idleMotion={idleMotion === 'breathe' ? 'breathe' : 'none'}
+                          motionLevel={motionLevel}
+                          isTalking={isSpeaking && isTyping}
+                          className="w-full h-auto drop-shadow-[0_20px_40px_rgba(0,0,0,0.72)]"
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              </ProjectMediaNoticeArea>
+            )}
 
             {/* Screen Text / Chapter Banner / Cinematic Subtitle Layer */}
             {!previewIssue && currentNode.screenTextConfig && (

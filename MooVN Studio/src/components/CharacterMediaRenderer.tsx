@@ -11,6 +11,7 @@ import {
   newImageAvatar,
 } from '../lib/avatarSystem';
 import { ASSET_PREFIX, readAsset } from '../lib/assetStore';
+import { ProjectMediaGate } from './ProjectMediaGate';
 
 interface CharacterMediaRendererProps {
   mediaUrl: string;
@@ -102,7 +103,21 @@ function parseHexRgb(hex: string): [number, number, number] | null {
   return null;
 }
 
-export const CharacterMediaRenderer: React.FC<CharacterMediaRendererProps> = ({
+export const CharacterMediaRenderer: React.FC<CharacterMediaRendererProps> = (props) => (
+  <ProjectMediaGate mediaUrl={props.mediaUrl} layerTextures={props.layerTextures} alt={props.alt} className={props.className} style={props.style}>
+    {(mediaUrl, layerTextures) => (
+      <ResolvedCharacterMediaRenderer
+        {...props}
+        mediaUrl={mediaUrl}
+        layerTextures={layerTextures}
+        // Blob URLs have no filename; retain detection based on the original reference.
+        mediaType={detectCharacterMediaType(props.mediaUrl, props.mediaType)}
+      />
+    )}
+  </ProjectMediaGate>
+);
+
+const ResolvedCharacterMediaRenderer: React.FC<CharacterMediaRendererProps> = ({
   mediaUrl: sourceMediaUrl,
   alt,
   mediaType,
