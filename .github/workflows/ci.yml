@@ -66,6 +66,14 @@ jobs:
         if: ${{ github.event_name == 'workflow_dispatch' }}
         working-directory: MooVN Studio
         run: npm run test:formats:e2e
+      - name: Browser remote media privacy (Studio, manual)
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        working-directory: MooVN Studio
+        run: npm run test:remote-media:e2e
+      - name: Browser remote media privacy (Web, manual)
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        working-directory: MooVN Web
+        run: npm run test:remote-media:e2e
       - uses: dtolnay/rust-toolchain@stable
       - name: Browser and native asset I/O regression (manual, simulated IPC)
         if: ${{ github.event_name == 'workflow_dispatch' }}
@@ -84,6 +92,8 @@ jobs:
             MooVN Studio/test-results/browser-smoke/
             MooVN Studio/test-results/browser-formats/
             MooVN Studio/test-results/browser-native-assets/
+            MooVN Studio/test-results/browser-remote-media/
+            MooVN Web/test-results/browser-remote-media/
             MooVN Studio/test-results/browser-web-production/
           if-no-files-found: warn
 

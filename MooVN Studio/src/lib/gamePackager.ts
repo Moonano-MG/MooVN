@@ -27,7 +27,7 @@ export async function createStandaloneAssetCatalog(project: VNProject): Promise<
     let result = urlCache.get(path);
     if (!result) {
       result = (async () => {
-        const response = await fetch(path);
+        const response = await fetch(path, { credentials: 'omit', redirect: 'error', referrerPolicy: 'no-referrer' });
         if (!response.ok) throw new Error(`ERR_EXPORT_ASSET: 无法读取 ${path} (${response.status})`);
         const blob = await response.blob();
         if (!blob.type.startsWith('image/')) throw new Error(`ERR_EXPORT_ASSET: ${path} 不是可用图片`);

@@ -21,6 +21,7 @@ import {
   newImageAvatar,
 } from '../lib/avatarSystem';
 import { CharacterMediaRenderer } from './CharacterMediaRenderer';
+import { ProjectMediaNoticeArea } from './ProjectMediaGate';
 
 interface AssetStudioPanelProps {
   project: VNProject;
@@ -727,16 +728,19 @@ export const AssetStudioPanel: React.FC<AssetStudioPanelProps> = ({
                 </div>
               </div>
 
-              <div className="h-52 rounded border border-[#27272c] bg-[#0d0d11] flex items-end justify-center overflow-hidden p-2">
-                <CharacterMediaRenderer
-                  mediaUrl={avatarDiagnostic.baseTex}
-                  alt={selectedCharacter.name}
-                  layerTextures={selectedCharacter.layerTextures}
-                  blinkEnabled={testBlink}
-                  isTalking={testTalking}
-                  motionLevel={motionLevel}
-                  className="h-48 w-auto"
-                />
+              <div className="relative h-52 rounded border border-[#27272c] bg-[#0d0d11] flex items-end justify-center overflow-hidden p-2">
+                <ProjectMediaNoticeArea>
+                  <CharacterMediaRenderer
+                    key={JSON.stringify([selectedNode?.id ?? null, selectedCharacter.id])}
+                    mediaUrl={avatarDiagnostic.baseTex}
+                    alt={selectedCharacter.name}
+                    layerTextures={selectedCharacter.layerTextures}
+                    blinkEnabled={testBlink}
+                    isTalking={testTalking}
+                    motionLevel={motionLevel}
+                    className="h-48 w-auto"
+                  />
+                </ProjectMediaNoticeArea>
               </div>
             </div>
           )}

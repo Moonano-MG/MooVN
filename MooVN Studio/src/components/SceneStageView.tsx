@@ -24,6 +24,7 @@ import {
   BACKGROUND_ASSETS,
 } from '../data/assets';
 import { CharacterMediaRenderer, isVideoMediaSource } from './CharacterMediaRenderer';
+import { ProjectMediaNoticeArea } from './ProjectMediaGate';
 import { characterPlacementStyle, draggedPlacement, placementGrabOffset, pointerPercent } from '../lib/characterPlacement';
 
 interface SceneStageViewProps {
@@ -414,61 +415,64 @@ export const SceneStageView: React.FC<SceneStageViewProps> = ({
           />
 
           {/* Characters (Supports Static Images, GIF/WebP Animations, and MP4/WebM Video Sprites!) */}
-          {node.characters.map((pl) => {
-            const charProfile = characters.find((c) => c.id === pl.characterId);
-            const activeSpriteId =
-              currentDialogue?.speakerId === pl.characterId &&
-              currentDialogue?.expressionSpriteId
-                ? currentDialogue.expressionSpriteId
-                : pl.spriteId;
-            const sprite = getCharacterById(activeSpriteId);
-            const mediaSrc = pl.mediaUrl || charProfile?.mediaUrl || (activeSpriteId ? sprite.path : '');
-            const mediaType = pl.mediaType || charProfile?.mediaType || sprite.mediaType || 'image';
-            const idleMotion = pl.idleMotion || charProfile?.idleMotion || 'none';
-            const chromaKeyColor = pl.chromaKeyColor || charProfile?.chromaKeyColor;
-            const isSpeaking = currentDialogue?.speakerId === pl.characterId;
-            const isSelected = pl.id === selectedCharacterPlacementId;
+          <ProjectMediaNoticeArea>
+            {node.characters.map((pl) => {
+              const charProfile = characters.find((c) => c.id === pl.characterId);
+              const activeSpriteId =
+                currentDialogue?.speakerId === pl.characterId &&
+                currentDialogue?.expressionSpriteId
+                  ? currentDialogue.expressionSpriteId
+                  : pl.spriteId;
+              const sprite = getCharacterById(activeSpriteId);
+              const mediaSrc = pl.mediaUrl || charProfile?.mediaUrl || (activeSpriteId ? sprite.path : '');
+              const mediaType = pl.mediaType || charProfile?.mediaType || sprite.mediaType || 'image';
+              const idleMotion = pl.idleMotion || charProfile?.idleMotion || 'none';
+              const chromaKeyColor = pl.chromaKeyColor || charProfile?.chromaKeyColor;
+              const isSpeaking = currentDialogue?.speakerId === pl.characterId;
+              const isSelected = pl.id === selectedCharacterPlacementId;
 
-            return (
-              <div
-                key={pl.id}
-                data-character-placement={pl.id}
-                onMouseDown={(e) => {
-                  if (e.button !== 0) return;
-                  e.stopPropagation();
-                  beginCharacterDrag(pl, e.clientX, e.clientY);
-                }}
-                onTouchStart={(e) => {
-                  e.stopPropagation();
-                  const touch = e.touches[0];
-                  if (touch) beginCharacterDrag(pl, touch.clientX, touch.clientY);
-                }}
-                onClick={(e) => e.stopPropagation()}
-                style={characterPlacementStyle(pl)}
-                className={`absolute cursor-move ${
-                  isSelected ? 'z-20 ring-2 ring-sky-400 rounded' : 'z-10'
-                }`}
-              >
-                <CharacterMediaRenderer
-                  mediaUrl={mediaSrc}
-                  alt={pl.name}
-                  layerTextures={pl.layerTextures || charProfile?.layerTextures}
-                  mediaType={
-                    mediaType === 'video' || mediaType === 'animated_image'
-                      ? mediaType
-                      : 'static'
-                  }
-                  videoLoop={pl.videoLoop ?? charProfile?.videoLoop ?? true}
-                  videoPlaybackRate={pl.videoPlaybackRate ?? charProfile?.videoPlaybackRate ?? 1}
-                  chromaKeyColor={chromaKeyColor}
-                  idleMotion={idleMotion === 'breathe' ? 'breathe' : 'none'}
-                  motionLevel={motionLevel}
-                  isTalking={isSpeaking}
-                  className="w-full h-auto pointer-events-none select-none drop-shadow-[0_14px_28px_rgba(0,0,0,0.68)]"
-                />
-              </div>
-            );
-          })}
+              return (
+                <div
+                  key={pl.id}
+                  data-character-placement={pl.id}
+                  onMouseDown={(e) => {
+                    if (e.button !== 0) return;
+                    e.stopPropagation();
+                    beginCharacterDrag(pl, e.clientX, e.clientY);
+                  }}
+                  onTouchStart={(e) => {
+                    e.stopPropagation();
+                    const touch = e.touches[0];
+                    if (touch) beginCharacterDrag(pl, touch.clientX, touch.clientY);
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                  style={characterPlacementStyle(pl)}
+                  className={`absolute cursor-move ${
+                    isSelected ? 'z-20 ring-2 ring-sky-400 rounded' : 'z-10'
+                  }`}
+                >
+                  <CharacterMediaRenderer
+                    key={JSON.stringify([node.id, pl.id])}
+                    mediaUrl={mediaSrc}
+                    alt={pl.name}
+                    layerTextures={pl.layerTextures || charProfile?.layerTextures}
+                    mediaType={
+                      mediaType === 'video' || mediaType === 'animated_image'
+                        ? mediaType
+                        : 'static'
+                    }
+                    videoLoop={pl.videoLoop ?? charProfile?.videoLoop ?? true}
+                    videoPlaybackRate={pl.videoPlaybackRate ?? charProfile?.videoPlaybackRate ?? 1}
+                    chromaKeyColor={chromaKeyColor}
+                    idleMotion={idleMotion === 'breathe' ? 'breathe' : 'none'}
+                    motionLevel={motionLevel}
+                    isTalking={isSpeaking}
+                    className="w-full h-auto pointer-events-none select-none drop-shadow-[0_14px_28px_rgba(0,0,0,0.68)]"
+                  />
+                </div>
+              );
+            })}
+          </ProjectMediaNoticeArea>
 
           {/* Draggable Screen Text */}
           {node.screenTextConfig && (

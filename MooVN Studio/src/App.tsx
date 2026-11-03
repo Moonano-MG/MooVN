@@ -1226,6 +1226,7 @@ export function App({
       case 'stage':
         return selectedNode ? (
           <SceneStageView
+            key={projectSessionRef.current}
             node={selectedNode}
             characters={project.characters}
             uiConfig={project.uiConfig}
@@ -1334,6 +1335,7 @@ export function App({
       case 'asset_studio':
         return (
           <AssetStudioPanel
+            key={projectSessionRef.current}
             project={project}
             selectedNode={selectedNode}
             motionLevel={motionLevel}
@@ -1776,6 +1778,7 @@ export function App({
           {selectedNode && (mobilePinStage || mobileActivePanel === 'stage') && (
             <div className="shrink-0 border-b border-[#27272c] bg-[#111113]">
               <SceneStageView
+                key={projectSessionRef.current}
                 node={selectedNode}
                 characters={project.characters}
                 uiConfig={project.uiConfig}
@@ -2265,6 +2268,7 @@ export function App({
       {/* Modals */}
       {isPlayingPreview && (
         <PreviewPlayer
+          key={projectSessionRef.current}
           project={project}
           initialNodeId={selectedNodeId || project.startNodeId}
           motionLevel={motionLevel}
