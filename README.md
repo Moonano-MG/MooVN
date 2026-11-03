@@ -22,11 +22,13 @@ MooVN 是开发中的视觉小说创作工具，包含 React/TypeScript 工作�
 
 Studio/Web 预览回退保存当前已模拟的变量、好感、角色属性、词条、文字速度和限时剩余；读档后此前的回退历史会清空。旧预览存档未完整记录词条、文字速度或限时状态，读取前会提示并要求确认；损坏或较新版本的槽位保留原数据。打开预览或刚读档不会立刻覆盖已有自动存档，推进剧情或开始新游戏后会更新。预览仍未实现全部节点，不能据此保证其他运行时行为一致；跨标签页存档竞争也尚未解决。
 
+Studio/Web 预览和实验性 HTML 播放器仅快进已完整显示并推进过的台词；遇到未读台词、选项或无台词节点会停止，不会自动选择。旧版没有已读记录，升级后需要重新阅读；修改台词内容后该句也会重新视为未读。已读记录包含台词内容，保存在当前浏览器或 WebView 的本地存储中；预览和导出的 HTML 各自独立，不跨设备同步，清除浏览器数据会丢失。记录损坏、超限或存储失败时会提示并保留原记录，不能快进未确认的内容；跨标签页同时写入仍不能保证原子性，其他运行时尚未实现或验收此功能。
+
 预览不执行自定义脚本、函数调用或脚本桥接积木（包括标准 `moovn.save.create`），遇到这些内容会暂停并保留上一个有效存档；未闭合的注释也会暂停。仅含可识别空白和完整注释的节点自定义脚本不会触发脚本动作，可以继续预览；无法确认的内容及嵌套脚本积木、函数调用和桥接积木仍会暂停。此限制也适用于其他嵌套代码，原内容不会被删除。HTML 导出另行阻止未支持的脚本；此止损不代表脚本解析执行或跨端语义已实现。
 
 ## 开发
 
-需要 Node.js **22.6 或更新版本**和 npm。当前两端共用 Studio 的测试及源码：干净检出后须在 `MooVN Studio/` 和 `MooVN Web/` 分别运行 `npm ci`，再在两目录运行 `npm test` 和 `npm run build`。分支安全和预览状态浏览器回归可在两目录分别运行 `npm run test:branches:e2e` 和 `npm run test:preview-state:e2e`，需要可用的 Chromium（可通过 `MOOVN_CHROMIUM_PATH` 指定）。Rust 引擎使用 `cargo test`；桌面端还需 Tauri 对应平台构建依赖。
+需要 Node.js **22.6 或更新版本**和 npm。当前两端共用 Studio 的测试及源码：干净检出后须在 `MooVN Studio/` 和 `MooVN Web/` 分别运行 `npm ci`，再在两目录运行 `npm test` 和 `npm run build`。浏览器回归可在两目录运行 `npm run test:branches:e2e`、`npm run test:preview-state:e2e` 和 `npm run test:read-skip:e2e`；Studio 目录还可运行 `npm run test:standalone-skip:e2e`。先构建后，两目录的 `npm run test:read-skip-production:e2e` 会从生产界面导出并以 `file://` 测试 HTML。以上测试需要可用的 Chromium（可通过 `MOOVN_CHROMIUM_PATH` 指定）。Rust 引擎使用 `cargo test`；桌面端还需 Tauri 对应平台构建依赖。
 
 ## 许可证和游戏输出边界
 
