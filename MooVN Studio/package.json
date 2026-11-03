@@ -23,6 +23,7 @@
     "test:e2e": "node --experimental-strip-types tests/browser-smoke.mjs",
     "test:p0:e2e": "node --experimental-strip-types tests/browser-p0.mjs",
     "test:assets:e2e": "node --experimental-strip-types tests/browser-asset-export.mjs",
+    "test:native-assets:e2e": "node --experimental-strip-types tests/browser-native-assets.mjs",
     "test:math-input:e2e": "node --experimental-strip-types tests/browser-math-input.mjs",
     "test:containers:e2e": "node --experimental-strip-types tests/browser-empty-container.mjs",
     "test:branches:e2e": "node --experimental-strip-types tests/browser-branch-safety.mjs",

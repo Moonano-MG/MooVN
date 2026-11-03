@@ -75,7 +75,7 @@ export const AssetStudioPanel: React.FC<AssetStudioPanelProps> = ({
   );
   const [testTalking, setTestTalking] = useState<boolean>(false);
   const [testBlink, setTestBlink] = useState<boolean>(true);
-  const [layerUploadStatus, setLayerUploadStatus] = useState<string>('');
+  const [layerUploadStatus, setLayerUploadStatus] = useState<{ kind: 'success' | 'error'; message: string } | null>(null);
 
   const selectedCharacter = useMemo(
     () =>
@@ -357,11 +357,12 @@ export const AssetStudioPanel: React.FC<AssetStudioPanelProps> = ({
         });
       }
     }
-    setLayerUploadStatus(
-      dataUrl
+    setLayerUploadStatus({
+      kind: 'success',
+      message: dataUrl
         ? `已为「${selectedCharacter.name}」绑定图层 ${layerId}`
-        : `已移除「${selectedCharacter.name}」的图层 ${layerId}`
-    );
+        : `已移除「${selectedCharacter.name}」的图层 ${layerId}`,
+    });
   };
 
   const bgPreviewStyle =
@@ -603,6 +604,21 @@ export const AssetStudioPanel: React.FC<AssetStudioPanelProps> = ({
       ) : (
         /* ==================== L0 / L1 Layered Avatar Inspector & Binder ==================== */
         <div className="flex-1 overflow-y-auto p-3 space-y-3">
+          {layerUploadStatus && (
+            <div
+              role={layerUploadStatus.kind === 'error' ? 'alert' : 'status'}
+              className={`sticky top-0 z-10 p-2 rounded border text-[11px] flex items-start gap-1.5 ${
+                layerUploadStatus.kind === 'error'
+                  ? 'bg-rose-950 border-rose-500/60 text-rose-100'
+                  : 'bg-emerald-950 border-emerald-500/40 text-emerald-100'
+              }`}
+            >
+              {layerUploadStatus.kind === 'error'
+                ? <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-rose-300" />
+                : <Check className="w-3.5 h-3.5 shrink-0 text-emerald-400" />}
+              <span className="min-w-0 break-words">{layerUploadStatus.message}</span>
+            </div>
+          )}
           {/* Character Selector & Level Badge */}
           <div className="p-2.5 rounded-lg bg-[#121215] border border-[#27272c] space-y-2">
             <div className="flex items-center justify-between gap-2">
@@ -771,7 +787,7 @@ export const AssetStudioPanel: React.FC<AssetStudioPanelProps> = ({
                               try {
                                 handleUpdateCharacterLayer(layerId, await importAsset(file));
                               } catch (error: unknown) {
-                                setLayerUploadStatus(error instanceof Error ? error.message : String(error));
+                                setLayerUploadStatus({ kind: 'error', message: error instanceof Error ? error.message : String(error) });
                               }
                             }}
                           />
@@ -790,13 +806,6 @@ export const AssetStudioPanel: React.FC<AssetStudioPanelProps> = ({
                   );
                 })}
               </div>
-            </div>
-          )}
-
-          {layerUploadStatus && (
-            <div className="p-2 rounded bg-emerald-950/30 border border-emerald-500/30 text-[11px] text-emerald-200 flex items-center gap-1.5">
-              <Check className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
-              <span>{layerUploadStatus}</span>
             </div>
           )}
         </div>

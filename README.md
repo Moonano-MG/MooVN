@@ -24,11 +24,13 @@ Studio/Web 预览回退保存当前已模拟的变量、好感、角色属性、
 
 Studio/Web 预览和实验性 HTML 播放器仅快进已完整显示并推进过的台词；遇到未读台词、选项或无台词节点会停止，不会自动选择。旧版没有已读记录，升级后需要重新阅读；修改台词内容后该句也会重新视为未读。已读记录包含台词内容，保存在当前浏览器或 WebView 的本地存储中；预览和导出的 HTML 各自独立，不跨设备同步，清除浏览器数据会丢失。记录损坏、超限或存储失败时会提示并保留原记录，不能快进未确认的内容；跨标签页同时写入仍不能保证原子性，其他运行时尚未实现或验收此功能。
 
+原生素材上传在提交前校验实际临时文件的 SHA-256，并以不覆盖既有文件的硬链接创建内容地址；重复导入会先校验并复用原文件，发现同名冲突会保留文件并报错。文件系统不支持硬链接时导入会失败，不会降级为覆盖。提交后目录同步或临时文件清理失败时资源可能已经存在，应先检查和备份工作区；意外退出也可能遗留临时文件。该机制未消除外部进程恶意替换路径或同时修改文件的所有竞态，也不是防篡改保证；Windows 和 Android 真机尚未验收。
+
 预览不执行自定义脚本、函数调用或脚本桥接积木（包括标准 `moovn.save.create`），遇到这些内容会暂停并保留上一个有效存档；未闭合的注释也会暂停。仅含可识别空白和完整注释的节点自定义脚本不会触发脚本动作，可以继续预览；无法确认的内容及嵌套脚本积木、函数调用和桥接积木仍会暂停。此限制也适用于其他嵌套代码，原内容不会被删除。HTML 导出另行阻止未支持的脚本；此止损不代表脚本解析执行或跨端语义已实现。
 
 ## 开发
 
-需要 Node.js **22.6 或更新版本**和 npm。当前两端共用 Studio 的测试及源码：干净检出后须在 `MooVN Studio/` 和 `MooVN Web/` 分别运行 `npm ci`，再在两目录运行 `npm test` 和 `npm run build`。浏览器回归可在两目录运行 `npm run test:branches:e2e`、`npm run test:preview-state:e2e` 和 `npm run test:read-skip:e2e`；Studio 目录还可运行 `npm run test:standalone-skip:e2e`。先构建后，两目录的 `npm run test:read-skip-production:e2e` 会从生产界面导出并以 `file://` 测试 HTML。以上测试需要可用的 Chromium（可通过 `MOOVN_CHROMIUM_PATH` 指定）。Rust 引擎使用 `cargo test`；桌面端还需 Tauri 对应平台构建依赖。
+需要 Node.js **22.6 或更新版本**和 npm。当前两端共用 Studio 的测试及源码：干净检出后须在 `MooVN Studio/` 和 `MooVN Web/` 分别运行 `npm ci`，再在两目录运行 `npm test` 和 `npm run build`。浏览器回归可在两目录运行 `npm run test:branches:e2e`、`npm run test:preview-state:e2e` 和 `npm run test:read-skip:e2e`；Studio 目录还可运行 `npm run test:standalone-skip:e2e`。先构建后，两目录的 `npm run test:read-skip-production:e2e` 会从生产界面导出并以 `file://` 测试 HTML。以上测试需要可用的 Chromium（可通过 `MOOVN_CHROMIUM_PATH` 指定）。Rust 引擎使用 `cargo test`；原生工作区与素材 I/O 可在 Studio 目录运行 `cargo test --locked --manifest-path tests/native-io/Cargo.toml`。`npm run test:native-assets:e2e` 需要 Cargo 和 Chromium，用真实编辑器界面及原生 I/O 模块、模拟 IPC 和临时工作区验证素材导入，不等同于安装版或 Tauri 测试。桌面端还需 Tauri 对应平台构建依赖。
 
 ## 许可证和游戏输出边界
 

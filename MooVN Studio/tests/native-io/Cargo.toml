@@ -1,0 +1,17 @@
+[package]
+name = "moovn-native-io-tests"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+path = "../workspace-io-harness.rs"
+
+[[bin]]
+name = "asset-io-worker"
+path = "asset-worker.rs"
+
+[dependencies]
+# Keep this identical to src-tauri/Cargo.toml: the harness includes the real
+# native modules and does not replace the hashing or filesystem implementation.
+sha2 = "=0.10.9"
