@@ -11,5 +11,6 @@ The repository uses [GPL-3.0](../LICENSE) as its base license. The root LICENSE 
 - @noble/hashes — MIT, Paul Miller and contributors; used for unkeyed SHA-256 project and chapter checksums.
 - Tauri v2 — Apache-2.0 OR MIT, The Commons Conservancy and contributors.
 - Serde and serde_json — Apache-2.0 OR MIT, respective contributors.
+- RustCrypto [`sha2` 0.10.9](https://github.com/RustCrypto/hashes/tree/sha2-v0.10.9/sha2) — MIT OR Apache-2.0, RustCrypto Developers; used to verify native content-addressed assets before commit. Its transitive dependency versions/licenses must also be reviewed for each distribution; the native I/O test harness pins its own dependencies in `tests/native-io/Cargo.lock`.
 
 The provenance and redistribution permissions of bundled artwork are not yet fully documented. Do not assume the source-code license grants rights over artwork whose provenance has not been established. Obtain independent permission before redistribution when necessary.

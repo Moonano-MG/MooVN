@@ -139,7 +139,11 @@ export async function storeAssetViaTauri(fileName: string, bytes: Uint8Array): P
     const finish = await invokeTauriCommand<string>('finish_asset_upload', { token });
     if (!finish.ok || !finish.data) throw new Error(finish.error || 'ERR_ASSET_WRITE: 资源提交失败');
   } catch (error) {
-    await invokeTauriCommand<void>('abort_asset_upload', { token });
+    const cleanup = await invokeTauriCommand<void>('abort_asset_upload', { token });
+    if (!cleanup.ok) {
+      const original = error instanceof Error ? error.message : String(error);
+      throw new Error(`${original}；上传临时文件清理失败：${cleanup.error || 'ERR_ASSET_CLEANUP'}`);
+    }
     throw error;
   }
 }

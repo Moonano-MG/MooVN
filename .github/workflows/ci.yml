@@ -66,6 +66,11 @@ jobs:
         if: ${{ github.event_name == 'workflow_dispatch' }}
         working-directory: MooVN Studio
         run: npm run test:formats:e2e
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Browser and native asset I/O regression (manual, simulated IPC)
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        working-directory: MooVN Studio
+        run: npm run test:native-assets:e2e
       - name: Browser test built Web assets (manual)
         if: ${{ github.event_name == 'workflow_dispatch' }}
         working-directory: MooVN Studio
@@ -78,6 +83,7 @@ jobs:
           path: |
             MooVN Studio/test-results/browser-smoke/
             MooVN Studio/test-results/browser-formats/
+            MooVN Studio/test-results/browser-native-assets/
             MooVN Studio/test-results/browser-web-production/
           if-no-files-found: warn
 
@@ -96,9 +102,7 @@ jobs:
         run: g++ -std=c++20 -Wall -Wextra -Icpp/include -c cpp/src/moovn_renderer_bridge.cpp -o /tmp/moovn_renderer_bridge.o
       - name: Workspace and asset I/O unit tests
         working-directory: MooVN Studio
-        run: |
-          rustc --edition=2021 --test tests/workspace-io-harness.rs -o /tmp/workspace-io-tests
-          /tmp/workspace-io-tests
+        run: cargo test --locked --manifest-path tests/native-io/Cargo.toml
 
   windows-tauri:
     name: Windows Tauri tests and installed startup (manual)

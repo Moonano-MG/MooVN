@@ -273,8 +273,7 @@ fn finish_asset_upload(token: String) -> Result<String, String> {
 
 #[tauri::command]
 fn abort_asset_upload(token: String) -> Result<(), String> {
-    asset_uploads().lock().map_err(|_| "ERR_ASSET_LOCK")?.abort(&token);
-    Ok(())
+    asset_uploads().lock().map_err(|_| "ERR_ASSET_LOCK")?.abort(&token)
 }
 
 #[derive(Serialize)]
