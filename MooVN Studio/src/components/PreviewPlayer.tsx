@@ -22,13 +22,17 @@ import { useReducedMotion } from '../lib/useReducedMotion';
 import { getUnsupportedPreviewIssue } from '../lib/previewSupport';
 import {
   backPreview,
+  commitPreviewScript,
   createPreviewPlayback,
   enterPreviewNode,
   nextPreviewDialogue,
   restorePreviewSlot,
 } from '../lib/previewState';
 import { inspectPreviewSaves } from '../lib/previewSaves';
+import { parsePreviewScript, resolvePreviewScriptNode } from '../lib/previewScript';
+import { persistPreviewScriptSave } from '../lib/previewScriptSaves';
 import { createReadHistory } from '../lib/readHistory';
+import { sha256Json } from '../lib/jsonChecksum';
 
 interface PreviewPlayerProps {
   project: VNProject;
@@ -40,6 +44,7 @@ interface PreviewPlayerProps {
 const SAVE_TABS: { id: SaveTabId; label: string }[] = [
   { id: 'auto', label: 'Auto' },
   { id: 'quick', label: '快速' },
+  { id: 'script', label: '脚本' },
   { id: '1', label: '1' },
   { id: '2', label: '2' },
   { id: '3', label: '3' },
@@ -116,17 +121,36 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
   // Opening a node preview must not immediately overwrite a previous auto-save
   // before the user has had a chance to continue or load it.
   const [autoSaveArmed, setAutoSaveArmed] = useState(
-    !Object.prototype.hasOwnProperty.call(initialSaveState.rawSlots, 'auto-1')
+    !initialSaveState.readError && !Object.prototype.hasOwnProperty.call(initialSaveState.rawSlots, 'auto-1')
   );
   const saveSlotsRef = useRef(initialSaveState.rawSlots);
   const invalidSlotKeys = useRef(new Set(initialSaveState.invalidKeys));
   const initialSaveReadFailed = useRef(Boolean(initialSaveState.readError));
   const appliedVisitRef = useRef<number | null>(null);
   const sfxVisitRef = useRef<number | null>(null);
+  const [scriptResult, setScriptResult] = useState<{
+    visit: number; nodeId: string; source: string; language: string; error: string | null;
+  } | null>(null);
+  const scriptStartedRef = useRef<typeof scriptResult>(null);
+  const [scriptRetry, setScriptRetry] = useState(0);
 
-  const currentNode =
-    project.nodes.find((n) => n.id === currentNodeId) || project.nodes[0];
-  const previewIssue = useMemo(() => getUnsupportedPreviewIssue(currentNode), [currentNode]);
+  const authoredNode = project.nodes.find((n) => n.id === currentNodeId) || project.nodes[0];
+  const nodeIssue = useMemo(() => getUnsupportedPreviewIssue(authoredNode), [authoredNode]);
+  const scriptSource = authoredNode.customScript || '';
+  const scriptLanguage = authoredNode.scriptLanguage || 'typescript';
+  const scriptProgram = useMemo(() => parsePreviewScript(scriptSource, scriptLanguage), [scriptSource, scriptLanguage]);
+  const hasScriptActions = !nodeIssue && authoredNode.type === 'script' && scriptProgram.ok &&
+    Boolean(scriptProgram.say || scriptProgram.saveName);
+  const currentNode = useMemo(() => hasScriptActions
+    ? resolvePreviewScriptNode(authoredNode, scriptProgram) : authoredNode,
+  [authoredNode, hasScriptActions, scriptProgram]);
+  const matchingScriptResult = scriptResult?.visit === playback.visit && scriptResult.nodeId === authoredNode.id &&
+    scriptResult.source === scriptSource && scriptResult.language === scriptLanguage ? scriptResult : null;
+  const scriptPending = screenMode === 'playing' && playback.entry === 'fresh' && hasScriptActions && !matchingScriptResult;
+  const scriptFailure = playback.entry === 'fresh' ? matchingScriptResult?.error : null;
+  const previewIssue = nodeIssue || (scriptFailure
+    ? { code: 'ERR_PREVIEW_SCRIPT_SAVE', message: scriptFailure }
+    : scriptPending ? { code: 'PREVIEW_SCRIPT_PENDING', message: '正在执行已验证的脚本指令。' } : null);
   const currentChapter =
     project.chapters.find((c) => c.id === currentNode.chapterId) || project.chapters[0];
   const bg = getBackgroundById(currentNode.backgroundId);
@@ -134,7 +158,10 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
     ? AUDIO_ASSETS.find((asset) => asset.id === currentNode.bgmId && asset.type === 'bgm') : undefined;
   const sfx = currentNode.sfxId
     ? AUDIO_ASSETS.find((asset) => asset.id === currentNode.sfxId && asset.type === 'sfx') : undefined;
-  const currentLine = currentNode.dialogues[dialogueIndex] || currentNode.dialogues[0];
+  // Until script entry succeeds, display only the authored diagnostic line;
+  // the scripted text and any choice-state changes are not yet committed.
+  const displayDialogues = scriptPending || scriptFailure ? authoredNode.dialogues : currentNode.dialogues;
+  const currentLine = displayDialogues[dialogueIndex] || displayDialogues[0];
   const displayToken = JSON.stringify([playback.visit, currentNode.id, dialogueIndex, currentLine?.id]);
   const currentTextFullyDisplayed = Boolean(currentLine && typedLineToken === displayToken &&
     !isTyping && typedText === currentLine.text);
@@ -181,13 +208,46 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
     }
   }, [isSkipMode, previewIssue, readStatus, isChoicePause]);
 
+  // Both manual and scripted saves capture the exact same preview snapshot.
+  const buildSaveSlot = useCallback((tabId: SaveTabId, slotIndex: number, scriptName?: string): SaveSlotData | null => {
+    const snapshot = tabId === 'script' ? (playback.pendingScript || playback.current) : playback.current;
+    const line = tabId === 'script' ? currentNode.dialogues[snapshot.dialogueIndex] : currentLine;
+    if (!currentNode || !line || (tabId === 'script' && !scriptName)) return null;
+    const slotKey = tabId === 'script' ? `script-${scriptName}` : `${tabId}-${slotIndex}`;
+    return {
+      slotKey, tabId, slotIndex,
+      savedAt: new Date().toLocaleString('zh-CN', { hour12: false }),
+      chapterTitle: currentChapter?.title || '第一章',
+      nodeId: currentNode.id, nodeTitle: currentNode.title, dialogueIndex: snapshot.dialogueIndex,
+      speakerName: line.speakerName, textPreview: line.text,
+      backgroundId: currentNode.backgroundId,
+      affectionSnapshot: { ...snapshot.affectionMap },
+      customAttrSnapshot: structuredClone(snapshot.customAttrMap),
+      variablesSnapshot: { ...snapshot.variablesMap },
+      unlockedClues: snapshot.clues.map((clue) => clue.title),
+      previewSnapshotVersion: 1,
+      clueSnapshot: snapshot.clues.map((clue) => ({ ...clue })),
+      textSpeedSnapshot: snapshot.textSpeedMs,
+      timedRemainingSnapshot: snapshot.timedRemaining,
+      ...(tabId === 'script' ? { scriptSlotName: scriptName } : {}),
+      ...(hasScriptActions && (scriptLanguage === 'javascript' || scriptLanguage === 'typescript')
+        ? { scriptSourceDigest: sha256Json(scriptSource), scriptLanguageSnapshot: scriptLanguage } : {}),
+    };
+  }, [currentNode, currentLine, currentChapter, playback.current, playback.pendingScript,
+      hasScriptActions, scriptLanguage, scriptSource]);
+
   const persistSaveSlot = useCallback(
     (tabId: SaveTabId, slotIndex: number) => {
       if (previewIssue) {
         setSaveError('当前节点尚未执行，不能将其保存为有效进度。');
         return false;
       }
-      if (!currentNode || !currentLine) {
+      if (tabId === 'script') {
+        setSaveError('命名脚本存档由脚本创建，不能通过普通存档槽覆盖。');
+        return false;
+      }
+      const newSlot = buildSaveSlot(tabId, slotIndex);
+      if (!newSlot) {
         setSaveError('当前节点没有可保存的台词位置，原存档未覆盖。');
         return false;
       }
@@ -195,32 +255,11 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
         setSaveError('存档读取失败，未覆盖原数据；请检查浏览器存储。');
         return false;
       }
-      const slotKey = `${tabId}-${slotIndex}`;
+      const slotKey = newSlot.slotKey;
       if (invalidSlotKeys.current.has(slotKey)) {
         setSaveError(`存档槽 ${slotKey} 损坏或版本不支持，未覆盖原数据。`);
         return false;
       }
-      const newSlot: SaveSlotData = {
-        slotKey,
-        tabId,
-        slotIndex,
-        savedAt: new Date().toLocaleString('zh-CN', { hour12: false }),
-        chapterTitle: currentChapter?.title || '第一章',
-        nodeId: currentNode.id,
-        nodeTitle: currentNode.title,
-        dialogueIndex,
-        speakerName: currentLine.speakerName,
-        textPreview: currentLine.text,
-        backgroundId: currentNode.backgroundId,
-        affectionSnapshot: { ...affectionMap },
-        customAttrSnapshot: structuredClone(customAttrMap),
-        variablesSnapshot: { ...variablesMap },
-        unlockedClues: unlockedClues.map((clue) => clue.title),
-        previewSnapshotVersion: 1,
-        clueSnapshot: unlockedClues.map((clue) => ({ ...clue })),
-        textSpeedSnapshot: textSpeedMs,
-        timedRemainingSnapshot: timedRemaining,
-      };
       if (inspectPreviewSaves({ [slotKey]: newSlot }).invalidKeys.length) {
         setSaveError('当前预览状态无法保存，原存档未覆盖；请检查变量和设置数值。');
         return false;
@@ -236,22 +275,43 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
         setSaveError(`存档写入失败：${error instanceof Error ? error.message : String(error)}`);
         return false;
       }
-    },
-    [
-      currentNode,
-      currentLine,
-      currentChapter,
-      dialogueIndex,
-      affectionMap,
-      customAttrMap,
-      variablesMap,
-      unlockedClues,
-      textSpeedMs,
-      timedRemaining,
-      previewIssue,
-      project.id,
-    ]
+    }, [buildSaveSlot, previewIssue, project.id]
   );
+
+  // Execute after the complete node has passed the support check. The visit
+  // marker prevents React re-renders/StrictMode from reapplying the action;
+  // back and load restore snapshots rather than executing a script again.
+  useEffect(() => {
+    if (screenMode !== 'playing' || playback.entry !== 'fresh' || !hasScriptActions || nodeIssue || !scriptProgram.ok) return;
+    const key = { visit: playback.visit, nodeId: authoredNode.id, source: scriptSource, language: scriptLanguage, error: null };
+    const started = scriptStartedRef.current;
+    if (started && started.visit === key.visit && started.nodeId === key.nodeId &&
+        started.source === key.source && started.language === key.language) return;
+    scriptStartedRef.current = key;
+    let error: string | null = null;
+    if (scriptProgram.saveName) {
+      const slot = buildSaveSlot('script', 0, scriptProgram.saveName);
+      if (!slot) {
+        error = '当前节点没有可保存的台词位置，原存档未覆盖。';
+      } else {
+        const result = persistPreviewScriptSave(() => localStorage, `moovn_saves_${project.id}`, slot);
+        if (!result.ok) error = result.error;
+        else {
+          saveSlotsRef.current = result.saves.rawSlots;
+          invalidSlotKeys.current = new Set(result.saves.invalidKeys);
+          initialSaveReadFailed.current = false;
+          setSaveSlots(result.saves.slots);
+          setSaveError(result.saves.invalidKeys.length ? '部分存档槽损坏或版本不支持，已保留原数据。' : null);
+        }
+      }
+    }
+    if (!error) {
+      setPlayback((previous) => previous.visit === key.visit && previous.current.nodeId === key.nodeId
+        ? commitPreviewScript(previous) : previous);
+    }
+    setScriptResult({ ...key, error });
+  }, [screenMode, playback.entry, playback.visit, hasScriptActions, nodeIssue, scriptProgram,
+      authoredNode.id, scriptSource, scriptLanguage, buildSaveSlot, project.id, scriptRetry]);
 
   // Numeric/clue/settings state is applied atomically on fresh entry by previewState.
   // Imperative actions must also run at most once per visit and never on restore.
@@ -286,7 +346,7 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
 
   // Pause autoplay/skip as soon as an unsupported node is encountered.
   useEffect(() => {
-    if (screenMode === 'playing' && previewIssue) {
+    if (screenMode === 'playing' && previewIssue && previewIssue.code !== 'PREVIEW_SCRIPT_PENDING') {
       setIsAutoPlay(false);
       setIsSkipMode(false);
     }
@@ -517,11 +577,22 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
   };
 
   const handleLoadSlot = (slot: SaveSlotData, acceptLegacy = false) => {
-    const savedNode = project.nodes.find((node) => node.id === slot.nodeId);
-    if (!savedNode) {
+    const authoredSavedNode = project.nodes.find((node) => node.id === slot.nodeId);
+    if (!authoredSavedNode) {
       setSaveError(`存档中的节点不存在：${slot.nodeId}`);
       return;
     }
+    const savedIssue = getUnsupportedPreviewIssue(authoredSavedNode);
+    const savedProgram = parsePreviewScript(authoredSavedNode.customScript || '', authoredSavedNode.scriptLanguage);
+    const savedHasActions = !savedIssue && authoredSavedNode.type === 'script' && savedProgram.ok &&
+      Boolean(savedProgram.say || savedProgram.saveName);
+    if (!savedIssue && (savedHasActions || slot.scriptSourceDigest !== undefined) &&
+        (slot.scriptSourceDigest !== sha256Json(authoredSavedNode.customScript || '') ||
+         slot.scriptLanguageSnapshot !== (authoredSavedNode.scriptLanguage || 'typescript'))) {
+      setSaveError('存档缺少匹配的脚本执行记录，或节点脚本已修改；原存档未修改。');
+      return;
+    }
+    const savedNode = savedHasActions ? resolvePreviewScriptNode(authoredSavedNode, savedProgram) : authoredSavedNode;
     if (slot.dialogueIndex >= Math.max(1, savedNode.dialogues.length)) {
       setSaveError('存档中的台词位置无效，原存档未修改。');
       return;
@@ -654,9 +725,13 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
       {(bgmError || sfxError) && <div role="alert" className="px-3 py-1 text-xs text-amber-200 bg-amber-950">{bgmError || sfxError}</div>}
       {screenMode === 'playing' && !autoSaveArmed && (
         <div role="status" className="shrink-0 px-3 py-1 text-xs text-amber-100 bg-amber-950">
-          {invalidSlotKeys.current.has('auto-1')
-            ? '自动存档损坏或版本不支持，已保留原数据并停止自动覆盖。'
-            : '已保留现有自动存档；推进剧情或开始新游戏后自动存档会更新。'}
+          {initialSaveReadFailed.current
+            ? '自动存档读取失败，已停止自动覆盖；请检查浏览器存储。'
+            : invalidSlotKeys.current.has('auto-1')
+              ? '自动存档损坏或版本不支持，已保留原数据并停止自动覆盖。'
+              : Object.prototype.hasOwnProperty.call(saveSlotsRef.current, 'auto-1')
+                ? '已保留现有自动存档；推进剧情或开始新游戏后自动存档会更新。'
+                : '自动存档已暂停；推进剧情或开始新游戏后才会创建。'}
         </div>
       )}
       {pendingLegacySlot && (
@@ -671,7 +746,14 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
       {screenMode === 'playing' && previewIssue && (
         <div role="alert" className="shrink-0 max-h-32 overflow-auto px-3 py-2 text-xs text-amber-100 bg-amber-950 border-b border-amber-500/50 break-words">
           <div><strong>{previewIssue.code}：预览已暂停。</strong> 节点「{currentNode.title}」（{currentNode.id}）：{previewIssue.message}</div>
-          <button type="button" onClick={onClose} className="mt-1 underline">返回编辑器</button>
+          <div className="flex flex-wrap gap-3 mt-1">
+            {scriptFailure && <button type="button" className="underline" onClick={() => {
+              scriptStartedRef.current = null;
+              setScriptResult(null);
+              setScriptRetry((value) => value + 1);
+            }}>重试脚本存档</button>}
+            <button type="button" onClick={onClose} className="underline">返回编辑器</button>
+          </div>
         </div>
       )}
 
@@ -1229,7 +1311,7 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
                 </button>
               </div>
 
-              <div className="flex items-end gap-1 border-b border-sky-500/30 px-2">
+              <div className="flex flex-wrap items-end gap-1 border-b border-sky-500/30 px-2">
                 {SAVE_TABS.map((tab) => {
                   const active = activeSaveTab === tab.id;
                   return (
@@ -1248,6 +1330,26 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
                 })}
               </div>
 
+              {activeSaveTab === 'script' ? (
+                <div className="flex-1 bg-[#081733]/90 border border-t-0 border-sky-500/30 rounded-b-xl p-5 space-y-3 overflow-y-auto">
+                  <p className="text-xs text-slate-300">脚本创建的命名存档；读取后不会重复执行脚本。此页不能手动覆盖。</p>
+                  {Object.keys(saveSlotsRef.current).filter((key) => key.startsWith('script-')).length === 0 &&
+                    <p className="text-xs text-slate-400">暂无脚本存档。</p>}
+                  {Object.keys(saveSlotsRef.current).filter((key) => key.startsWith('script-')).sort().map((key) => {
+                    const data = saveSlots[key];
+                    const invalid = invalidSlotKeys.current.has(key);
+                    return (
+                      <button key={key} type="button" disabled={modalMode !== 'load' || invalid || !data}
+                        onClick={() => { if (data) handleLoadSlot(data); }}
+                        className="block w-full rounded-lg border border-sky-400/30 bg-[#0c2147]/85 p-3 text-left disabled:opacity-60 enabled:hover:border-sky-300">
+                        <span className="block text-sm font-semibold text-sky-200 break-all">{data?.scriptSlotName || key.slice(7, 71)}</span>
+                        {invalid || !data ? <span className="block text-xs text-rose-300">存档损坏或版本不支持，原数据已保留</span> :
+                          <span className="block text-xs text-slate-300 mt-1">{data.nodeTitle} · {data.savedAt} · {data.textPreview}</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
               <div className="flex-1 bg-[#081733]/90 border border-t-0 border-sky-500/30 rounded-b-xl p-5 grid grid-cols-2 grid-rows-3 gap-4 overflow-y-auto">
                 {[1, 2, 3, 4, 5, 6].map((slotIdx) => {
                   const slotKey = `${activeSaveTab}-${slotIdx}`;
@@ -1327,6 +1429,7 @@ export const PreviewPlayer: React.FC<PreviewPlayerProps> = ({
                   );
                 })}
               </div>
+              )}
             </div>
           </div>
         )}

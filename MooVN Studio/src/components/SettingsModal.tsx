@@ -309,7 +309,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       <option value="cpp">C++</option>
                       <option value="rust">Rust</option>
                     </select>
-                    <span className="block mt-1 text-zinc-500">只影响新建空白工程的脚本草稿与后缀；不自动翻译，非 JS/TS 宿主程序和预览脚本执行尚未实现。</span>
+                    <span className="block mt-1 text-zinc-500">只影响新建空白工程的脚本草稿与后缀；不自动翻译。预览仅支持脚本节点内有限的 JS/TS 指令，不执行宿主程序。</span>
                   </label>
                 </div>
               </>

@@ -613,7 +613,7 @@ export const Inspector: React.FC<InspectorProps> = ({
                 </button>
               </div>
               <p className="text-[11px] text-amber-300">
-                预览不执行自定义脚本或函数调用；遇到非注释内容或无法确认的内容时会暂停。可识别的空白和完整注释不会触发脚本动作。
+                预览仅在脚本节点支持一条 JS/TS moovn.text.say 和一条随后执行的 moovn.save.create。参数须为 JSON 双引号字符串；存档名限 1–64 位英文、数字、_ 或 -。进入节点会覆盖同名有效脚本存档。其他代码、函数和脚本积木会暂停。
               </p>
               <textarea
                 rows={8}

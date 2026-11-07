@@ -146,7 +146,7 @@ try {
   }
 
   for (const [name, source, options] of [
-    ['default-standard-api', '// default node script\nmoovn.text.say("旁白", "执行自定义脚本节点");\nmoovn.save.create("Auto_Slot");\n', {}],
+    ['mixed-unsupported-api', '// default node script\nmoovn.text.say("旁白", "执行自定义脚本节点");\nmoovn.save.create("Auto_Slot");\nmoovn.unknown.action();\n', {}],
     ['string-literal', 'const text = "moovn::save::create(FAKE)";', { language: 'javascript' }],
     ['unreachable-host-code', 'if (false) { moovn::save::create("FAKE"); }', { language: 'cpp' }],
     ['unterminated-comment', '/* moovn.save:create("FAKE")', {}],
@@ -158,14 +158,14 @@ try {
       console.log(`  ${name} slots=${JSON.stringify(save ? Object.keys(save.slots) : [])}; script warning=${await page.getByRole('alert').filter({ hasText: 'ERR_PREVIEW_SCRIPT_UNSUPPORTED' }).count()}`);
       await assertStopped(page);
       assert.equal(await readSaves(page), null, 'a blocked initial script node must not write any save');
-      if (name === 'default-standard-api') {
+      if (name === 'mixed-unsupported-api') {
         await page.screenshot({ path: resolve(output, 'standard-api-stopped.png') });
         await page.getByRole('button', { name: '返回编辑器', exact: true }).click();
         const inspector = page.locator('[data-leaf-container="leaf-right"]');
         await inspector.getByRole('button', { name: '脚本', exact: true }).click();
         const editor = inspector.locator('textarea[placeholder*="编写自定义"]');
         assert.equal(await editor.inputValue(), source, 'the unsupported script must remain intact in the editor');
-        assert(await inspector.getByText('预览不执行自定义脚本或函数调用', { exact: false }).isVisible());
+        assert(await inspector.getByText('预览仅在脚本节点支持', { exact: false }).isVisible());
         await page.screenshot({ path: resolve(output, 'editor-script-warning.png') });
         await editor.fill('// moovn.save:create("fake")\n');
         await page.getByRole('button', { name: '运行预览', exact: true }).click();
@@ -292,7 +292,7 @@ try {
     await currentContext.close();
     currentContext = undefined;
 
-    const empty = fixture('moovn.save.create("A");');
+    const empty = fixture('moovn.unknown.action();');
     empty.nodes[0].dialogues = [];
     const emptyPage = await openFixture(empty);
     assert(await emptyPage.getByRole('alert').filter({ hasText: 'ERR_PREVIEW_SCRIPT_UNSUPPORTED' }).isVisible());
@@ -301,7 +301,7 @@ try {
   });
 
   await runCase('existing-auto-zero-preserved', async () => {
-    const project = fixture('moovn.save.create("A");');
+    const project = fixture('moovn.save.create("A"); moovn.unknown.action();');
     const intro = structuredClone(project.nodes[1]);
     intro.id = 'intro';
     intro.title = 'Intro';
@@ -332,7 +332,7 @@ try {
   });
 
   await runCase('load-existing-blocked-slot', async () => {
-    const project = fixture('moovn.save.create("A");');
+    const project = fixture('moovn.save.create("A"); moovn.unknown.action();');
     const intro = structuredClone(project.nodes[1]);
     intro.id = 'intro';
     intro.title = 'Intro';
@@ -360,7 +360,7 @@ try {
 
   await runCase('narrow-warning', async () => {
     for (const viewport of [{ width: 900, height: 560 }, { width: 360, height: 640 }]) {
-      const page = await openFixture(fixture('moovn.save.create("Auto_Slot");'), viewport);
+      const page = await openFixture(fixture('moovn.save.create("Auto_Slot"); moovn.unknown.action();'), viewport);
       const alert = page.getByRole('alert').filter({ hasText: 'ERR_PREVIEW_SCRIPT_UNSUPPORTED' });
       const back = page.getByRole('button', { name: '返回编辑器', exact: true });
       assert(await alert.isVisible());

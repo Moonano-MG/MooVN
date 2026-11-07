@@ -548,6 +548,7 @@ export interface AudioAsset {
 export type SaveTabId =
   | 'auto'
   | 'quick'
+  | 'script'
   | '1'
   | '2'
   | '3'
@@ -580,6 +581,10 @@ export interface SaveSlotData {
   clueSnapshot?: { title: string; desc: string }[];
   textSpeedSnapshot?: number;
   timedRemainingSnapshot?: number | null;
+  /** Named preview script slots and an unkeyed checksum of the applied script (not authentication). */
+  scriptSlotName?: string;
+  scriptSourceDigest?: string;
+  scriptLanguageSnapshot?: 'javascript' | 'typescript';
 }
 
 export type AiApiFormat =

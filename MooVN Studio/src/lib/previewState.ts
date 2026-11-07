@@ -1,5 +1,6 @@
 import type { ChoiceOption, SaveSlotData, SceneNode, VNProject } from '../types.ts';
 import { getUnsupportedPreviewIssue } from './previewSupport.ts';
+import { parsePreviewScript } from './previewScript.ts';
 
 type Primitive = string | number | boolean;
 export interface PreviewClue {
@@ -25,6 +26,14 @@ export interface PreviewPlayback {
   /** Changes on every node entry, including self-loops and restores. */
   visit: number;
   entry: 'fresh' | 'restore';
+  /** Choice/entry state is committed only after a supported script succeeds. */
+  pendingScript?: PreviewSnapshot;
+}
+
+function hasExecutableScript(node: SceneNode): boolean {
+  if (node.type !== 'script' || getUnsupportedPreviewIssue(node)) return false;
+  const program = parsePreviewScript(node.customScript || '', node.scriptLanguage);
+  return program.ok && Boolean(program.say || program.saveName);
 }
 
 function findNode(project: VNProject, nodeId: string): SceneNode {
@@ -86,7 +95,11 @@ export function createPreviewPlayback(project: VNProject, nodeId: string, enter 
     nodeId, dialogueIndex: 0, affectionMap, customAttrMap, variablesMap,
     clues: [], textSpeedMs: defaultTextSpeedMs, timedRemaining: null,
   };
-  return { current: enter ? enterNode(project, initial, nodeId) : initial, history: [], visit, entry: 'fresh' };
+  const current = enter ? enterNode(project, initial, nodeId) : initial;
+  return {
+    current, history: [], visit, entry: 'fresh',
+    ...(enter && hasExecutableScript(findNode(project, nodeId)) ? { pendingScript: current } : {}),
+  };
 }
 
 /** Take one dialogue step without re-entering the current node. */
@@ -109,12 +122,22 @@ export function enterPreviewNode(playback: PreviewPlayback, project: VNProject, 
   if (choice?.setVarKey !== undefined && choice.setVarValue !== undefined) {
     next = { ...next, variablesMap: { ...next.variablesMap, [choice.setVarKey]: choice.setVarValue } };
   }
+  const entered = enterNode(project, next, nodeId);
+  const pendingScript = hasExecutableScript(findNode(project, nodeId)) ? entered : undefined;
   return {
-    current: enterNode(project, next, nodeId),
+    // The destination is visible for diagnostics, but choice effects remain
+    // uncommitted while its script is pending or has failed.
+    current: pendingScript ? { ...playback.current, nodeId, dialogueIndex: 0, timedRemaining: null } : entered,
+    ...(pendingScript ? { pendingScript } : {}),
     history: [...playback.history, playback.current],
     visit: playback.visit + 1,
     entry: 'fresh',
   };
+}
+
+/** Commit a successful script entry without executing it a second time. */
+export function commitPreviewScript(playback: PreviewPlayback): PreviewPlayback {
+  return playback.pendingScript ? { ...playback, current: playback.pendingScript, pendingScript: undefined } : playback;
 }
 
 export function backPreview(playback: PreviewPlayback): PreviewPlayback {

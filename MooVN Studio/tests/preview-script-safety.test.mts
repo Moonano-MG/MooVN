@@ -34,21 +34,15 @@ test('preview only lets empty scripts and complete comments through, without int
   }
 });
 
-test('host statements, strings, valid APIs and malformed comments all fail closed', () => {
+test('host statements, strings, unsupported APIs and malformed comments all fail closed', () => {
   const examples: Array<[string, ScriptLanguage]> = [
-    ['moovn.save.create("Auto_Slot");', 'typescript'],
-    ['moovn.text.say("旁白", "line");\nmoovn.save.create("A");', 'javascript'],
     ['Moovn.Save.Create("A");', 'csharp'],
     ['moovn::save::create("A");', 'rust'],
     ['const s = "moovn::save::create(fake)";', 'javascript'],
     ['"moovn.save:create(fake)";', 'javascript'],
     ['if (false) moovn::save::create("A");', 'cpp'],
-    ['moovn.save.create("A"); // trailing comment', 'typescript'],
-    ['/* valid */ moovn.save.create("A");', 'typescript'],
     ['/* not closed moovn.save:create("A")', 'javascript'],
     ['/* /* */ moovn.save.create("A"); */', 'javascript'],
-    ['// comment\u2028moovn.save.create("A");', 'javascript'],
-    ['// comment\u2029moovn.save.create("A");', 'typescript'],
     ['// comment\u0085Moovn.Save.Create("A");', 'csharp'],
     ['# unsupported directive', 'cpp'],
     ['`moovn.save:create(fake)`', 'typescript'],
@@ -57,7 +51,7 @@ test('host statements, strings, valid APIs and malformed comments all fail close
   for (const [source, language] of examples) {
     const issue = getUnsupportedPreviewIssue(node(source, language));
     assert.equal(issue?.code, 'ERR_PREVIEW_SCRIPT_UNSUPPORTED', `${language}: ${source}`);
-    assert.match(issue.message, /不执行.*moovn\.save\.create/);
+    assert.match(issue.message, /暂停/);
   }
 });
 

@@ -1,65 +1,17 @@
-import type { NestedChildNode, SceneNode, ScriptLanguage } from '../types.ts';
+import type { NestedChildNode, SceneNode } from '../types.ts';
 import { getUnsupportedBranchIssue, type BranchSupportIssue } from './branchSupport.ts';
 import { AUDIO_ASSETS } from '../data/assets.ts';
+import { isOnlyWhitespaceAndComments, parsePreviewScript } from './previewScript.ts';
 
 export type PreviewSupportIssue = BranchSupportIssue | {
   code: 'ERR_PREVIEW_SCRIPT_UNSUPPORTED' | 'ERR_PREVIEW_AUDIO_UNSUPPORTED' | 'ERR_PREVIEW_SETTINGS_UNSUPPORTED';
   message: string;
 };
 
-/**
- * This is NOT a script parser. It only proves that a source consists entirely
- * of whitespace and complete comments. Anything else, including malformed
- * comments, host declarations, string literals and API calls, must stop preview.
- * Rust supports nested block comments; the other supported languages do not.
- */
-function isOnlyWhitespaceAndComments(source: string, language: ScriptLanguage | undefined): boolean {
-  const isEcma = !language || language === 'javascript' || language === 'typescript';
-  const isCSharp = language === 'csharp';
-  let i = 0;
-  while (i < source.length) {
-    const ch = source[i];
-    if (ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r' || ch === '\f' || ch === '\v' ||
-        ((isEcma || isCSharp) && (ch === '\u2028' || ch === '\u2029')) ||
-        (isCSharp && ch === '\u0085')) {
-      i += 1;
-      continue;
-    }
-    if (source.startsWith('//', i)) {
-      i += 2;
-      // C# also terminates line comments at U+0085. For C++/Rust, treating
-      // Unicode separators conservatively as ends can only cause a stop.
-      while (i < source.length && source[i] !== '\n' && source[i] !== '\r' &&
-             source[i] !== '\u2028' && source[i] !== '\u2029' &&
-             (isEcma || source[i] !== '\u0085')) i += 1;
-      continue;
-    }
-    if (source.startsWith('/*', i)) {
-      i += 2;
-      let depth = 1;
-      while (i < source.length && depth > 0) {
-        if (language === 'rust' && source.startsWith('/*', i)) {
-          depth += 1;
-          i += 2;
-        } else if (source.startsWith('*/', i)) {
-          depth -= 1;
-          i += 2;
-        } else {
-          i += 1;
-        }
-      }
-      if (depth !== 0) return false;
-      continue;
-    }
-    return false;
-  }
-  return true;
-}
-
-function scriptIssue(location: string): PreviewSupportIssue {
+function scriptIssue(location: string, detail = '不支持此脚本、函数或桥接积木'): PreviewSupportIssue {
   return {
     code: 'ERR_PREVIEW_SCRIPT_UNSUPPORTED',
-    message: `${location}：预览不执行脚本、函数或桥接积木（包括 moovn.save.create）；状态、媒体和存档动作已暂停。台词仅供定位，代码已保留。`,
+    message: `${location}：${detail}；状态、媒体和存档动作已暂停。台词仅供定位，代码已保留。`,
   };
 }
 
@@ -94,8 +46,21 @@ export function getUnsupportedPreviewIssue(node: SceneNode): PreviewSupportIssue
     }
   }
   if (node.type === 'function_call') return scriptIssue('函数调用节点');
-  if (node.customScript && !isOnlyWhitespaceAndComments(node.customScript, node.scriptLanguage)) {
-    return scriptIssue('自定义节点脚本');
+  if (node.customScript) {
+    const program = parsePreviewScript(node.customScript, node.scriptLanguage);
+    if (!program.ok) return scriptIssue('自定义节点脚本', program.message);
+    const hasOtherActions = [
+      node.timedChoiceSeconds, node.defaultTimeoutTargetId, node.conditionRule,
+      node.fadeConfig, node.screenTextConfig, node.cameraConfig, node.settingsActionConfig,
+      node.loopConfig, node.logicConfig, node.waitDurationMs, node.toastMessage,
+      node.unlockedClueTitle, node.unlockedClueDesc, node.targetExpressionCharId,
+      node.targetExpressionSpriteId, node.affectionTargetCharId, node.affectionDelta,
+      node.variableKey, node.variableValue, node.mediaAnimation, node.endingType, node.endingTitle,
+    ].some((value) => value !== undefined);
+    if ((program.say || program.saveName) && (node.type !== 'script' || hasOtherActions ||
+        node.visualBlocks.length || node.childrenNodes?.length || node.elseChildrenNodes?.length || node.choices.length)) {
+      return scriptIssue('自定义节点脚本', '支持的指令只能用于不含其他逻辑或积木动作的脚本节点');
+    }
   }
   const visualScript = node.visualBlocks.find((block) => block.kind === 'call_bridge_script');
   if (visualScript) return scriptIssue(`脚本积木「${visualScript.id}」`);
