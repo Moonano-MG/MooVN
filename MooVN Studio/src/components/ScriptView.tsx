@@ -360,7 +360,7 @@ function nodeDraft(node: SceneNode, language: ScriptLanguage, project: VNProject
   }
   // No host-language compiler/runtime exists here. Keep an honest blank draft
   // instead of relabelling generated JS/TS as C#, C++ or Rust.
-  return '// 当前节点脚本草稿；预览不会执行脚本，宿主语言编译尚未实现。\n';
+  return '// 当前节点脚本草稿；预览不执行此语言，宿主语言编译尚未实现。\n';
 }
 
 function buildDefaultWorkspaceFiles(
@@ -857,7 +857,7 @@ export const ScriptView: React.FC<ScriptViewProps> = ({
       </div>
 
       <div className="px-3 py-1 text-[11px] text-amber-300 border-b border-amber-500/20 shrink-0">
-        预览尚不执行脚本；节点含非注释脚本或函数调用时会暂停。解析 / 引擎是另一项操作。
+        节点预览仅支持有限的 JS/TS text.say 与 save.create；其他脚本、函数和桥接积木会暂停。「解析 / 引擎」是另一项操作，原生引擎旧解析器不能可靠理解宿主控制流和多行注释，请勿运行不可信脚本。
       </div>
 
       {statusNotice?.kind === 'error' && (

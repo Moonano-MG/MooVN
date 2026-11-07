@@ -538,7 +538,7 @@ export const NODE_REGISTRY: NodeTypeMeta[] = [
     category: 'script',
     categoryLabel: '脚本',
     title: '脚本代码',
-    description: '可编辑脚本；预览尚不执行，遇到非注释内容时会暂停。',
+    description: '预览支持有限的 JS/TS 对话与命名存档指令；其他代码会暂停。',
     ...CAT_STYLE.script,
   },
 ];
